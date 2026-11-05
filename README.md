@@ -43,6 +43,10 @@ uppercase becomes lowercase, and `/`, spaces, non-ASCII and other characters
 become `-`. For example `REE-12-修复登录/Login` becomes `ree-12-login`. This
 way any tool that calls `nk` can pass its own branch name as it is.
 
+When `nk -b` runs in a terminal and had to change the name, it shows the
+converted name ready to edit; press Enter to keep it. Without a terminal it uses
+the converted name.
+
 ## Shared files
 
 New worktrees do not contain ignored files such as `.env`. `nk init` prepares

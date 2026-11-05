@@ -5,7 +5,7 @@ import { NookError } from "../errors.mjs";
 import { exists } from "../home.mjs";
 import { baseRef, git, gitTry, refExists, remoteUrl } from "../git.mjs";
 import { ensureTrusted, findHook, runHook } from "../hooks.mjs";
-import { toName } from "../names.mjs";
+import { nameProblem, normalizeName, toName } from "../names.mjs";
 import { allocatePort } from "../ports.mjs";
 import { createPrompter } from "../prompt.mjs";
 import { copyShared } from "../shared.mjs";
@@ -50,10 +50,28 @@ function addWorktree(repoPath, name, path, defaultBranch) {
   else git(["worktree", "add", "--no-track", "-b", name, path, baseRef(repoPath, defaultBranch)], { cwd: repoPath });
 }
 
+/**
+ * The name for a new workspace. When nk had to change what was passed in and
+ * there is a terminal, the converted name is shown ready to edit.
+ */
+async function pickName(ctx, input, prompter) {
+  let name = toName(input);
+  if (name === input) return name;
+  if (!prompter.interactive) {
+    ctx.note(`Using the name ${name}`);
+    return name;
+  }
+  for (;;) {
+    const edited = normalizeName(await prompter.edit("Workspace name (edit or press Enter)", name));
+    const problem = nameProblem(edited);
+    if (!problem) return edited;
+    ctx.note(problem);
+  }
+}
+
 /** nk -b <name> [agent] */
-export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent, prompt, extra = [] }) {
-  const name = toName(input);
-  if (name !== input) ctx.note(`Using the name ${name}`);
+export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent, prompt, extra = [], prompter = createPrompter() }) {
+  const name = await pickName(ctx, input, prompter);
   const { name: repoName, repo } = resolveRepo(ctx, repoFlag);
   if (repo.workspaces[name]) throw new NookError(`Workspace "${name}" already exists. Open it with: nk ${name}`);
   const dir = join(ctx.paths.workspaces, repoName);

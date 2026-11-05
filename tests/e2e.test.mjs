@@ -159,6 +159,21 @@ test("-b turns any branch text into a workspace name", (t) => {
   assert.equal(run(["rm", "REE-12-修复登录/Login", "-y"]).status, 0);
 });
 
+test("a converted name can be edited before the workspace is created", async (t) => {
+  const { createContext } = await import("../src/context.mjs");
+  const { createWorkspace } = await import("../src/commands/workspace.mjs");
+  const { home, repo } = setup(t);
+  assert.equal(nk(["init", "--yes"], { cwd: repo, home }).status, 0);
+  const sink = { write() {} };
+  const ctx = createContext({ env: { ...process.env, NOOK_HOME: home }, cwd: repo, out: sink, err: sink });
+  const offered = [];
+  const prompter = { interactive: true, edit: async (_q, initial) => (offered.push(initial), "Fix Login") };
+  assert.equal(await createWorkspace(ctx, { name: "REE-12-修复登录", prompter }), 0);
+  assert.deepEqual(offered, ["ree-12"]);
+  assert.ok(existsSync(join(home, "workspaces", "demo", "fix-login")));
+  assert.equal(nk(["rm", "fix-login", "-y"], { cwd: repo, home }).status, 0);
+});
+
 test("init adopts nothing by default and keeps settings on a second run", (t) => {
   const { root, home, repo } = setup(t);
   sh("git", ["worktree", "add", "-q", "-b", "elsewhere", join(root, "elsewhere"), "main"], repo);

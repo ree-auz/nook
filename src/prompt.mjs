@@ -27,6 +27,18 @@ export function createPrompter({ yes = false, input = process.stdin, output = pr
       const answer = await raw(`${question}${fallback ? ` [${fallback}]` : ""}: `);
       return answer || fallback;
     },
+    /** Shows `initial` already typed so it can be edited; Enter keeps it. */
+    async edit(question, initial) {
+      if (yes || !interactive) return initial;
+      const rl = createInterface({ input, output });
+      try {
+        const pending = rl.question(`${question}: `);
+        rl.write(initial);
+        return (await pending).trim() || initial;
+      } finally {
+        rl.close();
+      }
+    },
     async confirm(question, fallback = false) {
       if (yes) return fallback;
       for (;;) {
