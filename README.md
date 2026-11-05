@@ -99,3 +99,7 @@ npm test
 ```
 
 CI runs the tests on Linux, macOS and Windows.
+
+## License
+
+MIT
