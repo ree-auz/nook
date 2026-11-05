@@ -1,0 +1,28 @@
+{
+  "name": "@ree-auz/nook",
+  "version": "0.1.0",
+  "description": "One home folder for your git worktrees: create, open and remove workspaces with shared files, ports and hooks.",
+  "type": "module",
+  "bin": {
+    "nk": "bin/nk.mjs",
+    "nook": "bin/nk.mjs"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1"
+  },
+  "dependencies": {
+    "cross-spawn": "7.0.6",
+    "smol-toml": "1.9.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ree-auz/nook.git"
+  }
+}
