@@ -5,7 +5,7 @@ import { NookError } from "../errors.mjs";
 import { exists } from "../home.mjs";
 import { baseRef, git, gitTry, refExists, remoteUrl } from "../git.mjs";
 import { ensureTrusted, findHook, runHook } from "../hooks.mjs";
-import { assertName } from "../names.mjs";
+import { toName } from "../names.mjs";
 import { allocatePort } from "../ports.mjs";
 import { createPrompter } from "../prompt.mjs";
 import { copyShared } from "../shared.mjs";
@@ -51,8 +51,9 @@ function addWorktree(repoPath, name, path, defaultBranch) {
 }
 
 /** nk -b <name> [agent] */
-export async function createWorkspace(ctx, { name, repo: repoFlag, agent, prompt, extra = [] }) {
-  assertName(name);
+export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent, prompt, extra = [] }) {
+  const name = toName(input);
+  if (name !== input) ctx.note(`Using the name ${name}`);
   const { name: repoName, repo } = resolveRepo(ctx, repoFlag);
   if (repo.workspaces[name]) throw new NookError(`Workspace "${name}" already exists. Open it with: nk ${name}`);
   const dir = join(ctx.paths.workspaces, repoName);
@@ -84,7 +85,7 @@ export async function createWorkspace(ctx, { name, repo: repoFlag, agent, prompt
 
 /** nk <name> [agent] */
 export async function openWorkspace(ctx, { name, repo: repoFlag, agent, prompt, extra = [] }) {
-  const target = resolveWorkspace(ctx, name, repoFlag);
+  const target = resolveWorkspace(ctx, toName(name), repoFlag);
   if (!exists(target.ws.path)) throw new NookError(`${target.ws.path} is missing. Run nk doctor`);
   await hook(ctx, target, "open");
   return finish(ctx, target, { agent, prompt, extra });

@@ -34,9 +34,14 @@ Without an agent, `nk -b` and `nk <name>` print the workspace path, so
 
 ## Names
 
-A workspace name is also its branch name and folder name. It may use lowercase
-letters, digits, `-` and `.`, must not contain `/`, and cannot be a command name
-(`init`, `ls`, `rm`, `clean`, `doctor`, `help`, `version`).
+A workspace name is also its branch name and folder name. It uses lowercase
+letters, digits, `-` and `.` only, and cannot be a command name (`init`, `ls`,
+`rm`, `clean`, `doctor`, `help`, `version`).
+
+You can pass any branch text; `nk` turns it into a valid name and says so:
+uppercase becomes lowercase, and `/`, spaces, non-ASCII and other characters
+become `-`. For example `REE-12-修复登录/Login` becomes `ree-12-login`. This
+way any tool that calls `nk` can pass its own branch name as it is.
 
 ## Shared files
 

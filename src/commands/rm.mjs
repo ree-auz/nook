@@ -8,6 +8,7 @@ import { backupDir, createBackup, inspectWorkspace, needsBackup } from "../backu
 import { describeOccupants, findOccupants } from "../occupancy.mjs";
 import { createPrompter } from "../prompt.mjs";
 import { resolveWorkspace } from "../context.mjs";
+import { toName } from "../names.mjs";
 import { hook } from "./workspace.mjs";
 
 function checkOccupied(ctx, path, scan) {
@@ -20,7 +21,8 @@ function checkOccupied(ctx, path, scan) {
 }
 
 /** nk rm <name> [-n] [-y] */
-export async function removeWorkspace(ctx, { name, repo: repoFlag, dryRun = false, yes = false, scan = findOccupants, prompter = createPrompter() }) {
+export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun = false, yes = false, scan = findOccupants, prompter = createPrompter() }) {
+  const name = toName(input);
   const target = resolveWorkspace(ctx, name, repoFlag);
   const { repo, ws } = target;
   if (exists(ws.path) && isInside(ctx.cwd, ws.path))

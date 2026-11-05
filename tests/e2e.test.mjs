@@ -40,7 +40,7 @@ test("init -> -b -> open -> rm", async (t) => {
   assert.deepEqual(Object.keys(config.repos.demo.hooks).sort(), process.platform === "win32" ? ["create.mjs", "open.cmd", "remove.mjs"] : ["create.mjs", "open.sh", "remove.mjs"]);
   assert.equal(readFileSync(join(home, "shared", "demo", ".env"), "utf8"), "API_KEY=\n", "starts from the template, not the repository .env");
 
-  assert.equal(run(["-b", "Bad/Name"]).status, 1);
+  assert.equal(run(["-b", "仓库"]).status, 1, "nothing usable left after normalizing");
   assert.equal(run(["-b", "ls"]).status, 1);
 
   r = run(["-b", "smoke"]);
@@ -56,11 +56,13 @@ test("init -> -b -> open -> rm", async (t) => {
   assert.equal(sh("git", ["branch", "--show-current"], ws), "smoke");
   assert.equal(run(["-b", "smoke"]).status, 1, "cannot create twice");
 
+  assert.equal(run(["Smoke"]).out.trim(), ws, "names are normalized when opening too");
+  assert.equal(readFileSync(join(ws, "hook-open.txt"), "utf8").trim().split(/\r?\n/).length, 2);
   r = run(["smoke", "node", "-p", "do the task", "--", "-e", agentScript]);
   assert.equal(r.status, 0, r.all);
   const agent = JSON.parse(readFileSync(join(ws, "agent.txt"), "utf8"));
   assert.deepEqual(agent, { args: ["do the task"], ws: "smoke", port });
-  assert.equal(readFileSync(join(ws, "hook-open.txt"), "utf8").trim().split(/\r?\n/).length, 2);
+  assert.equal(readFileSync(join(ws, "hook-open.txt"), "utf8").trim().split(/\r?\n/).length, 3);
 
   r = run(["ls"]);
   assert.equal(r.status, 0, r.all);
@@ -143,6 +145,18 @@ test("a failing remove hook stops the removal", (t) => {
   assert.equal(r.status, 2, r.all);
   assert.match(r.err, /nothing was deleted/);
   assert.ok(existsSync(join(home, "workspaces", "demo", "keep")));
+});
+
+test("-b turns any branch text into a workspace name", (t) => {
+  const { home, repo } = setup(t);
+  const run = (args) => nk(args, { cwd: repo, home });
+  assert.equal(run(["init", "--yes"]).status, 0);
+  const r = run(["-b", "REE-12-修复登录/Login"]);
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.err, /Using the name ree-12-login/);
+  assert.equal(r.out.trim(), join(home, "workspaces", "demo", "ree-12-login"));
+  assert.equal(sh("git", ["branch", "--show-current"], r.out.trim()), "ree-12-login");
+  assert.equal(run(["rm", "REE-12-修复登录/Login", "-y"]).status, 0);
 });
 
 test("init adopts nothing by default and keeps settings on a second run", (t) => {
