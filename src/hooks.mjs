@@ -27,8 +27,13 @@ export function findHook(dir, event, platform = process.platform) {
   return null;
 }
 
+/**
+ * Fingerprint of a hook's content. Line endings are normalized, so a Windows
+ * checkout (CRLF) and the same file with LF count as one version.
+ */
 export function hookHash(file) {
-  return createHash("sha256").update(readFileSync(file)).digest("hex");
+  const text = readFileSync(file, "latin1").replace(/\r\n/g, "\n");
+  return createHash("sha256").update(text, "latin1").digest("hex");
 }
 
 /** How to run a hook file: { command, args }. */

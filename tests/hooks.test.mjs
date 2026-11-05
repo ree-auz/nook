@@ -68,3 +68,10 @@ test("runs a hook with the environment and writes a log", async (t) => {
   const { readFileSync } = await import("node:fs");
   assert.match(readFileSync(result.log, "utf8"), /port=20010/);
 });
+
+test("line endings alone do not count as a change", (t) => {
+  const dir = tempDir(t);
+  write(dir, { "lf.mjs": "a\nb\n", "crlf.mjs": "a\r\nb\r\n", "other.mjs": "a\nc\n" });
+  assert.equal(hookHash(join(dir, "lf.mjs")), hookHash(join(dir, "crlf.mjs")));
+  assert.notEqual(hookHash(join(dir, "lf.mjs")), hookHash(join(dir, "other.mjs")));
+});
