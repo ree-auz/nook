@@ -55,9 +55,12 @@ New worktrees do not contain ignored files such as `.env`. `nk init` prepares
 - Files are picked with `.worktreeinclude` (gitignore syntax) when the
   repository has one, otherwise with `.env*`.
 - Only files git ignores are used, so a shared file never replaces a tracked one.
-- When the repository has a template such as `.env.example`, init starts the
-  shared `.env` from it, so a production `.env` in the main checkout is never
-  copied unless you choose that.
+- Every committed template for an ignored file starts a shared file: init
+  copies `X.example`, `X.sample`, `X.template` or `X.dist` to the shared `X`
+  (in any folder) and opens it for you to fill in once. Examples: `.env.example`,
+  `.dev.vars.example`, `config/database.yml.dist`. The same file in the main
+  checkout is not copied then, since it may be production.
+- Other ignored files in the main checkout are copied only if you say yes.
 
 ## Hooks
 

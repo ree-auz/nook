@@ -1,11 +1,11 @@
 import { copyFileSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
-import { gitTry, ignoredPaths, isTracked } from "./git.mjs";
+import { gitTry, ignoredPaths } from "./git.mjs";
 import { exists } from "./home.mjs";
 
 export const DEFAULT_INCLUDE = [".env*"];
-/** Tracked templates a development .env can start from. */
-export const TEMPLATE_FILES = [".env.example", ".env.sample", ".env.template", "dev.env"];
+/** Suffixes that mark a committed template: `.env.example` is the template for `.env`. */
+export const TEMPLATE_SUFFIX = /^(.+)\.(example|sample|template|dist)$/;
 /** Ignored secret files other tools use; init offers them one by one. */
 export const KNOWN_SECRET_FILES = [".dev.vars", "config/master.key", ".envrc"];
 
@@ -32,8 +32,21 @@ export function sharedCandidates(repo, patterns) {
   return files.filter((file) => ignored.has(file)).sort();
 }
 
+/**
+ * Committed templates for files git ignores, as { from, to }, in any folder:
+ * `.env.example` -> `.env`, `apps/api/.dev.vars.sample` -> `apps/api/.dev.vars`.
+ * A template whose target git does not ignore is a normal file and is left out.
+ */
 export function templateFiles(repo) {
-  return TEMPLATE_FILES.filter((file) => exists(join(repo, file)) && isTracked(repo, file));
+  const listed = gitTry(["ls-files", "-z"], { cwd: repo });
+  if (!listed.ok) return [];
+  const pairs = [];
+  for (const from of listed.out.split("\0").filter(Boolean)) {
+    const match = TEMPLATE_SUFFIX.exec(from);
+    if (match && !match[1].endsWith("/")) pairs.push({ from, to: match[1] });
+  }
+  const ignored = ignoredPaths(repo, pairs.map((pair) => pair.to));
+  return pairs.filter((pair) => ignored.has(pair.to)).sort((a, b) => a.to.localeCompare(b.to));
 }
 
 export function knownSecretFiles(repo, already) {

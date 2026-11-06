@@ -37,34 +37,27 @@ async function prepareShared(ctx, { repoPath, sharedDir, prompter }) {
   const candidates = sharedCandidates(repoPath, patterns);
   const templates = templateFiles(repoPath);
   const copies = [];
-  let fill = null;
-
-  const others = candidates.filter((file) => file !== ".env");
-  if (others.length && (await prompter.confirm(`Copy ${others.join(", ")} from the repository into the shared folder?`, true)))
+  const fill = [];
+  for (const template of templates) {
+    // A committed template is the safe start: the same file in the main checkout may be production.
+    copies.push({ from: join(repoPath, template.from), to: template.to });
+    fill.push(join(sharedDir, template.to));
+    ctx.note(`Starting shared ${template.to} from ${template.from}`);
+  }
+  const fromTemplate = new Set(templates.map((template) => template.to));
+  const others = candidates.filter((file) => !fromTemplate.has(file));
+  if (others.length && (await prompter.confirm(`Copy ${others.join(", ")} from the repository into the shared folder? (only development files, not production)`, false)))
     for (const file of others) copies.push({ from: join(repoPath, file), to: file });
 
-  const choices = templates.map((file) => ({ key: `template:${file}`, label: `Start .env from ${file} and fill it in` }));
-  if (candidates.includes(".env"))
-    choices.push({ key: "copy", label: "Copy the repository's .env (only if it is a development file, not production)" });
-  if (choices.length) {
-    choices.push({ key: "skip", label: "No .env for now" });
-    const pick = await prompter.choose("Where should new workspaces get .env from?", choices, choices[0].key === "copy" ? "skip" : choices[0].key);
-    if (pick === "copy") copies.push({ from: join(repoPath, ".env"), to: ".env" });
-    else if (pick.startsWith("template:")) {
-      copies.push({ from: join(repoPath, pick.slice(9)), to: ".env" });
-      fill = join(sharedDir, ".env");
-    }
-  }
-
-  for (const file of knownSecretFiles(repoPath, candidates))
+  for (const file of knownSecretFiles(repoPath, [...candidates, ...fromTemplate]))
     if (await prompter.confirm(`Found ignored ${file}. Share it with new workspaces too?`, false))
       copies.push({ from: join(repoPath, file), to: file });
 
   for (const copy of copies) copyFile(copy.from, join(sharedDir, copy.to));
   if (copies.length) ctx.note(`Shared files: ${copies.map((c) => c.to).join(", ")}`);
-  if (fill) {
-    if (openEditor(ctx, fill, prompter)) ctx.note(`Saved ${fill}`);
-    else ctx.note(`Fill in ${fill} once; every new workspace copies it`);
+  for (const file of fill) {
+    if (openEditor(ctx, file, prompter)) ctx.note(`Saved ${file}`);
+    else ctx.note(`Fill in ${file} once; every new workspace copies it`);
   }
 }
 
