@@ -1,5 +1,6 @@
-import { mkdirSync } from "node:fs";
-import { basename, join } from "node:path";
+import { mkdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, join, resolve } from "node:path";
 import spawn from "cross-spawn";
 import { detectAgents, which } from "../agents.mjs";
 import { NookError } from "../errors.mjs";
@@ -25,8 +26,20 @@ function openEditor(ctx, file, prompter) {
   return true;
 }
 
-async function prepareShared(ctx, { repoPath, sharedDir, prompter }) {
+/** The .env file a person points at with --env or by typing its path. */
+function envSource(ctx, file) {
+  const path = resolve(ctx.cwd, file.replace(/^~(?=$|[\\/])/, homedir()));
+  if (!exists(path) || !statSync(path).isFile()) throw new NookError(`No file at ${path}`);
+  return path;
+}
+
+async function prepareShared(ctx, { repoPath, sharedDir, prompter, envFile }) {
   mkdirSync(sharedDir, { recursive: true });
+  if (envFile) {
+    copyFile(envSource(ctx, envFile), join(sharedDir, ".env"));
+    ctx.note(`Shared .env copied from ${envFile} to ${sharedDir}`);
+    return;
+  }
   const current = listFiles(sharedDir);
   if (current.length) {
     ctx.note(`Shared files already in ${sharedDir}: ${current.join(", ")}`);
@@ -46,10 +59,24 @@ async function prepareShared(ctx, { repoPath, sharedDir, prompter }) {
   const choices = templates.map((file) => ({ key: `template:${file}`, label: `Start .env from ${file} and fill it in` }));
   if (candidates.includes(".env"))
     choices.push({ key: "copy", label: "Copy the repository's .env (only if it is a development file, not production)" });
+  if (prompter.interactive && !prompter.yes) choices.push({ key: "file", label: "Copy another file on this computer (type its path)" });
   if (choices.length) {
     choices.push({ key: "skip", label: "No .env for now" });
     const pick = await prompter.choose("Where should new workspaces get .env from?", choices, choices[0].key === "copy" ? "skip" : choices[0].key);
     if (pick === "copy") copies.push({ from: join(repoPath, ".env"), to: ".env" });
+    else if (pick === "file") {
+      for (;;) {
+        const typed = (await prompter.ask("Path of the .env file to copy")).replace(/^["']|["']$/g, "");
+        if (!typed) break;
+        try {
+          copies.push({ from: envSource(ctx, typed), to: ".env" });
+          break;
+        } catch (error) {
+          if (!(error instanceof NookError)) throw error;
+          ctx.note(error.message);
+        }
+      }
+    }
     else if (pick.startsWith("template:")) {
       copies.push({ from: join(repoPath, pick.slice(9)), to: ".env" });
       fill = join(sharedDir, ".env");
@@ -106,8 +133,9 @@ async function adoptWorktrees(ctx, { repoPath, repo, prompter }) {
 }
 
 /** nk init: run once per repository; safe to run again. */
-export async function init(ctx, { yes = false, name: nameFlag } = {}) {
+export async function init(ctx, { yes = false, name: nameFlag, env: envFile } = {}) {
   const prompter = createPrompter({ yes });
+  if (envFile) envSource(ctx, envFile);
   const repoPath = mainWorktree(ctx.cwd);
   if (isInside(repoPath, ctx.paths.home)) throw new NookError("Run nk init in the main repository, not in a workspace");
   const registered = Object.entries(ctx.config.repos).find(([, repo]) => samePath(repo.path, repoPath));
@@ -134,7 +162,7 @@ export async function init(ctx, { yes = false, name: nameFlag } = {}) {
   await setupAgents(ctx, prompter);
   const tools = toolStatus(ctx.env);
   ctx.note(`gh: ${tools.gh}; docker: ${tools.docker}`);
-  await prepareShared(ctx, { repoPath, sharedDir: join(ctx.paths.shared, name), prompter });
+  await prepareShared(ctx, { repoPath, sharedDir: join(ctx.paths.shared, name), prompter, envFile });
   ctx.save();
 
   const hookPrompter = yes ? { confirm: async () => true } : prompter;

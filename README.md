@@ -58,6 +58,9 @@ New worktrees do not contain ignored files such as `.env`. `nk init` prepares
 - When the repository has a template such as `.env.example`, init starts the
   shared `.env` from it, so a production `.env` in the main checkout is never
   copied unless you choose that.
+- When the `.env` you want lives outside the repository, point init at it:
+  `nk init --env <file>`, or pick "Copy another file" when init asks.
+  Init creates the shared folder itself.
 
 ## Hooks
 

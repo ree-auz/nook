@@ -185,3 +185,14 @@ test("init adopts nothing by default and keeps settings on a second run", (t) =>
   assert.deepEqual(Object.keys(config.repos), ["demo"]);
   assert.equal(Object.keys(config.repos.demo.workspaces).length, 0);
 });
+
+test("init --env copies a file from outside the repository as the shared .env", (t) => {
+  const { root, home, repo } = setup(t);
+  write(root, { "outside/dev.env": "TOKEN=fake-dev\n" });
+  assert.notEqual(nk(["init", "--yes", "--env", join(root, "missing.env")], { cwd: repo, home }).status, 0);
+  const r = nk(["init", "--yes", "--env", join(root, "outside", "dev.env")], { cwd: repo, home });
+  assert.equal(r.status, 0, r.all);
+  assert.equal(readFileSync(join(home, "shared", "demo", ".env"), "utf8"), "TOKEN=fake-dev\n");
+  assert.equal(nk(["-b", "with-env"], { cwd: repo, home }).status, 0);
+  assert.equal(readFileSync(join(home, "workspaces", "demo", "with-env", ".env"), "utf8"), "TOKEN=fake-dev\n");
+});
