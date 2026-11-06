@@ -74,7 +74,8 @@ export function openInWarp({ dir, id, inner, env = process.env, start = openUri 
     config,
     [`name = ${JSON.stringify(name)}`, `title = ${JSON.stringify(id)}`, "", "[[panes]]", 'id = "main"', 'type = "terminal"', `shell = ${JSON.stringify(shell)}`, `directory = ${JSON.stringify(dir)}`, `commands = [${JSON.stringify(command)}]`, ""].join("\n"),
   );
-  start(`warp://tab_config/${name}`);
+  // A new window: a tab added to a minimized Warp window stays out of sight.
+  start(`warp://tab_config/${name}?new_window=true`);
   return config;
 }
 
