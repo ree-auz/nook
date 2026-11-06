@@ -41,7 +41,7 @@ Tested on Windows. `--terminal` (Windows Terminal or Warp) is Windows only.
    - Linear runs the script in a terminal of its own (on Windows, Windows
      Terminal; the terminal choice in Linear's settings is macOS only). To
      work in Warp instead, add `"--terminal", "warp"` to `args`: the script
-     opens a new Warp window and closes Linear's.
+     opens a tab in Warp and closes Linear's window.
    - To let each issue pick its agent, label issues from one label group
      (say `Agent › Codex`, `Agent › Claude`) and add `"--agent-label", "Agent"`
      to `args`. Linear's prompt lists the issue's labels, and the script starts
@@ -77,9 +77,8 @@ pull request is merged, `nk clean` removes the workspace.
   command, through a
   [tab config](https://docs.warp.dev/terminal/windows/tab-configs/) written to
   `%APPDATA%\warp\Warp\data\tab_configs\` and opened with
-  `warp://tab_config/<name>?new_window=true` (a new window, since a tab
-  added to a minimized Warp window stays hidden; it deletes the config when
-  it starts). It then
+  `warp://tab_config/<name>` (the tab deletes it when it starts). A
+  minimized Warp window stays minimized. It then
   closes the window Linear opened.
 - `nk` runs with the same Node, never through `cmd.exe`, which would cut a
   multi-line prompt at its first line break.

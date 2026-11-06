@@ -48,7 +48,7 @@ test("for Warp, a tab config runs the launcher in the chosen folder", async (t) 
   const config = openInWarp({ dir: "D:\\Projects\\Pipit", id: "REE-270", inner, env: { APPDATA: appData }, start: (uri) => opened.push(uri) });
   assert.match(config, /nk-ree-270-\d+\.toml$/);
   const tab = parse(readFileSync(config, "utf8"));
-  assert.deepEqual(opened, [`warp://tab_config/${tab.name}?new_window=true`]);
+  assert.deepEqual(opened, [`warp://tab_config/${tab.name}`]);
   assert.equal(tab.title, "REE-270");
   assert.equal(tab.panes[0].directory, "D:\\Projects\\Pipit");
   assert.equal(
