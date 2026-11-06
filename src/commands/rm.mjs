@@ -12,6 +12,7 @@ import { toName } from "../names.mjs";
 import { hook } from "./workspace.mjs";
 
 function checkOccupied(ctx, path, scan) {
+  ctx.note("Checking for programs still using the folder...");
   const result = scan(path);
   if (result.unsupported) ctx.note(`Could not check for running programs: ${result.unsupported}`);
   if (result.processes.length)

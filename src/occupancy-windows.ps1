@@ -106,7 +106,24 @@ function Add-Occupant([int]$id, [string]$reason) {
     $found[$id].reasons += $reason
   }
 }
-$files = @(Get-ChildItem -LiteralPath $Root -File -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object FullName)
+# Dependency and VCS folders hold tens of thousands of files, which makes the
+# Restart Manager check take minutes. A program using them also has its working
+# directory in the workspace, which the scan above already catches.
+$skip = @('node_modules', '.git', '.pnpm-store', '.venv', 'venv', '__pycache__', 'target', '.gradle')
+function Get-WorkspaceFiles([string]$dir) {
+  try { $entries = [System.IO.Directory]::EnumerateFileSystemEntries($dir) } catch { return }
+  foreach ($entry in $entries) {
+    try { $attributes = [System.IO.File]::GetAttributes($entry) } catch { continue }
+    if ($attributes -band [System.IO.FileAttributes]::Directory) {
+      if ($attributes -band [System.IO.FileAttributes]::ReparsePoint) { continue }
+      if ($skip -contains [System.IO.Path]::GetFileName($entry)) { continue }
+      Get-WorkspaceFiles $entry
+    } else {
+      $entry
+    }
+  }
+}
+$files = @(Get-WorkspaceFiles $Root)
 try {
   foreach ($id in [Nook.RestartManager]::Holding($files)) { Add-Occupant $id 'open file' }
   $handleScan = 'Restart Manager'
