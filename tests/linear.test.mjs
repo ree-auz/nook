@@ -39,3 +39,20 @@ test("the Linear launcher creates the workspace once, then reopens it", (t) => {
   run();
   assert.deepEqual(JSON.parse(readFileSync(join(ws, "agent.json"), "utf8")), [], "reopened without the task prompt");
 });
+
+test("for Warp, a tab config runs the launcher in the chosen folder", async (t) => {
+  const { openInWarp } = await import("../integrations/linear/open-issue.mjs");
+  const appData = tempDir(t);
+  const opened = [];
+  const inner = ["C:\\Program Files\\nodejs\\node.exe", "C:\\nook\\open-issue.mjs", "--run", "C:\\Temp\\it's.md", "ree-270-x", "codex"];
+  const config = openInWarp({ dir: "D:\\Projects\\Pipit", id: "REE-270", inner, env: { APPDATA: appData }, start: (uri) => opened.push(uri) });
+  assert.match(config, /nk-ree-270-\d+\.toml$/);
+  const tab = parse(readFileSync(config, "utf8"));
+  assert.deepEqual(opened, [`warp://tab_config/${tab.name}`]);
+  assert.equal(tab.title, "REE-270");
+  assert.equal(tab.panes[0].directory, "D:\\Projects\\Pipit");
+  assert.equal(
+    tab.panes[0].commands[0],
+    `& 'C:\\Program Files\\nodejs\\node.exe' 'C:\\nook\\open-issue.mjs' '--run' 'C:\\Temp\\it''s.md' 'ree-270-x' 'codex' '--cleanup' '${config}'`,
+  );
+});

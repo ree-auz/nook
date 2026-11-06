@@ -6,7 +6,7 @@ issue's branch (running the repository's hooks) and starts your agent in it
 with Linear's prompt, in a new terminal tab. Nook itself knows nothing about
 Linear: this folder only connects the two.
 
-Supported so far: Windows with Windows Terminal.
+Supported so far: Windows, with Windows Terminal (default) or Warp.
 
 ## Set up once
 
@@ -36,8 +36,10 @@ Supported so far: Windows with Windows Terminal.
      shell setup.
    - `<nook folder>` is where Nook is installed: the cloned folder, or
      `npm root -g` + `\@ree-auz\nook`.
-   - The last argument is the agent: `codex`, `claude` or any command
+   - After the script comes the agent: `codex`, `claude` or any command
      `nk -b <name> <agent>` accepts.
+   - To open the tab in Warp instead of Windows Terminal, add
+     `"--terminal", "warp"` to `args`.
    - `env` is an allowlist: Linear only passes the variables listed here.
 
 ## Use
@@ -61,7 +63,11 @@ pull request is merged, `nk clean` removes the workspace.
   through the `LINEAR_*` variables.
 - The prompt is long Markdown with quotes and semicolons, so the script
   writes it to a temporary file instead of putting it on a command line.
-- It opens a tab with `wt.exe -w 0 new-tab -d <chosen folder>`, which runs the
-  same script again inside the tab. That second run reads and deletes the
-  file, then runs `nk` with the same Node, so the prompt never passes through
-  `cmd.exe`.
+- It opens a tab in the chosen folder that runs the same script again:
+  Windows Terminal with `wt.exe -w 0 new-tab -d <folder>`; Warp, whose
+  `warp://` links cannot run a command, through a
+  [tab config](https://docs.warp.dev/terminal/windows/tab-configs/) written to
+  `%APPDATA%\warp\Warp\data\tab_configs\` and opened with
+  `warp://tab_config/<name>`. The tab deletes that config when it starts.
+- Inside the tab the script reads and deletes the prompt file, then runs
+  `nk` with the same Node, so the prompt never passes through `cmd.exe`.
