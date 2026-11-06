@@ -101,6 +101,11 @@ works everywhere.
 Hooks see `NOOK_WORKSPACE`, `NOOK_PATH`, `NOOK_REPO`, `NOOK_SHARED` and
 `NOOK_PORT` (the first of 10 ports reserved for the workspace).
 
+Nook does not guess what a repository needs. To have an agent write the hooks
+(as in Conductor's "Configure your project"), give it the prompt in
+[docs/setup-hooks.md](docs/setup-hooks.md); the same page has examples for
+pnpm and npm, uv, and a Docker Compose project per workspace.
+
 Before hooks run for the first time, and again after one changes, Nook lists
 them (event and file, not the contents) and asks once: "Allow and remember?".
 Rerunning `nk init` also asks. Each run's output is saved in `~/nook/logs/`.

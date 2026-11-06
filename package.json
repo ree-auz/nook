@@ -10,6 +10,7 @@
   },
   "files": [
     "bin",
+    "docs",
     "integrations",
     "skills",
     "src"

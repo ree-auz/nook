@@ -1,6 +1,6 @@
 ---
 name: nook
-description: Use when working in a git worktree managed by nk (Nook), or when asked to create, list, open, remove or clean up workspaces with nk.
+description: Use when working in a git worktree managed by nk (Nook), when asked to create, list, open, remove or clean up workspaces with nk, or to set up a repository's .nook hooks.
 ---
 
 # Working with Nook (`nk`)
@@ -35,6 +35,14 @@ you are in one when your working directory is inside that path.
   you are inside it. Leave removal to the person or the tool that started you.
 - Hooks in `.nook/` run with the person's approval. Do not edit them to get
   past a failure; report the failure and the log path nk printed.
+
+## Setting up hooks
+
+When asked to set up Nook hooks for a repository, follow
+[docs/setup-hooks.md](https://github.com/ree-auz/nook/blob/main/docs/setup-hooks.md):
+inspect how the project is set up, write `.nook/create.mjs` (and `open.mjs`,
+`remove.mjs` only when needed), and report the commands each runs. Do not
+commit them; the person reviews them first.
 
 ## Commands
 
