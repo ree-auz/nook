@@ -10,7 +10,7 @@ import { describeOccupants, findOccupants, stopProcesses } from "../occupancy.mj
 import { createPrompter } from "../prompt.mjs";
 import { branchOf, resolveWorkspace } from "../context.mjs";
 import { toName } from "../names.mjs";
-import { hook } from "./workspace.mjs";
+import { approveHooks, hook } from "./workspace.mjs";
 
 function occupants(ctx, path, scan) {
   const result = scan(path);
@@ -99,6 +99,8 @@ export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun
     ctx.warn(`${plural(running.length, "program")} running in the workspace:`);
     for (const item of running) ctx.item(`${item.pid} ${item.name}`);
   }
+  // Hook approval comes before anything is stopped or deleted.
+  if (removeHook) await approveHooks(ctx, target, prompter);
   if (!yes) {
     const question = running.length ? `Stop ${running.length === 1 ? "it" : "them"} and remove ${name}?` : `Remove ${name}?`;
     let ok;

@@ -252,3 +252,28 @@ test("worktrees made by other tools are listed and removable; the main checkout 
   assert.equal(sh("git", ["branch", "--list", "ree-auz/REE-228"], repo), "");
   sh("git", ["worktree", "unlock", locked], repo);
 });
+
+test("a changed remove hook is approved before any program is stopped", async (t) => {
+  const { home, repo } = setup(t);
+  const run = (args) => nk(args, { cwd: repo, home });
+  assert.equal(run(["init", "--yes"]).status, 0);
+  const created = run(["-b", "busy"]);
+  assert.equal(created.status, 0, created.all);
+  const ws = created.out.trim();
+  write(repo, { ".nook/remove.mjs": "console.log('new remove hook')\n" });
+  sh("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", "commit", "-qam", "change remove hook"], repo);
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { cwd: ws, stdio: "ignore" });
+  t.after(() => child.kill());
+  await new Promise((done) => setTimeout(done, 500));
+
+  const r = run(["rm", "busy", "-y"]);
+  assert.equal(r.status, 1, r.all);
+  assert.match(r.err, /need your OK/);
+  assert.doesNotMatch(r.err, /Stopped/);
+  assert.equal(child.exitCode, null, "the program is still running");
+  assert.ok(existsSync(ws));
+  // Stop it before the temp folder is deleted: Windows cannot delete a folder a process runs in.
+  const exited = new Promise((done) => child.once("exit", done));
+  child.kill();
+  await exited;
+});
