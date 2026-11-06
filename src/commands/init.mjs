@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import spawn from "cross-spawn";
 import { detectAgents, which } from "../agents.mjs";
 import { NookError } from "../errors.mjs";
-import { exists, isInside, samePath } from "../home.mjs";
+import { isInside, samePath } from "../home.mjs";
 import { defaultBranch, listWorktrees, mainWorktree, remoteUrl } from "../git.mjs";
 import { ensureTrusted, findHooks } from "../hooks.mjs";
 import { assertName, suggestRepoName } from "../names.mjs";
