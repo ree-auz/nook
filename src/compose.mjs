@@ -87,3 +87,35 @@ export function leftoverComposeProjects(root, live, docker = dockerCli) {
   }
   return [...found].map(([name, dir]) => ({ name, dir }));
 }
+
+/**
+ * Every container, volume and network, and every image Compose built: what
+ * `nk hooks test` compares before and after the hooks. Null without Docker.
+ */
+export function dockerSnapshot(docker = dockerCli) {
+  const list = (args) => {
+    const result = docker(args);
+    if (!result.ok) return null;
+    return rows(result.out).map((row) => {
+      const [id, name] = row.split("\t");
+      return { id, name: name || id };
+    });
+  };
+  const snapshot = {
+    container: list(["container", "ls", "-a", "--format", "{{.ID}}\t{{.Names}}"]),
+    volume: list(["volume", "ls", "--format", "{{.Name}}"]),
+    network: list(["network", "ls", "--format", "{{.ID}}\t{{.Name}}"]),
+    image: list(["image", "ls", "--filter", `label=${PROJECT}`, "--format", "{{.ID}}\t{{.Repository}}:{{.Tag}}"]),
+  };
+  return Object.values(snapshot).some((items) => items === null) ? null : snapshot;
+}
+
+/** What `after` has that `before` did not: [{ kind, id, name }]. */
+export function snapshotDiff(before, after) {
+  const added = [];
+  for (const kind of Object.keys(after)) {
+    const known = new Set(before[kind].map((item) => item.id));
+    for (const item of after[kind]) if (!known.has(item.id)) added.push({ kind, ...item });
+  }
+  return added;
+}

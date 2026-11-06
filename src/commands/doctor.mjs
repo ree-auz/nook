@@ -5,6 +5,7 @@ import { exists, samePath } from "../home.mjs";
 import { gitTry, listWorktrees } from "../git.mjs";
 import { line, useColor } from "../ui.mjs";
 import { dockerCli, leftoverComposeProjects } from "../compose.mjs";
+import { uncheckedHooks } from "./hooks-test.mjs";
 import { HOOK_EVENTS, findHook, trustState } from "../hooks.mjs";
 import { gitVersion, toolStatus } from "../tools.mjs";
 
@@ -52,12 +53,12 @@ export function doctor(ctx, { docker = dockerCli } = {}) {
     ok(repo.path);
     const shared = join(ctx.paths.shared, repoName);
     (exists(shared) ? ok : warn)(`shared folder ${shared}${exists(shared) ? "" : " (missing)"}`);
-    for (const event of HOOK_EVENTS) {
-      const hook = findHook(repo.path, event);
-      if (!hook) continue;
-      const state = trustState(repo, hook);
-      (state === "trusted" ? ok : warn)(`hook .nook/${hook.name} ${state === "trusted" ? "allowed" : `${state}, will ask before running`}`);
-    }
+    const hooks = HOOK_EVENTS.map((event) => findHook(repo.path, event)).filter(Boolean);
+    const notAllowed = hooks.filter((hook) => trustState(repo, hook) !== "trusted").length;
+    const untested = uncheckedHooks(repo).length;
+    const issues = [notAllowed && `${notAllowed} not allowed yet`, untested && `${untested} not tested since changed`].filter(Boolean);
+    if (!hooks.length) ok("no hooks (nk hooks write <agent> has an agent write them)");
+    else (issues.length ? warn : ok)(`hooks ${hooks.map((hook) => hook.event).join(", ")}${issues.length ? `: ${issues.join(", ")} (see nk hooks)` : ""}`);
     const worktrees = listWorktrees(repo.path);
     for (const [name, ws] of Object.entries(repo.workspaces)) {
       const known = worktrees.find((w) => samePath(w.path, ws.path));

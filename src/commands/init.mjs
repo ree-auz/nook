@@ -87,8 +87,6 @@ function listOtherWorktrees(ctx, { repoPath, repo }) {
   for (const w of others) ctx.item(`${w.branch ?? "(detached)"}  ${w.path}`);
 }
 
-const SETUP_DOC = "https://github.com/ree-auz/nook/blob/main/docs/setup-hooks.md";
-
 /** nk init: run once per repository; safe to run again. */
 export async function init(ctx, { yes = false, name: nameFlag } = {}) {
   const prompter = createPrompter({ yes });
@@ -125,7 +123,7 @@ export async function init(ctx, { yes = false, name: nameFlag } = {}) {
   const hooks = findHooks(repoPath);
   await ensureTrusted({ repoName: name, repoConfig: repo, hooks, prompter: hookPrompter, save: () => ctx.save(), ui: ctx });
   if (yes && hooks.length) ctx.info(`Allowed ${hooks.map((h) => `.nook/${h.name}`).join(", ")} (--yes)`);
-  if (!hooks.length) ctx.info(`No .nook/ hooks yet. To have your agent write them, give it the prompt in ${SETUP_DOC}`);
+  if (!hooks.length) ctx.info("No .nook/ hooks yet. To have an agent write them: nk hooks write <agent>");
   ctx.save();
   ctx.ok(`Done. Config: ${ctx.paths.config}`);
   ctx.info("Next: nk -b <name> [agent]");

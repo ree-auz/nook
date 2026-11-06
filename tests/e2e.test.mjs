@@ -328,3 +328,18 @@ test("rm removes several workspaces after one check of all of them", (t) => {
   assert.ok(!existsSync(join(home, "workspaces", "demo", "two")));
   assert.ok(existsSync(join(home, "workspaces", "demo", "three")));
 });
+
+test("nk hooks write fills the prompt with what nk knows and never reads out values", (t) => {
+  const { home, repo } = setup(t);
+  write(repo, { "pnpm-lock.yaml": "", "compose.yaml": "services: {}\n" });
+  sh("git", ["add", "-A"], repo);
+  sh("git", ["commit", "-qm", "markers"], repo);
+  assert.equal(nk(["init", "--yes"], { cwd: repo, home }).status, 0);
+  write(join(home, "shared", "demo"), { ".env": "API_KEY=\nDB_PASSWORD=secret-value\n" });
+  const r = nk(["hooks", "write"], { cwd: repo, home });
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.out, /- compose\.yaml\n- pnpm-lock\.yaml/);
+  assert.match(r.out, /\.env \(empty: API_KEY\)/);
+  assert.match(r.out, /\.nook\/create\.mjs/);
+  assert.doesNotMatch(r.out, /secret-value/);
+});

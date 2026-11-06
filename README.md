@@ -17,7 +17,10 @@ repository's setup hooks, and can start a command-line agent inside it.
 | `nk ls [--json]` | List workspaces: uncommitted changes, commits ahead of and behind the default branch, PR and CI |
 | `nk rm <name>... [-n] [-y]` | Back up and remove one or more workspaces, asking once (`-n` shows what would happen, `-y` skips the question) |
 | `nk clean [-n] [-y]` | Remove every workspace whose work is merged |
-| `nk doctor` | Check the setup without changing anything |
+| `nk hooks` | The repository's `.nook` hooks: allowed, and tested since they last changed |
+| `nk hooks write [agent]` | An agent writes the hooks in a workspace of its own; without an agent, print the prompt |
+| `nk hooks test` | Run the hooks of the folder you are in, in a temporary workspace; fails if remove leaves anything behind |
+| `nk doctor` | Check nk's tools (node, git, gh, docker, agents) without changing anything |
 
 Like git, every command acts on the repository you are in: its main
 checkout or one of its workspaces. Outside a repository, `nk -b`, opening,
@@ -101,9 +104,27 @@ works everywhere.
 Hooks see `NOOK_WORKSPACE`, `NOOK_PATH`, `NOOK_REPO`, `NOOK_SHARED` and
 `NOOK_PORT` (the first of 10 ports reserved for the workspace).
 
-Nook does not guess what a repository needs. To have an agent write the hooks
-(as in Conductor's "Configure your project"), give it the prompt in
-[docs/setup-hooks.md](docs/setup-hooks.md); the same page has examples for
+### Having an agent write the hooks
+
+Nook does not guess what a repository needs; an agent reads it and writes the
+hooks, and nk checks them.
+
+- `nk hooks write <agent>` creates the workspace `nook-hooks` and starts the agent
+  with a prompt nk fills in: the files that show how the project is set up
+  (lockfiles, compose files, Makefile...), the shared files and which of their
+  keys are still empty (never their values), and the hooks already there.
+  `nk hooks write` without an agent prints the prompt.
+- `nk hooks test` runs the hooks of the folder you are in (the agent's
+  branch, before it is merged) in a temporary workspace: create, open twice,
+  then remove. It fails when a hook fails, when open cannot run twice, or when
+  remove leaves a Docker container, volume, network or built image behind.
+  The agent fixes the hooks until it passes.
+- Hooks that pass are recorded. When one changes later, `nk doctor` and
+  `nk rm` say it has not been checked since, so a remove hook that falls
+  behind create is caught when the hooks change, not when a removal leaves
+  something behind.
+
+[docs/setup-hooks.md](docs/setup-hooks.md) has the rules and examples for
 pnpm and npm, uv, and a Docker Compose project per workspace.
 
 Before hooks run for the first time, and again after one changes, Nook lists
@@ -136,9 +157,8 @@ also has containers started elsewhere (the main checkout's, for example) is
 kept. `nk doctor` lists Compose projects left behind by workspaces that no
 longer exist.
 
-So a workspace's files, its running programs and its Compose services need no
-`remove` hook. Write one only for what lives elsewhere without a label, such
-as a database created in a shared local server.
+This is a safety net: the `remove` hook should still undo everything `create`
+did, and `nk hooks test` checks that it does.
 
 ## Listing and cleaning up
 

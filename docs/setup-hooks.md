@@ -1,29 +1,22 @@
 # Setting up hooks with an agent
 
 Nook does not guess how a repository is set up. Projects differ too much: one
-needs `uv sync`, another restores a database snapshot. Like Conductor's
-"Configure your project", Nook gives you a prompt instead. Paste it into your
-agent in the main checkout. The agent reads the repository and writes
-`.nook/` hooks for you to review and commit.
+needs `uv sync`, another restores a database snapshot. An agent reads the
+repository and writes the hooks; nk gives it what it knows and checks the
+result.
 
-## The prompt
-
-```text
-Set up Nook hooks for this repository. Nook (nk) creates one git worktree per
-task and runs scripts from .nook/ in it. Read https://github.com/ree-auz/nook/blob/main/docs/setup-hooks.md
-for the rules and examples, then:
-
-1. Inspect how this project is set up: lockfiles, package.json scripts,
-   pyproject.toml, compose files, README and contributing docs, Makefile or
-   justfile, existing setup scripts.
-2. Write .nook/create.mjs (install dependencies, start per-workspace
-   services) and, only if needed, .nook/open.mjs (start stopped services
-   again). nk itself removes the workspace's files, its running programs and
-   the Docker Compose projects started in it. Write .nook/remove.mjs only for
-   something else the hooks create outside the folder.
-3. Tell me which commands each hook runs and anything I must fill in once,
-   such as values in ~/nook/shared/<repo>/.env. Do not commit; I will review.
-```
+1. `nk hooks write <agent>` (in the main checkout) creates the workspace
+   `nook-hooks` and starts the agent with a prompt that lists the files that
+   show how the project is set up, the shared files with their empty keys, and
+   the hooks already there. `nk hooks write` without an agent prints the prompt, for an agent
+   nk does not start.
+2. The agent writes `create` and `remove` as a pair, and `open` if needed.
+3. The agent runs `nk hooks test` in its workspace until it passes: the
+   hooks run in a temporary workspace (create, open twice, remove), and the
+   check fails on any leftover Docker container, volume, network or built
+   image.
+4. You review the commit and merge it. Hooks that passed are recorded; when
+   one changes later, `nk doctor` and `nk rm` ask for a new check.
 
 ## Rules for the hooks
 
@@ -36,10 +29,10 @@ for the rules and examples, then:
 - `create` runs once, after shared files such as `.env` are copied. `open`
   runs every time the workspace is opened, so it must be safe to run again.
   `remove` runs before the folder is deleted; when it fails nothing is deleted.
-- `nk rm` already stops programs running in the folder and removes the
-  Compose projects started inside it (found by Compose's own labels). A
-  `remove` hook is for anything else outside the folder, such as a database
-  created in a shared local server.
+- `remove` undoes everything `create` did outside the folder: containers,
+  volumes, networks, built images, databases created in a shared server.
+  `nk rm` also stops programs in the folder and, as a safety net, removes
+  Compose projects started in it; do not rely on that.
 - Never touch the main checkout or its services: do not read or copy its
   `.env`, and do not stop or remove its containers.
 - Servers and containers use ports from `NOOK_PORT` to `NOOK_PORT + 9`.
@@ -104,9 +97,11 @@ workspace later finds the same project.
 run("docker", "compose", "start");
 ```
 
-No `remove.mjs` is needed: `nk rm` finds the project by the folder Compose
-labels its containers with, and removes its containers, volumes, networks and
-built images.
+```js
+// .nook/remove.mjs: everything the project created, volumes and built images too
+const project = process.env.NOOK_WORKSPACE.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+run("docker", "compose", "--project-name", project, "down", "--volumes", "--rmi", "local", "--remove-orphans");
+```
 
 A fuller setup with a database per workspace also refuses the production
 project name in every hook, so a mistyped name can never start or stop the

@@ -40,9 +40,9 @@ you are in one when your working directory is inside that path.
 
 When asked to set up Nook hooks for a repository, follow
 [docs/setup-hooks.md](https://github.com/ree-auz/nook/blob/main/docs/setup-hooks.md):
-inspect how the project is set up, write `.nook/create.mjs` (and `open.mjs`,
-`remove.mjs` only when needed), and report the commands each runs. Do not
-commit them; the person reviews them first.
+`nk hooks write` prints what nk knows about the repository. Write `create` and
+`remove` as a pair (and `open` if needed), then run `nk hooks test` in your
+workspace and fix the hooks until it passes. Commit; do not push unless asked.
 
 ## Commands
 
@@ -53,7 +53,9 @@ commit them; the person reviews them first.
 | `nk ls --json` | Every workspace of this repository: `name`, `repo`, `path`, `port`, `changes`, `ahead`, `behind`, `pr` (`number`, `state`, `ci`) |
 | `nk rm <name>... -n` | Show what removing would back up and delete, change nothing |
 | `nk clean -n` | Show which workspaces are merged and would be removed |
-| `nk doctor` | Check the setup; exit 1 when something is broken |
+| `nk hooks test` | Run this folder's hooks in a temporary workspace; fails on leftovers |
+| `nk hooks` | The repository's hooks: allowed, tested |
+| `nk doctor` | Check nk's tools; exit 1 when something is broken |
 
 Pass `-y` to `nk rm` or `nk clean` only when the person asked for the
 removal. Both back up uncommitted changes and unpushed commits to

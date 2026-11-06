@@ -10,6 +10,9 @@ import { cleanWorkspaces } from "./commands/clean.mjs";
 import { listWorkspaces } from "./commands/ls.mjs";
 import { removeWorkspace } from "./commands/rm.mjs";
 import { createWorkspace, openWorkspace } from "./commands/workspace.mjs";
+import { writeHooks } from "./commands/hooks-write.mjs";
+import { listHooks } from "./commands/hooks.mjs";
+import { testHooks } from "./commands/hooks-test.mjs";
 
 const HELP = `nk - one home for your git worktrees
 
@@ -21,7 +24,12 @@ Usage:
   nk ls [--json]                          list workspaces: changes, commits, PR and CI
   nk rm <name>... [-n] [-y]               back up and remove workspaces
   nk clean [-n] [-y]                      remove workspaces whose work is merged
-  nk doctor                               check the setup, change nothing
+  nk hooks                                the repository's .nook hooks: allowed? tested?
+  nk hooks write [agent]                  an agent writes the hooks in a workspace of its own
+                                         (no agent: print the prompt to give one yourself)
+  nk hooks test                           run this folder's hooks in a temporary workspace;
+                                         fails if remove leaves anything behind
+  nk doctor                               check nk's tools: node, git, gh, docker, agents
 
 Options:
   --repo <short-name>   act on another registered repository (otherwise: the one you are in)
@@ -76,6 +84,14 @@ export async function run(argv, io = {}) {
       });
       if (!positionals.length) throw new NookError("Usage: nk rm <name>... [-n] [-y]");
       return removeWorkspace(ctx, { names: positionals, repo: values.repo, dryRun: values["dry-run"], yes: values.yes });
+    }
+    case "hooks": {
+      const { values, positionals } = parse(args.slice(1), { repo: { type: "string" }, yes: { type: "boolean", short: "y" } });
+      const [action, agent, ...rest] = positionals;
+      if (!action && !agent) return listHooks(ctx, values);
+      if (action === "write" && !rest.length) return writeHooks(ctx, { repo: values.repo, agent, extra, prompter: createPrompter({ yes: values.yes }) });
+      if (action === "test" && !agent) return testHooks(ctx, { repo: values.repo });
+      throw new NookError("Usage: nk hooks | nk hooks write [agent] | nk hooks test");
     }
     case "doctor":
       parse(args.slice(1), {});

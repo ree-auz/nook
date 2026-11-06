@@ -11,6 +11,7 @@ import { createPrompter } from "../prompt.mjs";
 import { branchOf, resolveWorkspace } from "../context.mjs";
 import { toName } from "../names.mjs";
 import { approveHooks, hook } from "./workspace.mjs";
+import { uncheckedHooks } from "./hooks-test.mjs";
 import { describeProject, dockerCli, findComposeProjects, removeComposeProject } from "../compose.mjs";
 
 function occupants(ctx, path, scan) {
@@ -89,6 +90,7 @@ async function planRemoval(ctx, input, { repoFlag, scan, prs, docker }) {
 
   ctx.info(`Removing ${target.name} @ ${ws.path}${state.present ? "" : " (folder already missing)"}${!branchName ? "" : branchName === target.name ? " and its branch" : ` and its branch ${branchName}`}`);
   if (removeHook) ctx.info(`Runs .nook/${removeHook.name} first`);
+  if (state.present && uncheckedHooks(repo).length) ctx.warn("The hooks changed since they were last tested; remove may leave things behind (run: nk hooks test)");
   const compose = findComposeProjects(ws.path, docker);
   for (const project of compose.projects) ctx.info(`Removes ${describeProject(project)}`);
   for (const name of compose.shared) ctx.warn(`Compose project ${name} also has containers outside this workspace; it is kept`);

@@ -1,0 +1,80 @@
+import { mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { NookError } from "../errors.mjs";
+import { exists } from "../home.mjs";
+import { git, gitTry } from "../git.mjs";
+import { findHooks, hookHash, runHook } from "../hooks.mjs";
+import { allocatePort } from "../ports.mjs";
+import { copyShared } from "../shared.mjs";
+import { resolveRepo, workspaceEnv } from "../context.mjs";
+import { describeOccupants, findOccupants, stopProcesses } from "../occupancy.mjs";
+import { dockerCli, dockerSnapshot, findComposeProjects, removeComposeProject, snapshotDiff } from "../compose.mjs";
+
+const CHECK_NAME = "nook-hooks-test";
+
+/** Hooks of the main checkout that changed since they last passed a check. */
+export function uncheckedHooks(repo) {
+  return findHooks(repo.path).filter((hook) => repo.checked?.[hook.name] !== hookHash(hook.file));
+}
+
+/**
+ * nk hooks test: runs the hooks of the folder you are in (an agent's
+ * branch, say) in a throwaway workspace: create, open twice, then remove.
+ * Passes when the hooks succeed, open can repeat, and Docker is back to what
+ * it was. Hooks that pass are recorded, so doctor and rm can tell when a hook
+ * changed without being checked again.
+ */
+export async function testHooks(ctx, { repo: repoFlag, docker = dockerCli, scan = findOccupants, stop = stopProcesses }) {
+  const { name: repoName, repo } = resolveRepo(ctx, repoFlag);
+  const top = gitTry(["rev-parse", "--show-toplevel"], { cwd: ctx.cwd });
+  const source = top.ok ? top.out : repo.path;
+  const hooks = findHooks(source);
+  if (!hooks.length) throw new NookError(`No hooks in ${join(source, ".nook")}. Write them first: nk hooks write <agent>`);
+  const byEvent = Object.fromEntries(hooks.map((hook) => [hook.event, hook]));
+
+  const path = join(ctx.paths.workspaces, repoName, CHECK_NAME);
+  if (exists(path)) throw new NookError(`${path} is left from an earlier check. Delete it, then run the check again`);
+  ctx.info(`Checking ${hooks.map((hook) => `.nook/${hook.name}`).join(", ")} from ${source} in a temporary workspace`);
+  const before = dockerSnapshot(docker);
+  if (!before) ctx.info("Docker is not available; only the hooks' exit codes are checked");
+
+  mkdirSync(join(ctx.paths.workspaces, repoName), { recursive: true });
+  const port = await allocatePort(ctx.config);
+  git(["worktree", "add", "--detach", path, git(["rev-parse", "HEAD"], { cwd: source })], { cwd: repo.path });
+  const target = { repoName, repo, name: CHECK_NAME, ws: { path, port } };
+  copyShared(join(ctx.paths.shared, repoName), path);
+
+  const problems = [];
+  const run = async (event, label = event) => {
+    const hook = byEvent[event];
+    if (!hook) return true;
+    const result = await runHook(hook, { cwd: path, env: workspaceEnv(ctx, target), logsDir: ctx.paths.logs, label: `${repoName}-${CHECK_NAME}`, output: ctx.err });
+    if (result.status === 0) return true;
+    problems.push(`${label} failed (exit ${result.status}). Log: ${result.log}`);
+    return false;
+  };
+  try {
+    if (await run("create")) if (await run("open")) await run("open", "open, run a second time,");
+  } finally {
+    await run("remove");
+    const running = scan(path).processes ?? [];
+    if (running.length) {
+      problems.push(`Programs were still running in the workspace after remove:\n${describeOccupants(running)}`);
+      await stop(running);
+    }
+    const after = before && dockerSnapshot(docker);
+    if (after)
+      for (const item of snapshotDiff(before, after)) problems.push(`remove left a Docker ${item.kind}: ${item.name}`);
+    // Clean up whatever is left, so the check itself leaves nothing behind.
+    for (const project of findComposeProjects(path, docker).projects) removeComposeProject(project, docker);
+    gitTry(["worktree", "remove", "--force", path], { cwd: repo.path });
+    if (exists(path)) rmSync(path, { recursive: true, force: true, maxRetries: 3 });
+    gitTry(["worktree", "prune"], { cwd: repo.path });
+  }
+
+  if (problems.length) throw new NookError(`The hooks did not pass:\n${problems.map((text) => `  ${text}`).join("\n")}`);
+  repo.checked = Object.fromEntries(hooks.map((hook) => [hook.name, hookHash(hook.file)]));
+  ctx.save();
+  ctx.ok(`The hooks passed: create, open twice and remove ran, and ${before ? "Docker is as it was" : "all exited with 0"}`);
+  return 0;
+}
