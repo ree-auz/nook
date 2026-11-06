@@ -27,7 +27,13 @@ Supported so far: Windows with Windows Terminal.
    }
    ```
 
-   - `path` is the absolute path of Node (`where node` prints it).
+   - `path` is the absolute path of Node (`where node` prints it). With a
+     version manager, use a path that stays put: for fnm,
+     `%APPDATA%\fnm\aliases\default\node.exe` written out in full (it follows
+     `fnm default`), not the temporary `fnm_multishells` folder. The script
+     puts that Node's folder first on PATH, so global npm commands such as
+     `codex` and `pnpm` are found even though Linear starts without your
+     shell setup.
    - `<nook folder>` is where Nook is installed: the cloned folder, or
      `npm root -g` + `\@ree-auz\nook`.
    - The last argument is the agent: `codex`, `claude` or any command

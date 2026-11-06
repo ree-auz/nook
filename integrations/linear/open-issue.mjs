@@ -8,22 +8,32 @@
 import { spawn, spawnSync } from "node:child_process";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizeName } from "../../src/names.mjs";
 
 const self = fileURLToPath(import.meta.url);
 const nk = fileURLToPath(new URL("../../bin/nk.mjs", import.meta.url));
 
+/**
+ * Puts this Node's folder first on PATH. With a version manager such as fnm
+ * or nvm, Linear starts without the shell setup that adds it, and global npm
+ * commands (the agent, pnpm for hooks) live next to node.exe.
+ */
+function withNodeOnPath(env = process.env) {
+  const key = Object.keys(env).find((name) => name.toUpperCase() === "PATH") ?? "PATH";
+  return { ...env, [key]: [dirname(process.execPath), env[key]].filter(Boolean).join(delimiter) };
+}
+
 /** Runs nk with this Node, so the prompt never passes through cmd.exe. */
 function runNk(args, opts = {}) {
-  return spawnSync(process.execPath, [nk, ...args], { stdio: "inherit", ...opts });
+  return spawnSync(process.execPath, [nk, ...args], { stdio: "inherit", env: withNodeOnPath(), ...opts });
 }
 
 function insideTab([file, branch, agent]) {
   const prompt = readFileSync(file, "utf8");
   rmSync(file, { force: true });
-  const listed = spawnSync(process.execPath, [nk, "ls", "--json"], { encoding: "utf8" });
+  const listed = spawnSync(process.execPath, [nk, "ls", "--json"], { encoding: "utf8", env: withNodeOnPath() });
   const existing = listed.status === 0 ? JSON.parse(listed.stdout).find((ws) => !ws.main && (ws.branch === branch || ws.name === normalizeName(branch))) : null;
   // Clicked again for the same issue: reopen the workspace without restarting the task.
   const result = existing ? runNk([existing.name, agent]) : runNk(["-b", branch, agent, "-p", prompt]);
