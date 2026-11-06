@@ -158,6 +158,11 @@ those programs and removes each workspace the way `nk rm` does (backup,
 `remove` hook, folder and branch). `-n` only shows
 the list; `-y` removes without asking.
 
+## Linear
+
+To open a Linear issue in a new workspace with one click, see
+[integrations/linear](integrations/linear/README.md).
+
 ## For agents
 
 [`skills/nook/SKILL.md`](skills/nook/SKILL.md) tells a coding agent how to work
