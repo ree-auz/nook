@@ -12,7 +12,7 @@ repository's setup hooks, and can start a command-line agent inside it.
 | Command | What it does |
 |---|---|
 | `nk init` | Register the current repository (once per repository; safe to rerun) |
-| `nk -b <name> [agent] [-p <prompt>]` | Create a workspace; start the agent if given |
+| `nk -b <name> [agent] [-p <prompt>] [-y]` | Create a workspace; start the agent if given (`-y` keeps a converted name without asking) |
 | `nk <name> [agent] [-p <prompt>]` | Open a workspace; start the agent if given |
 | `nk ls [--json]` | List workspaces: uncommitted changes, commits ahead of and behind the default branch, PR and CI |
 | `nk rm <name> [-n] [-y]` | Back up and remove a workspace (`-n` shows what would happen, `-y` skips the question) |

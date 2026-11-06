@@ -30,16 +30,23 @@ function runNk(args, opts = {}) {
   return spawnSync(process.execPath, [nk, ...args], { stdio: "inherit", env: withNodeOnPath(), ...opts });
 }
 
+/** Creates the issue's workspace and starts the agent, or reopens it. */
+function startWork({ branch, agent, prompt }) {
+  const listed = spawnSync(process.execPath, [nk, "ls", "--json"], { encoding: "utf8", env: withNodeOnPath() });
+  const existing = listed.status === 0 ? JSON.parse(listed.stdout).find((ws) => !ws.main && (ws.branch === branch || ws.name === normalizeName(branch))) : null;
+  // Clicked again for the same issue: reopen the workspace without restarting the task.
+  // -y: the branch name Linear suggests is converted without asking.
+  const result = existing ? runNk([existing.name, agent]) : runNk(["-b", branch, agent, "-y", "-p", prompt]);
+  process.exitCode = result.status ?? 1;
+}
+
+/** Inside a tab another terminal opened: the prompt comes in a file. */
 export function insideTab([file, branch, agent, ...more]) {
   const prompt = readFileSync(file, "utf8");
   rmSync(file, { force: true });
   // A Warp tab config written only for this launch.
   if (more[0] === "--cleanup" && more[1]) rmSync(more[1], { force: true });
-  const listed = spawnSync(process.execPath, [nk, "ls", "--json"], { encoding: "utf8", env: withNodeOnPath() });
-  const existing = listed.status === 0 ? JSON.parse(listed.stdout).find((ws) => !ws.main && (ws.branch === branch || ws.name === normalizeName(branch))) : null;
-  // Clicked again for the same issue: reopen the workspace without restarting the task.
-  const result = existing ? runNk([existing.name, agent]) : runNk(["-b", branch, agent, "-p", prompt]);
-  process.exitCode = result.status ?? 1;
+  startWork({ branch, agent, prompt });
 }
 
 /** Windows Terminal: -w 0 opens a tab in the most recent window (or a new window). */
@@ -85,6 +92,15 @@ function which(command) {
 const TERMINALS = { wt: openInWindowsTerminal, warp: openInWarp };
 
 /**
+ * Closes the terminal window Linear opened for this script, once the work
+ * runs in another terminal: its shell is this process's parent.
+ */
+function closeLinearWindow() {
+  const parent = spawnSync("tasklist.exe", ["/FI", `PID eq ${process.ppid}`, "/FO", "CSV", "/NH"], { encoding: "utf8", windowsHide: true });
+  if (/^"(powershell|pwsh|cmd)\.exe"/i.test(parent.stdout ?? "")) process.kill(process.ppid);
+}
+
+/**
  * The agent named by a label in Linear's prompt, which lists the issue's
  * labels as <label>Group › Name</label>: with group "Agent", an issue
  * labelled "Agent › Claude" gets `claude`.
@@ -105,17 +121,23 @@ function option(argv, name) {
 }
 
 function fromLinear(argv) {
-  const terminal = option(argv, "--terminal") ?? "wt";
+  const terminal = option(argv, "--terminal");
   const agent = agentFromLabels(process.env.LINEAR_PROMPT ?? "", option(argv, "--agent-label")) ?? option(argv, "--agent") ?? "codex";
-  const open = TERMINALS[terminal];
-  if (!open) throw new Error(`Unknown terminal "${terminal}"; use ${Object.keys(TERMINALS).join(" or ")}`);
   const { LINEAR_ISSUE_BRANCH_NAME: branch, LINEAR_WORK_DIR: dir, LINEAR_ISSUE_IDENTIFIER: id = "issue", LINEAR_PROMPT: prompt = "" } = process.env;
   if (!branch || !dir) throw new Error("LINEAR_ISSUE_BRANCH_NAME and LINEAR_WORK_DIR are missing; list them under env in coding-tools.json");
-  if (process.platform !== "win32") throw new Error("Only Windows is supported so far");
+  // Default: work in the terminal Linear opened for the script.
+  if (!terminal) {
+    process.chdir(dir);
+    return startWork({ branch, agent, prompt });
+  }
+  const open = TERMINALS[terminal];
+  if (!open) throw new Error(`Unknown terminal "${terminal}"; use ${Object.keys(TERMINALS).join(" or ")}, or leave --terminal out`);
+  if (process.platform !== "win32") throw new Error("--terminal only works on Windows so far");
   // The prompt is long Markdown with quotes and semicolons, so it travels in a file.
   const file = join(tmpdir(), `nk-linear-${id}-${process.pid}.md`);
   writeFileSync(file, prompt);
   open({ dir, id, inner: [process.execPath, self, "--run", file, branch, agent] });
+  closeLinearWindow();
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === self) {

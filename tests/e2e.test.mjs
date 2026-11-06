@@ -297,3 +297,11 @@ test("outside a repository nothing is created or removed unless --repo names one
   r = nk(["rm", "smoke", "-y"], { cwd: repo, home });
   assert.equal(r.status, 0, r.all);
 });
+
+test("-b -y keeps the converted name without asking", (t) => {
+  const { home, repo } = setup(t);
+  assert.equal(nk(["init", "--yes"], { cwd: repo, home }).status, 0);
+  const r = nk(["-b", "ree-9-修复：Login", "-y"], { cwd: repo, home });
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.out, /ree-9-login$/m);
+});

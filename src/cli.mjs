@@ -4,6 +4,7 @@ import { createContext } from "./context.mjs";
 import { NookError } from "./errors.mjs";
 import { doctor } from "./commands/doctor.mjs";
 import { init } from "./commands/init.mjs";
+import { createPrompter } from "./prompt.mjs";
 import { line, useColor } from "./ui.mjs";
 import { cleanWorkspaces } from "./commands/clean.mjs";
 import { listWorkspaces } from "./commands/ls.mjs";
@@ -14,7 +15,8 @@ const HELP = `nk - one home for your git worktrees
 
 Usage:
   nk init [--yes] [--name <short-name>]   register this repository (once per repository)
-  nk -b <name> [agent] [-p <prompt>]      create a workspace; start the agent if given
+  nk -b <name> [agent] [-p <prompt>] [-y] create a workspace; start the agent if given
+                                         (-y: keep the converted name without asking)
   nk <name> [agent] [-p <prompt>]         open a workspace; start the agent if given
   nk ls [--json]                          list workspaces: changes, commits, PR and CI
   nk rm <name> [-n] [-y]                  back up and remove a workspace
@@ -91,12 +93,13 @@ export async function run(argv, io = {}) {
         b: { type: "string", short: "b" },
         prompt: { type: "string", short: "p" },
         repo: { type: "string" },
+        yes: { type: "boolean", short: "y" },
       });
       const create = values.b !== undefined;
       const name = create ? values.b : positionals.shift();
       if (!name || positionals.length > 1) throw new NookError("Usage: nk [-b] <name> [agent] [-p <prompt>]");
       const options = { name, repo: values.repo, agent: positionals[0], prompt: values.prompt, extra };
-      return create ? createWorkspace(ctx, options) : openWorkspace(ctx, options);
+      return create ? createWorkspace(ctx, { ...options, prompter: createPrompter({ yes: values.yes }) }) : openWorkspace(ctx, options);
     }
   }
 }
