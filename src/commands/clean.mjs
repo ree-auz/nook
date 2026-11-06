@@ -10,6 +10,8 @@ import { createPrompter } from "../prompt.mjs";
 import { branchTip, contains } from "../status.mjs";
 import { collect } from "./ls.mjs";
 import { deleteWorkspace } from "./rm.mjs";
+import { approveHooks } from "./workspace.mjs";
+import { findHook } from "../hooks.mjs";
 
 const DAY = 24 * 60 * 60 * 1000;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -90,6 +92,9 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
     ctx.info("Dry run; nothing was removed");
     return 0;
   }
+  // Hook approval comes before anything is stopped or deleted.
+  const repos = new Map(remove.map(({ item }) => [item.repoName, item]));
+  for (const item of repos.values()) if (findHook(item.repo.path, "remove")) await approveHooks(ctx, item, prompter);
   if (!yes) {
     let ok;
     try {

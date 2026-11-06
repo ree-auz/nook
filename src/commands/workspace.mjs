@@ -11,6 +11,11 @@ import { createPrompter } from "../prompt.mjs";
 import { copyShared } from "../shared.mjs";
 import { resolveRepo, resolveWorkspace, workspaceEnv } from "../context.mjs";
 
+/** Asks once for hooks that are new or changed; nothing when all are allowed. */
+export function approveHooks(ctx, { repoName, repo }, prompter = createPrompter()) {
+  return ensureTrusted({ repoName, repoConfig: repo, hooks: findHooks(repo.path), prompter, save: () => ctx.save(), ui: ctx });
+}
+
 /**
  * Runs one hook of the repository in the workspace. Hooks are read from the
  * main checkout, like worktrunk reads its project config from where the
@@ -20,14 +25,7 @@ import { resolveRepo, resolveWorkspace, workspaceEnv } from "../context.mjs";
 export async function hook(ctx, target, event, { prompter = createPrompter() } = {}) {
   const found = findHook(target.repo.path, event);
   if (!found) return null;
-  await ensureTrusted({
-    repoName: target.repoName,
-    repoConfig: target.repo,
-    hooks: findHooks(target.repo.path),
-    prompter,
-    save: () => ctx.save(),
-    ui: ctx,
-  });
+  await approveHooks(ctx, target, prompter);
   const result = await runHook(found, {
     cwd: target.ws.path,
     env: workspaceEnv(ctx, target),
