@@ -11,7 +11,12 @@ import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 
-const ws = process.env.NOOK_PATH ?? process.cwd();
+// Only nk runs this, inside a workspace; never in the main checkout.
+if (!process.env.NOOK_PATH || !process.env.NOOK_WORKSPACE) {
+  console.error("Run by nk only (nk -b, nk <name>, nk rm, nk hooks test)");
+  process.exit(1);
+}
+const ws = process.env.NOOK_PATH;
 const firstPort = Number(process.env.NOOK_PORT);
 const slug = (text) => String(text).toLowerCase().replace(/[^a-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "");
 const prefix = slug("nook-" + basename(process.env.NOOK_REPO ?? "repo") + "-" + process.env.NOOK_WORKSPACE);
@@ -32,7 +37,8 @@ function withPorts(value, ports) {
 function sh(command, { cwd = ws, env = {}, check = true } = {}) {
   // Multi-line CI scripts are written for bash; on Windows, Git for Windows provides it.
   const shell = process.platform === "win32" && command.includes("\n") ? "bash" : true;
-  const result = spawnSync(command, { cwd, env: { ...process.env, ...env }, stdio: "inherit", shell });
+  // Any docker compose a step runs gets this workspace's own project, never the main checkout's.
+  const result = spawnSync(command, { cwd, env: { ...process.env, COMPOSE_PROJECT_NAME: prefix, ...env }, stdio: "inherit", shell });
   if (check && result.status !== 0) {
     console.error("Failed (exit " + result.status + "): " + command.split("\n")[0]);
     process.exit(result.status || 1);

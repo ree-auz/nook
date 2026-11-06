@@ -132,9 +132,25 @@ What `nk hooks write` takes from the CI job with the most setup in it:
 | `run:` steps with `if: always()` (cleanup) | remove runs them |
 | checkout, caches, uploads, tests, lint, builds | left out |
 
+CI runs on a throwaway machine; a developer machine also has the real
+database and other workspaces. So nk copies less than CI does, never more:
+
+- Only commands that install dependencies into the folder (`pnpm install`,
+  `npm ci`, `uv sync`, `pip install`...) are copied. A script, a `docker`
+  command or a migration is listed for review instead, since nk cannot tell
+  what it would touch here.
+- An `env:` value that points at a local port that is not one of CI's
+  services (say `localhost:5432` when CI starts Postgres itself), or at a
+  database elsewhere, is left out: on this machine it may be the real one.
+- Services get containers named after the workspace, on the workspace's own
+  ports, bound to 127.0.0.1. Every step runs with `COMPOSE_PROJECT_NAME` set
+  to the workspace's own project.
+- Generated hooks refuse to run unless nk runs them in a workspace, so they
+  never run in the main checkout.
+
 What it cannot translate (a CI expression such as `${{ secrets.X }}`, a step
-that runs only under a condition, an action it does not know) is listed, not
-guessed. `nk hooks write <agent>` does the same in a workspace of its own,
+that runs only under a condition, an action it does not know) is listed too,
+not guessed. `nk hooks write <agent>` does the same in a workspace of its own,
 `nook-hooks`, and starts the agent to finish those parts; the agent then runs
 `nk hooks test` until it passes and commits. Generated hooks start with a
 line saying so; `nk hooks write` replaces only those, never hooks written by

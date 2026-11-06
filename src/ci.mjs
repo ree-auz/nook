@@ -31,6 +31,24 @@ const TOOL_ACTIONS = [
 ];
 
 const EXPRESSION = /\$\{\{/;
+
+/**
+ * CI runs in a throwaway machine, so its steps may assume nothing else is
+ * there. On a developer machine the real database may be. Only commands that
+ * install dependencies into the workspace folder are copied; any other step
+ * (a script, docker, a migration) is listed for a person or agent to review.
+ */
+const INSTALL = /^(npm (ci|install|i)|pnpm (install|i|fetch)|yarn( install)?|bun install|corepack enable|uv sync|uv pip install|pip install|python3? -m pip install|poetry install|pipenv (install|sync)|bundle install|go mod download|cargo fetch|composer install|deno (cache|install)|(npx|pnpm exec|yarn) playwright install)(\s+[\w@./:=,+-]+)*$/;
+const SHELL_SYNTAX = /[;|&`$<>()\\]|\n/;
+
+export function isInstallCommand(command) {
+  const text = String(command).trim();
+  return !SHELL_SYNTAX.test(text) && INSTALL.test(text);
+}
+
+/** A database or queue address that is not one of CI's services: on this machine it may be a real one. */
+const SERVICE_URL = /\b(postgres(ql)?|mysql|mariadb|mongodb(\+srv)?|redis|rediss|amqp|nats|kafka):\/\//i;
+const LOCAL_PORT = /\b(localhost|127\.0\.0\.1|0\.0\.0\.0):(\d+)\b/g;
 const label = (step, index) => step.name || step.run?.split("\n")[0] || step.uses || `step ${index + 1}`;
 
 export function workflowFiles(repoPath) {
@@ -69,7 +87,7 @@ export function planJob(file, jobName, job, workflowEnv = {}) {
   const tools = [];
   const create = [];
   const remove = [];
-  const env = { ...plainEnv(workflowEnv, untranslated, "workflow env"), ...plainEnv(job.env, untranslated, `job ${jobName} env`) };
+  const rawEnv = { ...plainEnv(workflowEnv, untranslated, "workflow env"), ...plainEnv(job.env, untranslated, `job ${jobName} env`) };
 
   const services = [];
   for (const [name, service] of Object.entries(job.services ?? {})) {
@@ -85,6 +103,23 @@ export function planJob(file, jobName, job, workflowEnv = {}) {
       options: service.options && !EXPRESSION.test(service.options) ? String(service.options).trim().replace(/\s+/g, " ") : "",
     });
   }
+
+  const servicePorts = new Set(services.flatMap((service) => service.ports));
+  /** Drops values that could reach something outside the workspace's own services. */
+  const safeEnv = (values, where) => {
+    const kept = {};
+    for (const [key, value] of Object.entries(values)) {
+      const ports = [...value.matchAll(LOCAL_PORT)].map((match) => Number(match[2]));
+      const strayPort = ports.find((port) => !servicePorts.has(port));
+      if (strayPort !== undefined)
+        untranslated.push({ step: where, why: `${key} points at local port ${strayPort}, which is not a CI service; on this machine it may be a real database` });
+      else if (SERVICE_URL.test(value) && !ports.length)
+        untranslated.push({ step: where, why: `${key} is a service address outside the workspace` });
+      else kept[key] = value;
+    }
+    return kept;
+  };
+  const env = safeEnv(rawEnv, "env");
 
   let checking = false;
   (job.steps ?? []).forEach((step, index) => {
@@ -107,7 +142,8 @@ export function planJob(file, jobName, job, workflowEnv = {}) {
       return;
     }
     const target = cleanup ? remove : create;
-    if (!cleanup && (checking || CHECK_STEP.test(`${step.name ?? ""} ${step.run}`))) {
+    // Flags such as --no-audit say nothing about what a step is for.
+    if (!cleanup && (checking || CHECK_STEP.test(`${step.name ?? ""} ${step.run}`.replace(/(^|\s)--?[\w-]+(=\S*)?/g, " ")))) {
       checking = true;
       skipped.push({ step: name, why: "checks the code (tests, lint, build); not setup" });
       return;
@@ -120,7 +156,11 @@ export function planJob(file, jobName, job, workflowEnv = {}) {
       untranslated.push({ step: name, why: `runs only when ${condition}` });
       return;
     }
-    target.push({ name, run: String(step.run).trim(), ...(step["working-directory"] && { cwd: step["working-directory"] }), ...(step.env && { env: plainEnv(step.env, untranslated, name) }) });
+    if (!isInstallCommand(step.run)) {
+      untranslated.push({ step: name, why: "not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it" });
+      return;
+    }
+    target.push({ name, run: String(step.run).trim(), ...(step["working-directory"] && { cwd: step["working-directory"] }), ...(step.env && { env: safeEnv(plainEnv(step.env, untranslated, name), name) }) });
   });
 
   return { source: file, job: jobName, tools, env, services, create, remove, skipped, untranslated };

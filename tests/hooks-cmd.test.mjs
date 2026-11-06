@@ -108,30 +108,30 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
-      - run: node -e "require('fs').writeFileSync('setup.txt', 'done')"
+      - run: npm install --no-audit --no-fund
       - run: npm test
       - run: node -e "console.log('ci cleanup')"
         if: always()
 `;
 
 test("hooks write turns CI into hooks that pass hooks test; a CI change then stops nk -b", (t) => {
-  const { home, repo, run, state } = setup(t, { ".github/workflows/ci.yml": workflow, ".gitignore": "setup.txt\n.env\n" });
+  const { home, repo, run, state } = setup(t, { ".github/workflows/ci.yml": workflow, "package.json": '{"name":"demo","private":true}\n', ".gitignore": "package-lock.json\nnode_modules\n.env\n" });
   let r = run(["hooks", "write"]);
   assert.equal(r.status, 0, r.all);
   assert.match(r.err, /Wrote \.nook\/create\.mjs, \.nook\/open\.mjs, \.nook\/remove\.mjs from \.github\/workflows\/ci\.yml \(job test\)/);
   assert.match(r.err, /API_TOKEN comes from a CI expression/);
   assert.match(r.err, /Left out 2 CI-only steps/);
+  assert.match(r.err, /Not added; review these[^]*ci cleanup[^]*not a dependency install/);
 
   r = run(["hooks", "test"]);
   assert.equal(r.status, 0, r.all);
-  assert.match(r.all, /ci cleanup/);
   assert.deepEqual(state().containers, [], "remove deleted the service container");
 
   assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
   r = run(["-b", "feat"]);
   assert.equal(r.status, 0, r.all);
   const ws = join(home, "workspaces", "demo", "feat");
-  assert.equal(readFileSync(join(ws, "setup.txt"), "utf8"), "done");
+  assert.ok(existsSync(join(ws, "package-lock.json")), "create ran npm install in the workspace");
   const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;
   assert.match(readFileSync(join(ws, ".env"), "utf8"), new RegExp(`DATABASE_URL=postgres://postgres:postgres@localhost:${port}/app`));
   assert.ok(state().containers[0].args.join(" ").includes(`-p 127.0.0.1:${port}:5432`));

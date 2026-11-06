@@ -98,7 +98,7 @@ function report(ctx, result) {
   }
   if (plan.skipped.length) ctx.info(`Left out ${plan.skipped.length} CI-only steps (checkout, tests, lint, build, uploads)`);
   if (plan.untranslated.length) {
-    ctx.warn("Not translated; a person or an agent has to add these by hand:");
+    ctx.warn("Not added; review these and add what is safe by hand (or nk hooks write <agent>):");
     for (const item of plan.untranslated) ctx.item(`${item.step}: ${item.why}`);
   }
 }
