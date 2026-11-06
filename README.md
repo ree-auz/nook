@@ -21,6 +21,10 @@ repository's setup hooks, and can start a command-line agent inside it.
 Without an agent, `nk -b` and `nk <name>` print the workspace path, so
 `cd "$(nk my-branch)"` works. Arguments after `--` go to the agent.
 
+`nk init` records the agents it finds on PATH and asks nothing about them:
+each one starts with its own default command. To always pass extra
+arguments to one agent, set `args` under `[agents.<name>]` in `config.toml`.
+
 ## Home folder
 
 ```
