@@ -33,7 +33,7 @@ export function doctor(ctx) {
   if (!agents.length) warn("none recorded (nk init records them)");
   for (const [name, agent] of agents) {
     const found = agent.path && exists(agent.path) ? agent.path : which(name, ctx.env);
-    (found ? ok : warn)(`${name}${name === ctx.config.default_agent ? " (default)" : ""} ${found ?? "not found"}`);
+    (found ? ok : warn)(`${name} ${found ?? "not found"}`);
   }
 
   for (const [repoName, repo] of Object.entries(ctx.config.repos)) {

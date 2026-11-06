@@ -8,7 +8,7 @@ import { defaultBranch, listWorktrees, mainWorktree, remoteUrl } from "../git.mj
 import { HOOK_EVENTS, ensureTrusted, findHook } from "../hooks.mjs";
 import { assertName, nameProblem, suggestRepoName } from "../names.mjs";
 import { allocatePort } from "../ports.mjs";
-import { createPrompter, joinArgs, splitArgs } from "../prompt.mjs";
+import { createPrompter, splitArgs } from "../prompt.mjs";
 import { copyFile, includePatterns, knownSecretFiles, listFiles, sharedCandidates, templateFiles } from "../shared.mjs";
 import { toolStatus } from "../tools.mjs";
 
@@ -61,23 +61,18 @@ async function prepareShared(ctx, { repoPath, sharedDir, prompter }) {
   }
 }
 
-async function setupAgents(ctx, prompter) {
+/**
+ * Records the agents on PATH. Nothing is asked: each starts with its own
+ * default command, and `args` in config.toml can be edited later if wanted.
+ */
+function recordAgents(ctx) {
   const found = detectAgents(ctx.env);
-  ctx.note(found.length ? "Agents found:" : "No known agents found on PATH");
-  for (const agent of found) ctx.note(`  ${agent.name}  ${agent.version || "?"}  ${agent.path}`);
+  ctx.note(found.length ? "Agents found (start one with nk <name> <agent>):" : "No known agents found on PATH");
   for (const agent of found) {
-    const before = ctx.config.agents[agent.name]?.args ?? [];
-    const args = splitArgs(await prompter.ask(`Start arguments for ${agent.name} (empty for none)`, joinArgs(before)));
+    ctx.note(`  ${agent.name}  ${agent.version || "?"}  ${agent.path}`);
+    const args = ctx.config.agents[agent.name]?.args ?? [];
     ctx.config.agents[agent.name] = { path: agent.path, version: agent.version, args };
   }
-  const names = Object.keys(ctx.config.agents);
-  if (!names.length) return;
-  const fallback = names.includes(ctx.config.default_agent) ? ctx.config.default_agent : names[0];
-  ctx.config.default_agent = await prompter.choose(
-    "Default agent",
-    names.map((name) => ({ key: name, label: name })),
-    fallback,
-  );
 }
 
 async function adoptWorktrees(ctx, { repoPath, repo, prompter }) {
@@ -124,7 +119,7 @@ export async function init(ctx, { yes = false, name: nameFlag } = {}) {
   mkdirSync(join(ctx.paths.workspaces, name), { recursive: true });
 
   await adoptWorktrees(ctx, { repoPath, repo, prompter });
-  await setupAgents(ctx, prompter);
+  recordAgents(ctx);
   const tools = toolStatus(ctx.env);
   ctx.note(`gh: ${tools.gh}; docker: ${tools.docker}`);
   await prepareShared(ctx, { repoPath, sharedDir: join(ctx.paths.shared, name), prompter });
@@ -140,6 +135,6 @@ export async function init(ctx, { yes = false, name: nameFlag } = {}) {
   if (!exists(join(repoPath, ".nook"))) ctx.note("No .nook/ hooks in this repository");
   ctx.save();
   ctx.note(`Done. Config: ${ctx.paths.config}`);
-  ctx.note(`Next: nk -b <name>${ctx.config.default_agent ? ` [${ctx.config.default_agent}]` : ""}`);
+  ctx.note("Next: nk -b <name> [agent]");
   return 0;
 }
