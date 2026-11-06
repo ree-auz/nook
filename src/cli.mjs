@@ -19,7 +19,7 @@ Usage:
                                          (-y: keep the converted name without asking)
   nk <name> [agent] [-p <prompt>]         open a workspace; start the agent if given
   nk ls [--json]                          list workspaces: changes, commits, PR and CI
-  nk rm <name> [-n] [-y]                  back up and remove a workspace
+  nk rm <name>... [-n] [-y]               back up and remove workspaces
   nk clean [-n] [-y]                      remove workspaces whose work is merged
   nk doctor                               check the setup, change nothing
 
@@ -74,8 +74,8 @@ export async function run(argv, io = {}) {
         yes: { type: "boolean", short: "y" },
         repo: { type: "string" },
       });
-      if (positionals.length !== 1) throw new NookError("Usage: nk rm <name> [-n] [-y]");
-      return removeWorkspace(ctx, { name: positionals[0], repo: values.repo, dryRun: values["dry-run"], yes: values.yes });
+      if (!positionals.length) throw new NookError("Usage: nk rm <name>... [-n] [-y]");
+      return removeWorkspace(ctx, { names: positionals, repo: values.repo, dryRun: values["dry-run"], yes: values.yes });
     }
     case "doctor":
       parse(args.slice(1), {});

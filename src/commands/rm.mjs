@@ -58,8 +58,8 @@ export async function deleteWorkspace(ctx, target, { state, base, backupRoot, pr
   ctx.save();
 }
 
-/** nk rm <name> [-n] [-y] */
-export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun = false, yes = false, scan = findOccupants, stop = stopProcesses, prompter = createPrompter(), prs = githubPrs }) {
+/** What removing one workspace involves, checked before anything changes. */
+async function planRemoval(ctx, input, { repoFlag, scan, prs }) {
   const name = toName(input);
   const target = resolveWorkspace(ctx, name, repoFlag);
   const { repo, ws } = target;
@@ -69,12 +69,12 @@ export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun
     throw new NookError(`You are inside ${ws.path}. Change to another folder first, e.g. cd ${repo.path}`);
 
   const base = baseRef(repo.path, repo.default_branch);
-  const branchName = branchOf(name, ws);
+  const branchName = branchOf(target.name, ws);
   const state = inspectWorkspace({ repo: repo.path, path: ws.path, branch: branchName ?? "", base });
   const backupRoot = join(ctx.paths.backup, target.repoName);
   const removeHook = state.present ? findHook(repo.path, "remove") : null;
 
-  ctx.info(`Removing ${name} @ ${ws.path}${state.present ? "" : " (folder already missing)"}${!branchName ? "" : branchName === name ? " and its branch" : ` and its branch ${branchName}`}`);
+  ctx.info(`Removing ${target.name} @ ${ws.path}${state.present ? "" : " (folder already missing)"}${!branchName ? "" : branchName === target.name ? " and its branch" : ` and its branch ${branchName}`}`);
   if (removeHook) ctx.info(`Runs .nook/${removeHook.name} first`);
   if (needsBackup(state)) ctx.info(`Backs up changes to ${backupRoot}`);
   if (state.changes.length) {
@@ -89,20 +89,34 @@ export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun
     if (pr?.state === "merged") ctx.info(`PR #${pr.number} is merged`);
     else ctx.warn(`Branch ${branchName} is not merged into ${base}`);
   }
+  const running = state.present ? occupants(ctx, ws.path, scan) : [];
+  return { target, state, base, backupRoot, removeHook, running };
+}
+
+/** nk rm <name>... [-n] [-y]: checks every workspace first, asks once, then removes them in turn. */
+export async function removeWorkspace(ctx, { name, names = [name], repo: repoFlag, dryRun = false, yes = false, scan = findOccupants, stop = stopProcesses, prompter = createPrompter(), prs = githubPrs }) {
+  const plans = [];
+  for (const input of [...new Set(names.map(toName))]) plans.push(await planRemoval(ctx, input, { repoFlag, scan, prs }));
   if (dryRun) {
     ctx.info("Dry run; nothing was removed");
     return 0;
   }
 
-  const running = state.present ? occupants(ctx, ws.path, scan) : [];
+  const running = plans.flatMap((plan) => plan.running);
   if (running.length) {
-    ctx.warn(`${plural(running.length, "program")} running in the workspace:`);
+    ctx.warn(`${plural(running.length, "program")} running in ${plans.length === 1 ? "the workspace" : "these workspaces"}:`);
     for (const item of running) ctx.item(`${item.pid} ${item.name}`);
   }
   // Hook approval comes before anything is stopped or deleted.
-  if (removeHook) await approveHooks(ctx, target, prompter);
+  const approved = new Set();
+  for (const { target, removeHook } of plans)
+    if (removeHook && !approved.has(target.repoName)) {
+      approved.add(target.repoName);
+      await approveHooks(ctx, target, prompter);
+    }
   if (!yes) {
-    const question = running.length ? `Stop ${running.length === 1 ? "it" : "them"} and remove ${name}?` : `Remove ${name}?`;
+    const what = plans.map((plan) => plan.target.name).join(", ");
+    const question = running.length ? `Stop ${running.length === 1 ? "it" : "them"} and remove ${what}?` : `Remove ${what}?`;
     let ok;
     try {
       ok = await prompter.confirm(question, false);
@@ -113,12 +127,14 @@ export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun
   }
   if (running.length) {
     await stop(running);
-    const left = occupants(ctx, ws.path, scan);
+    const left = plans.flatMap((plan) => (plan.state.present ? occupants(ctx, plan.target.ws.path, scan) : []));
     if (left.length) throw new NookError(`Could not stop:\n${describeOccupants(left)}\nNothing was removed`);
     ctx.ok(`Stopped ${plural(running.length, "program")}`);
   }
 
-  await deleteWorkspace(ctx, target, { state, base, backupRoot, prompter, scan });
-  ctx.ok(`Removed ${name}`);
+  for (const { target, state, base, backupRoot } of plans) {
+    await deleteWorkspace(ctx, target, { state, base, backupRoot, prompter, scan });
+    ctx.ok(`Removed ${target.name}`);
+  }
   return 0;
 }

@@ -15,7 +15,7 @@ repository's setup hooks, and can start a command-line agent inside it.
 | `nk -b <name> [agent] [-p <prompt>] [-y]` | Create a workspace; start the agent if given (`-y` keeps a converted name without asking) |
 | `nk <name> [agent] [-p <prompt>]` | Open a workspace; start the agent if given |
 | `nk ls [--json]` | List workspaces: uncommitted changes, commits ahead of and behind the default branch, PR and CI |
-| `nk rm <name> [-n] [-y]` | Back up and remove a workspace (`-n` shows what would happen, `-y` skips the question) |
+| `nk rm <name>... [-n] [-y]` | Back up and remove one or more workspaces, asking once (`-n` shows what would happen, `-y` skips the question) |
 | `nk clean [-n] [-y]` | Remove every workspace whose work is merged |
 | `nk doctor` | Check the setup without changing anything |
 

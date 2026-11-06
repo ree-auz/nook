@@ -305,3 +305,21 @@ test("-b -y keeps the converted name without asking", (t) => {
   assert.equal(r.status, 0, r.all);
   assert.match(r.out, /ree-9-login$/m);
 });
+
+test("rm removes several workspaces after one check of all of them", (t) => {
+  const { home, repo } = setup(t);
+  const run = (args) => nk(args, { cwd: repo, home });
+  assert.equal(run(["init", "--yes"]).status, 0);
+  for (const name of ["one", "two", "three"]) assert.equal(run(["-b", name]).status, 0);
+
+  let r = run(["rm", "one", "missing", "-y"]);
+  assert.equal(r.status, 1, "an unknown name stops everything");
+  assert.match(r.err, /No workspace named "missing"/);
+  assert.ok(existsSync(join(home, "workspaces", "demo", "one")), "nothing removed before every name checked out");
+
+  r = run(["rm", "one", "two", "-y"]);
+  assert.equal(r.status, 0, r.all);
+  assert.ok(!existsSync(join(home, "workspaces", "demo", "one")));
+  assert.ok(!existsSync(join(home, "workspaces", "demo", "two")));
+  assert.ok(existsSync(join(home, "workspaces", "demo", "three")));
+});
