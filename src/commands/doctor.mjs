@@ -5,7 +5,7 @@ import { exists, samePath } from "../home.mjs";
 import { gitTry, listWorktrees } from "../git.mjs";
 import { line, useColor } from "../ui.mjs";
 import { dockerCli, leftoverComposeProjects } from "../compose.mjs";
-import { uncheckedHooks } from "./test-hooks.mjs";
+import { uncheckedHooks } from "./check-hooks.mjs";
 import { HOOK_EVENTS, findHook, trustState } from "../hooks.mjs";
 import { gitVersion, toolStatus } from "../tools.mjs";
 

@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import spawn from "cross-spawn";
 import { isInside } from "./home.mjs";
 
@@ -11,7 +12,8 @@ const PROJECT = "com.docker.compose.project";
 const WORKING_DIR = "com.docker.compose.project.working_dir";
 
 export function dockerCli(args) {
-  const result = spawn.sync("docker", args, { encoding: "utf8", timeout: 60000, windowsHide: true });
+  // Run from the home folder, so Docker never holds a workspace folder open while it is being deleted.
+  const result = spawn.sync("docker", args, { cwd: homedir(), encoding: "utf8", timeout: 60000, windowsHide: true });
   if (result.error) return { ok: false, out: "", err: result.error.code === "ENOENT" ? "not installed" : result.error.message };
   return { ok: result.status === 0, out: result.stdout ?? "", err: (result.stderr ?? "").trim() };
 }
