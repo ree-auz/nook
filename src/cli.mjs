@@ -5,6 +5,7 @@ import { NookError } from "./errors.mjs";
 import { doctor } from "./commands/doctor.mjs";
 import { init } from "./commands/init.mjs";
 import { line, useColor } from "./ui.mjs";
+import { cleanWorkspaces } from "./commands/clean.mjs";
 import { listWorkspaces } from "./commands/ls.mjs";
 import { removeWorkspace } from "./commands/rm.mjs";
 import { createWorkspace, openWorkspace } from "./commands/workspace.mjs";
@@ -15,8 +16,9 @@ Usage:
   nk init [--yes] [--name <short-name>]   register this repository (once per repository)
   nk -b <name> [agent] [-p <prompt>]      create a workspace; start the agent if given
   nk <name> [agent] [-p <prompt>]         open a workspace; start the agent if given
-  nk ls                                   list workspaces and whether they have changes
+  nk ls [--json]                          list workspaces: changes, commits, PR and CI
   nk rm <name> [-n] [-y]                  back up and remove a workspace
+  nk clean [-n] [-y]                      remove workspaces whose work is merged
   nk doctor                               check the setup, change nothing
 
 Options:
@@ -61,7 +63,7 @@ export async function run(argv, io = {}) {
       return init(ctx, values);
     }
     case "ls": {
-      const { values } = parse(args.slice(1), { repo: { type: "string" } });
+      const { values } = parse(args.slice(1), { repo: { type: "string" }, json: { type: "boolean" } });
       return listWorkspaces(ctx, values);
     }
     case "rm": {
@@ -76,8 +78,14 @@ export async function run(argv, io = {}) {
     case "doctor":
       parse(args.slice(1), {});
       return doctor(ctx);
-    case "clean":
-      throw new NookError("nk clean is not available yet");
+    case "clean": {
+      const { values } = parse(args.slice(1), {
+        "dry-run": { type: "boolean", short: "n" },
+        yes: { type: "boolean", short: "y" },
+        repo: { type: "string" },
+      });
+      return cleanWorkspaces(ctx, { repo: values.repo, dryRun: values["dry-run"], yes: values.yes });
+    }
     default: {
       const { values, positionals } = parse(args, {
         b: { type: "string", short: "b" },

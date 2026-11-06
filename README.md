@@ -14,8 +14,9 @@ repository's setup hooks, and can start a command-line agent inside it.
 | `nk init` | Register the current repository (once per repository; safe to rerun) |
 | `nk -b <name> [agent] [-p <prompt>]` | Create a workspace; start the agent if given |
 | `nk <name> [agent] [-p <prompt>]` | Open a workspace; start the agent if given |
-| `nk ls` | List workspaces and whether they have changes |
+| `nk ls [--json]` | List workspaces: uncommitted changes, commits ahead of and behind the default branch, PR and CI |
 | `nk rm <name> [-n] [-y]` | Back up and remove a workspace (`-n` shows what would happen, `-y` skips the question) |
+| `nk clean [-n] [-y]` | Remove every workspace whose work is merged |
 | `nk doctor` | Check the setup without changing anything |
 
 Without an agent, `nk -b` and `nk <name>` print the workspace path, so
@@ -104,6 +105,38 @@ working directory is inside it), asks once, then:
    (`changes.patch`, `untracked/`, `commits.bundle`);
 3. runs the `remove` hook;
 4. deletes the folder and the branch.
+
+## Listing and cleaning up
+
+`nk ls` shows each workspace's uncommitted changes, its commits ahead (↑) and
+behind (↓) the default branch, and its pull request with the CI result
+(`#12 open running`, `#12 merged`). PR and CI come from the
+[GitHub CLI](https://cli.github.com/) (`gh`), one request per repository. When
+`gh` is missing or not logged in, the PR column stays empty and a ▲ line says
+why. Merged rows are dimmed. `nk ls --json` prints the same data for scripts
+and agents.
+
+`nk clean` removes workspaces whose work is merged, like worktrunk's
+`wt step prune` and gh-poi. It first fetches the default branch, then counts a
+workspace as merged when:
+
+- its pull request is merged and the local branch has nothing the PR did not
+  have (so squash merges count), or
+- it has no pull request, its branch is already in the default branch, and it
+  is at least a day old (so a workspace you just created is kept).
+
+It keeps workspaces with uncommitted changes, with programs running in them,
+with commits made after the PR was merged, and the one you are inside. It lists
+what it would remove and what it keeps, asks once, then removes each one the
+way `nk rm` does (backup, `remove` hook, folder and branch). `-n` only shows
+the list; `-y` removes without asking.
+
+## For agents
+
+[`skills/nook/SKILL.md`](skills/nook/SKILL.md) tells a coding agent how to work
+inside a workspace: the `NOOK_*` variables, which ports to use, which files not
+to commit, and which commands are safe to run. Copy the `skills/nook` folder
+into your agent's skills folder (for example `~/.claude/skills/`).
 
 ## Development
 

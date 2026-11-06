@@ -19,6 +19,41 @@ function occupants(ctx, path, scan) {
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+/**
+ * Backs up what would be lost, runs the remove hook, deletes the folder and
+ * the branch, and forgets the workspace. Programs must already be stopped.
+ */
+export async function deleteWorkspace(ctx, target, { state, base, backupRoot, prompter, scan = findOccupants }) {
+  const { repo, ws, name } = target;
+  if (needsBackup(state)) {
+    const dir = createBackup({ repo: repo.path, path: ws.path, branch: name, base, state, dir: backupDir(backupRoot, name) });
+    ctx.ok(`Backed up changes to ${dir}`);
+  }
+  if (state.present) {
+    try {
+      await hook(ctx, target, "remove", { prompter });
+    } catch (error) {
+      if (error instanceof NookError) error.message += "\nStopped; nothing was deleted";
+      throw error;
+    }
+    const after = occupants(ctx, ws.path, scan);
+    if (after.length) throw new NookError(`Programs started running in ${ws.path}:\n${describeOccupants(after)}\nNothing was deleted`);
+    const removed = gitTry(["worktree", "remove", "--force", ws.path], { cwd: repo.path });
+    if (!removed.ok && exists(ws.path)) {
+      try {
+        rmSync(ws.path, { recursive: true, force: true, maxRetries: 3 });
+      } catch (error) {
+        throw new NookError(`Could not delete ${ws.path}: ${error.message}`);
+      }
+    }
+  }
+  gitTry(["worktree", "prune"], { cwd: repo.path });
+  const branch = gitTry(["branch", "-D", name], { cwd: repo.path });
+  if (!branch.ok && !/not found/i.test(branch.err)) ctx.warn(`Branch ${name} was kept: ${branch.err}`);
+  delete repo.workspaces[name];
+  ctx.save();
+}
+
 /** nk rm <name> [-n] [-y] */
 export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun = false, yes = false, scan = findOccupants, stop = stopProcesses, prompter = createPrompter() }) {
   const name = toName(input);
@@ -69,33 +104,7 @@ export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun
     ctx.ok(`Stopped ${plural(running.length, "program")}`);
   }
 
-  if (needsBackup(state)) {
-    const dir = createBackup({ repo: repo.path, path: ws.path, branch: name, base, state, dir: backupDir(backupRoot, name) });
-    ctx.ok(`Backed up changes to ${dir}`);
-  }
-  if (state.present) {
-    try {
-      await hook(ctx, target, "remove", { prompter });
-    } catch (error) {
-      if (error instanceof NookError) error.message += "\nStopped; nothing was deleted";
-      throw error;
-    }
-    const after = occupants(ctx, ws.path, scan);
-    if (after.length) throw new NookError(`Programs started running in ${ws.path}:\n${describeOccupants(after)}\nNothing was deleted`);
-    const removed = gitTry(["worktree", "remove", "--force", ws.path], { cwd: repo.path });
-    if (!removed.ok && exists(ws.path)) {
-      try {
-        rmSync(ws.path, { recursive: true, force: true, maxRetries: 3 });
-      } catch (error) {
-        throw new NookError(`Could not delete ${ws.path}: ${error.message}`);
-      }
-    }
-  }
-  gitTry(["worktree", "prune"], { cwd: repo.path });
-  const branch = gitTry(["branch", "-D", name], { cwd: repo.path });
-  if (!branch.ok && !/not found/i.test(branch.err)) ctx.warn(`Branch ${name} was kept: ${branch.err}`);
-  delete repo.workspaces[name];
-  ctx.save();
+  await deleteWorkspace(ctx, target, { state, base, backupRoot, prompter, scan });
   ctx.ok(`Removed ${name}`);
   return 0;
 }
