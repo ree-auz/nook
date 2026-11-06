@@ -1,0 +1,7 @@
+{
+  "openIssue": {
+    "path": "C:\\Program Files\\nodejs\\node.exe",
+    "args": ["D:\\Workspace\\Projects\\nook\\integrations\\linear\\open-issue.mjs", "codex"],
+    "env": ["LINEAR_ISSUE_IDENTIFIER", "LINEAR_ISSUE_BRANCH_NAME", "LINEAR_PROMPT", "LINEAR_WORK_DIR"]
+  }
+}

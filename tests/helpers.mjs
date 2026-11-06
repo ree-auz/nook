@@ -8,7 +8,7 @@ const bin = fileURLToPath(new URL("../bin/nk.mjs", import.meta.url));
 
 export function tempDir(t) {
   const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "nook-test-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5 }));
+  t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 }));
   return dir;
 }
 

@@ -1,5 +1,6 @@
-import { statSync } from "node:fs";
-import { delimiter, extname, isAbsolute, join } from "node:path";
+import { readFileSync, statSync } from "node:fs";
+import { delimiter, dirname, extname, isAbsolute, join } from "node:path";
+import { NookError } from "./errors.mjs";
 import spawn from "cross-spawn";
 
 /** Command-line coding agents init looks for. Any other command works too. */
@@ -55,7 +56,36 @@ export function agentCommand(config, agent, { prompt, extra = [] } = {}, env = p
   return { command, args };
 }
 
-export function launch({ command, args }, { cwd, env }) {
+/**
+ * The program behind an npm .cmd shim on Windows, read the way npm's own
+ * read-cmd-shim does: the quoted path after %dp0% (or %~dp0) followed by %*.
+ */
+export function cmdShimTarget(shimPath) {
+  let text;
+  try {
+    text = readFileSync(shimPath, "utf8");
+  } catch {
+    return null;
+  }
+  const match = /"%(?:~dp0|dp0%)\\?([^"]+?)"\s+%\*/.exec(text);
+  return match ? join(dirname(shimPath), ...match[1].split(/[\\/]/)) : null;
+}
+
+/**
+ * cmd.exe ends a command at the first line break, so a .cmd agent would get
+ * only the first line of a multi-line prompt. Run the program behind an npm
+ * shim directly instead.
+ */
+export function windowsDirect({ command, args }, platform = process.platform) {
+  if (platform !== "win32" || !/\.(cmd|bat)$/i.test(command) || !args.some((arg) => /[\r\n]/.test(arg))) return { command, args };
+  const target = cmdShimTarget(command);
+  if (target && /\.(c|m)?js$/i.test(target) && isFile(target)) return { command: process.execPath, args: [target, ...args] };
+  if (target && /\.exe$/i.test(target) && isFile(target)) return { command: target, args };
+  throw new NookError(`${command} runs through cmd.exe, which cannot pass a prompt with line breaks; put the prompt on one line`);
+}
+
+export function launch(spec, { cwd, env }) {
+  const { command, args } = windowsDirect(spec);
   const result = spawn.sync(command, args, { cwd, env, stdio: "inherit" });
   if (result.error) throw result.error;
   return result.status ?? 1;

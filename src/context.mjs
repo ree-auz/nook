@@ -61,15 +61,19 @@ function requireRepo(ctx, name) {
   return { name, repo };
 }
 
-/** Repository for creating a workspace: --repo, then the current folder, then the only one. */
+/**
+ * The repository a command acts on: --repo, else the one the current folder
+ * belongs to (its main checkout or one of its workspaces). Like git and
+ * worktrunk, nothing is guessed outside a repository.
+ */
 export function resolveRepo(ctx, flag) {
   if (flag) return requireRepo(ctx, flag);
   const fromCwd = repoFromCwd(ctx);
   if (fromCwd) return requireRepo(ctx, fromCwd);
-  const names = Object.keys(ctx.config.repos);
-  if (names.length === 1) return requireRepo(ctx, names[0]);
-  if (!names.length) throw new NookError("No repository yet. Run nk init inside a repository first");
-  throw new NookError(`Several repositories are registered (${names.join(", ")}); run nk inside one or pass --repo`);
+  if (!Object.keys(ctx.config.repos).length) throw new NookError("No repository yet. Run nk init inside a repository first");
+  throw new NookError(
+    `Not inside a registered repository. Run nk in the repository or one of its workspaces, or pass --repo (${Object.keys(ctx.config.repos).join(", ")})`,
+  );
 }
 
 /**
@@ -108,21 +112,13 @@ export function repoWorkspaces(repoName, repo) {
   return items;
 }
 
-/** An existing workspace by name: its branch or folder name, converted the same way. */
+/** An existing workspace of the current repository (or --repo) by name: its branch or folder name, converted the same way. */
 export function resolveWorkspace(ctx, name, flag) {
-  const candidates = [];
-  const preferred = flag ?? repoFromCwd(ctx);
-  for (const [repoName, repo] of Object.entries(ctx.config.repos)) {
-    if (flag && repoName !== flag) continue;
-    const items = repoWorkspaces(repoName, repo);
-    const hit = items.find((item) => item.name === name) ?? items.find((item) => normalizeName(basename(item.ws.path)) === name);
-    if (hit) candidates.push(hit);
-  }
-  if (flag) requireRepo(ctx, flag);
-  const pick = candidates.find((c) => c.repoName === preferred) ?? (candidates.length === 1 ? candidates[0] : null);
-  if (pick) return pick;
-  if (!candidates.length) throw new NookError(`No workspace named "${name}". Create it with: nk -b ${name}`);
-  throw new NookError(`"${name}" exists in ${candidates.map((c) => c.repoName).join(", ")}; pass --repo`);
+  const { name: repoName, repo } = resolveRepo(ctx, flag);
+  const items = repoWorkspaces(repoName, repo);
+  const hit = items.find((item) => item.name === name) ?? items.find((item) => normalizeName(basename(item.ws.path)) === name);
+  if (hit) return hit;
+  throw new NookError(`No workspace named "${name}" in ${repoName}. Create it with: nk -b ${name}`);
 }
 
 /** The git branch of a workspace: its name, unless the branch had characters a name cannot use. */

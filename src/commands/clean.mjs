@@ -8,6 +8,7 @@ import { inspectWorkspace, isMerged } from "../backup.mjs";
 import { describeOccupants, findOccupants, stopProcesses } from "../occupancy.mjs";
 import { createPrompter } from "../prompt.mjs";
 import { branchTip, contains } from "../status.mjs";
+import { resolveRepo } from "../context.mjs";
 import { collect } from "./ls.mjs";
 import { deleteWorkspace } from "./rm.mjs";
 import { approveHooks } from "./workspace.mjs";
@@ -48,13 +49,12 @@ function createdAt(path) {
 
 /** nk clean [-n] [-y]: remove workspaces whose work is merged. */
 export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes = false, prs = githubPrs, scan = findOccupants, stop = stopProcesses, prompter = createPrompter(), now = Date.now() } = {}) {
-  if (repoFlag && !ctx.config.repos[repoFlag]) throw new NookError(`Unknown repository "${repoFlag}"`);
-  for (const [name, repo] of Object.entries(ctx.config.repos)) {
-    if ((repoFlag && name !== repoFlag) || !remoteUrl(repo.path)) continue;
+  const { name, repo } = resolveRepo(ctx, repoFlag);
+  if (remoteUrl(repo.path)) {
     const fetched = gitTry(["fetch", "--quiet", "origin", repo.default_branch], { cwd: repo.path });
     if (!fetched.ok) ctx.warn(`Could not fetch origin/${repo.default_branch} for ${name}; using what is local`);
   }
-  const { items, problems } = await collect(ctx, { repo: repoFlag, prs });
+  const { items, problems } = await collect(ctx, { repo: name, prs });
   for (const problem of problems) ctx.warn(`Only checks merges in git: ${problem}`);
 
   const remove = [];
