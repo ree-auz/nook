@@ -3,10 +3,10 @@
 Linear's **Work on issue → Custom script** can run a local command for an
 issue. With the files here, one click creates a Nook workspace on the
 issue's branch (running the repository's hooks) and starts your agent in it
-with Linear's prompt, in a new terminal tab. Nook itself knows nothing about
-Linear: this folder only connects the two.
+with Linear's prompt, in the terminal Linear opens for the script. Nook
+itself knows nothing about Linear: this folder only connects the two.
 
-Supported so far: Windows with Windows Terminal.
+Tested on Windows. `--terminal` (Windows Terminal or Warp) is Windows only.
 
 ## Set up once
 
@@ -21,7 +21,7 @@ Supported so far: Windows with Windows Terminal.
    {
      "openIssue": {
        "path": "C:\\Program Files\\nodejs\\node.exe",
-       "args": ["<nook folder>\\integrations\\linear\\open-issue.mjs", "codex"],
+       "args": ["<nook folder>\\integrations\\linear\\open-issue.mjs", "--agent", "codex"],
        "env": ["LINEAR_ISSUE_IDENTIFIER", "LINEAR_ISSUE_BRANCH_NAME", "LINEAR_PROMPT", "LINEAR_WORK_DIR"]
      }
    }
@@ -36,8 +36,17 @@ Supported so far: Windows with Windows Terminal.
      shell setup.
    - `<nook folder>` is where Nook is installed: the cloned folder, or
      `npm root -g` + `\@ree-auz\nook`.
-   - The last argument is the agent: `codex`, `claude` or any command
-     `nk -b <name> <agent>` accepts.
+   - `--agent` is the agent to start: `codex` (the default), `claude` or any
+     command `nk -b <name> <agent>` accepts.
+   - Linear runs the script in a terminal of its own (on Windows, Windows
+     Terminal; the terminal choice in Linear's settings is macOS only). To
+     work in Warp instead, add `"--terminal", "warp"` to `args`: the script
+     opens a tab in Warp and closes Linear's window.
+   - To let each issue pick its agent, label issues from one label group
+     (say `Agent › Codex`, `Agent › Claude`) and add `"--agent-label", "Agent"`
+     to `args`. Linear's prompt lists the issue's labels, and the script starts
+     the agent named by that group's label (lowercased, spaces as `-`), or the
+     `--agent` one when the issue has none.
    - `env` is an allowlist: Linear only passes the variables listed here.
 
 ## Use
@@ -47,9 +56,10 @@ asks you to **Choose a directory**: pick the repository's main checkout (the
 folder where you ran `nk init`). Nook uses it only to know which repository
 the issue belongs to; nothing runs there.
 
-A Windows Terminal tab opens in that folder and runs
-`nk -b <issue branch> <agent> -p <Linear's prompt>`. Choosing the same issue
-again reopens its workspace and starts the agent without the prompt.
+The terminal runs `nk -b <issue branch> <agent> -y -p <Linear's prompt>` in
+that folder (`-y` keeps the converted workspace name without asking).
+Choosing the same issue again reopens its workspace and starts the agent
+without the prompt.
 
 Linear's GitHub integration moves the issue along as the branch and its pull
 request change, because the branch name holds the issue identifier. After the
@@ -57,11 +67,18 @@ pull request is merged, `nk clean` removes the workspace.
 
 ## How it works
 
-- Linear runs `open-issue.mjs` without a window and passes the issue
+- Linear opens a terminal, runs `open-issue.mjs` in it and passes the issue
   through the `LINEAR_*` variables.
-- The prompt is long Markdown with quotes and semicolons, so the script
-  writes it to a temporary file instead of putting it on a command line.
-- It opens a tab with `wt.exe -w 0 new-tab -d <chosen folder>`, which runs the
-  same script again inside the tab. That second run reads and deletes the
-  file, then runs `nk` with the same Node, so the prompt never passes through
-  `cmd.exe`.
+- By default the script runs `nk` right there, with the same Node.
+- With `--terminal`, the prompt is long Markdown with quotes and semicolons,
+  so the script writes it to a temporary file and opens a tab in the chosen
+  folder that runs the same script again: Windows Terminal with
+  `wt.exe -w 0 new-tab -d <folder>`; Warp, whose `warp://` links cannot run a
+  command, through a
+  [tab config](https://docs.warp.dev/terminal/windows/tab-configs/) written to
+  `%APPDATA%\warp\Warp\data\tab_configs\` and opened with
+  `warp://tab_config/<name>` (the tab deletes it when it starts). A
+  minimized Warp window stays minimized. It then
+  closes the window Linear opened.
+- `nk` runs with the same Node, never through `cmd.exe`, which would cut a
+  multi-line prompt at its first line break.
