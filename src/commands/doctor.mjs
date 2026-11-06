@@ -3,17 +3,19 @@ import { join } from "node:path";
 import { which } from "../agents.mjs";
 import { exists, samePath } from "../home.mjs";
 import { gitTry, listWorktrees } from "../git.mjs";
+import { line, useColor } from "../ui.mjs";
 import { HOOK_EVENTS, findHook, trustState } from "../hooks.mjs";
 import { gitVersion, toolStatus } from "../tools.mjs";
 
 /** nk doctor: checks only, changes nothing. Exit 1 when something is broken. */
 export function doctor(ctx) {
   let broken = 0;
-  const ok = (text) => ctx.print(`  ok    ${text}`);
-  const warn = (text) => ctx.print(`  warn  ${text}`);
+  const color = useColor(ctx.out, ctx.env);
+  const ok = (text) => ctx.print(`  ${line("ok", text, color)}`);
+  const warn = (text) => ctx.print(`  ${line("warn", text, color)}`);
   const bad = (text) => {
     broken++;
-    ctx.print(`  FAIL  ${text}`);
+    ctx.print(`  ${line("fail", text, color)}`);
   };
 
   ctx.print("Basics");
