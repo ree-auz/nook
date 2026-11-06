@@ -18,7 +18,7 @@ repository's setup hooks, and can start a command-line agent inside it.
 | `nk rm <name>... [-n] [-y]` | Back up and remove one or more workspaces, asking once (`-n` shows what would happen, `-y` skips the question) |
 | `nk clean [-n] [-y]` | Remove every workspace whose work is merged |
 | `nk hooks` | The repository's `.nook` hooks: allowed, and tested since they last changed |
-| `nk hooks write [agent]` | An agent writes the hooks in a workspace of its own; without an agent, print the prompt |
+| `nk hooks write [agent]` | Write the hooks from the repository's CI; with an agent, in a workspace of its own where the agent finishes what CI could not tell |
 | `nk hooks test` | Run the hooks of the folder you are in, in a temporary workspace; fails if remove leaves anything behind |
 | `nk doctor` | Check nk's tools (node, git, gh, docker, agents) without changing anything |
 
@@ -104,25 +104,51 @@ works everywhere.
 Hooks see `NOOK_WORKSPACE`, `NOOK_PATH`, `NOOK_REPO`, `NOOK_SHARED` and
 `NOOK_PORT` (the first of 10 ports reserved for the workspace).
 
-### Having an agent write the hooks
+### Writing the hooks from CI
 
-Nook does not guess what a repository needs; an agent reads it and writes the
-hooks, and nk checks them.
+CI already says, step by step, how a clean machine gets the project running,
+and it is kept working because it runs on every change. Nook turns it into
+hooks without AI, and tests them.
 
-- `nk hooks write <agent>` creates the workspace `nook-hooks` and starts the agent
-  with a prompt nk fills in: the files that show how the project is set up
-  (lockfiles, compose files, Makefile...), the shared files and which of their
-  keys are still empty (never their values), and the hooks already there.
-  `nk hooks write` without an agent prints the prompt.
-- `nk hooks test` runs the hooks of the folder you are in (the agent's
-  branch, before it is merged) in a temporary workspace: create, open twice,
-  then remove. It fails when a hook fails, when open cannot run twice, or when
-  remove leaves a Docker container, volume, network or built image behind.
-  The agent fixes the hooks until it passes.
-- Hooks that pass are recorded. When one changes later, `nk doctor` and
-  `nk rm` say it has not been checked since, so a remove hook that falls
-  behind create is caught when the hooks change, not when a removal leaves
-  something behind.
+The whole cycle:
+
+```
+nk init                     once per repository
+nk hooks write              hooks from CI (GitHub Actions)
+nk hooks test               run them in a temporary workspace; nothing may be left behind
+nk -b <name> codex          new workspace; nk <name> codex reopens one
+nk ls                       PR and CI of every workspace; merge or close on GitHub
+nk clean | nk rm <name>     remove merged or chosen workspaces
+```
+
+What `nk hooks write` takes from the CI job with the most setup in it:
+
+| In CI | In the hooks |
+|---|---|
+| `actions/setup-node`, `setup-python`, `pnpm/action-setup`, `astral-sh/setup-uv`... | create checks the tool is installed and warns about another version |
+| `run:` steps before the first test, lint or build step | create runs them in the workspace |
+| `services:` (a database, say) | create starts one container per workspace on the workspace's own ports; open starts it again; remove deletes it with its volumes |
+| `env:` | added to the workspace's `.env`, with `localhost:<CI port>` changed to the workspace's port |
+| `run:` steps with `if: always()` (cleanup) | remove runs them |
+| checkout, caches, uploads, tests, lint, builds | left out |
+
+What it cannot translate (a CI expression such as `${{ secrets.X }}`, a step
+that runs only under a condition, an action it does not know) is listed, not
+guessed. `nk hooks write <agent>` does the same in a workspace of its own,
+`nook-hooks`, and starts the agent to finish those parts; the agent then runs
+`nk hooks test` until it passes and commits. Generated hooks start with a
+line saying so; `nk hooks write` replaces only those, never hooks written by
+hand.
+
+`nk hooks test` runs the hooks of the folder you are in (the agent's branch,
+before it is merged) in a temporary workspace: create, open twice, then
+remove. It fails when a hook fails, when open cannot run twice, or when
+remove leaves a Docker container, volume, network or built image behind.
+
+A passing test records the hooks and the CI files. If either changes, `nk -b`
+stops before creating a workspace (pass `--untested` to start anyway), and
+`nk <name>`, `nk hooks`, `nk doctor` and `nk rm` say so: run `nk hooks write`
+again for a CI change, then `nk hooks test`.
 
 [docs/setup-hooks.md](docs/setup-hooks.md) has the rules and examples for
 pnpm and npm, uv, and a Docker Compose project per workspace.

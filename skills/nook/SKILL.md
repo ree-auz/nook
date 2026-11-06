@@ -38,11 +38,13 @@ you are in one when your working directory is inside that path.
 
 ## Setting up hooks
 
-When asked to set up Nook hooks for a repository, follow
-[docs/setup-hooks.md](https://github.com/ree-auz/nook/blob/main/docs/setup-hooks.md):
-`nk hooks write` prints what nk knows about the repository. Write `create` and
-`remove` as a pair (and `open` if needed), then run `nk hooks test` in your
-workspace and fix the hooks until it passes. Commit; do not push unless asked.
+When asked to set up Nook hooks: if you were started by `nk hooks write
+<agent>`, nk has already generated hooks from CI; finish what its prompt lists
+as not translated. Otherwise run `nk hooks write` first. Follow
+[docs/setup-hooks.md](https://github.com/ree-auz/nook/blob/main/docs/setup-hooks.md),
+run `nk hooks test` in your workspace and fix the hooks until it passes.
+Delete the first line of a generated hook you edit. Commit; do not push
+unless asked.
 
 ## Commands
 

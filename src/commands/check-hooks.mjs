@@ -8,6 +8,7 @@ import { allocatePort } from "../ports.mjs";
 import { copyShared } from "../shared.mjs";
 import { resolveRepo, workspaceEnv } from "../context.mjs";
 import { describeOccupants, findOccupants, stopProcesses } from "../occupancy.mjs";
+import { ciHash } from "../ci.mjs";
 import { dockerCli, dockerSnapshot, findComposeProjects, removeComposeProject, snapshotDiff } from "../compose.mjs";
 
 const CHECK_NAME = "nook-hooks-test";
@@ -15,6 +16,21 @@ const CHECK_NAME = "nook-hooks-test";
 /** Hooks of the main checkout that changed since they last passed a check. */
 export function uncheckedHooks(repo) {
   return findHooks(repo.path).filter((hook) => repo.checked?.[hook.name] !== hookHash(hook.file));
+}
+
+/** CI changed since the hooks last passed a test (only known once a test has passed). */
+export function ciChanged(repo) {
+  return Boolean(repo.checked_ci) && ciHash(repo.path) !== repo.checked_ci;
+}
+
+/**
+ * What changed since nk hooks test last passed, as short phrases; empty when
+ * nothing did. `tested` says whether a test ever passed for this repository.
+ */
+export function setupChanges(repo) {
+  const changes = uncheckedHooks(repo).map((hook) => `.nook/${hook.name}`);
+  if (ciChanged(repo)) changes.push("the CI configuration");
+  return { tested: Boolean(repo.checked), changes };
 }
 
 /**
@@ -74,6 +90,9 @@ export async function testHooks(ctx, { repo: repoFlag, docker = dockerCli, scan 
 
   if (problems.length) throw new NookError(`The hooks did not pass:\n${problems.map((text) => `  ${text}`).join("\n")}`);
   repo.checked = Object.fromEntries(hooks.map((hook) => [hook.name, hookHash(hook.file)]));
+  const ci = ciHash(source);
+  if (ci) repo.checked_ci = ci;
+  else delete repo.checked_ci;
   ctx.save();
   ctx.ok(`The hooks passed: create, open twice and remove ran, and ${before ? "Docker is as it was" : "all exited with 0"}`);
   return 0;

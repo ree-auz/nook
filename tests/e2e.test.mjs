@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { parse } from "smol-toml";
 import { makeRepo, nk, sh, tempDir, write } from "./helpers.mjs";
+import { setupPrompt } from "../src/commands/write-hooks.mjs";
 
 const agentScript =
   "require('fs').writeFileSync('agent.txt', JSON.stringify({ args: process.argv.slice(1), ws: process.env.NOOK_WORKSPACE, port: process.env.NOOK_PORT }))";
@@ -329,17 +330,19 @@ test("rm removes several workspaces after one check of all of them", (t) => {
   assert.ok(existsSync(join(home, "workspaces", "demo", "three")));
 });
 
-test("nk hooks write fills the prompt with what nk knows and never reads out values", (t) => {
+test("the agent's prompt carries what nk knows and never reads out values", (t) => {
   const { home, repo } = setup(t);
-  write(repo, { "pnpm-lock.yaml": "", "compose.yaml": "services: {}\n" });
+  write(repo, { "pnpm-lock.yaml": "", "compose.yaml": "services: {}\n", ".github/workflows/ci.yml": "on: push\n" });
   sh("git", ["add", "-A"], repo);
   sh("git", ["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "markers"], repo);
-  assert.equal(nk(["init", "--yes"], { cwd: repo, home }).status, 0);
   write(join(home, "shared", "demo"), { ".env": "API_KEY=\nDB_PASSWORD=secret-value\n" });
-  const r = nk(["hooks", "write"], { cwd: repo, home });
-  assert.equal(r.status, 0, r.all);
-  assert.match(r.out, /- compose\.yaml\n- pnpm-lock\.yaml/);
-  assert.match(r.out, /\.env \(empty: API_KEY\)/);
-  assert.match(r.out, /\.nook\/create\.mjs/);
-  assert.doesNotMatch(r.out, /secret-value/);
+  const ctx = { paths: { shared: join(home, "shared") } };
+  const generated = { written: ["create.mjs"], plan: { source: ".github/workflows/ci.yml", job: "test", untranslated: [{ step: "deploy key", why: "uses a CI expression" }] } };
+  const prompt = setupPrompt(ctx, { repoName: "demo", repo: { path: repo }, generated });
+  assert.match(prompt, /nk already wrote \.nook\/create\.mjs from \.github\/workflows\/ci\.yml \(job test\)/);
+  assert.match(prompt, /- deploy key: uses a CI expression/);
+  assert.match(prompt, /CI configuration:\n- \.github\/workflows\/ci\.yml/);
+  assert.match(prompt, /- compose\.yaml\n- pnpm-lock\.yaml/);
+  assert.match(prompt, /\.env \(empty: API_KEY\)/);
+  assert.doesNotMatch(prompt, /secret-value/);
 });

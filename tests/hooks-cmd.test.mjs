@@ -5,14 +5,25 @@ import test from "node:test";
 import { parse } from "smol-toml";
 import { makeRepo, nk, sh, tempDir, write } from "./helpers.mjs";
 
-// A stand-in for the docker CLI that keeps volumes in a JSON file.
+// A stand-in for the docker CLI: volumes and containers kept in a JSON file.
 const fakeDocker = `import { existsSync, readFileSync, writeFileSync } from "node:fs";
 const file = process.env.FAKE_DOCKER_STATE;
-const state = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : [];
-const [kind, verb, name] = process.argv.slice(2);
-if (kind === "volume" && verb === "create") state.push(name);
-if (kind === "volume" && verb === "rm") state.splice(state.indexOf(process.argv.at(-1)), 1);
-if (kind === "volume" && verb === "ls") console.log(state.join("\\n"));
+const state = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : { volumes: [], containers: [] };
+const args = process.argv.slice(2);
+const [kind, verb] = args;
+const has = (name) => state.containers.some((c) => c.name === name);
+const print = (lines) => lines.length && console.log(lines.join("\\n"));
+if (kind === "volume" && verb === "create") state.volumes.push(args[2]);
+else if (kind === "volume" && verb === "rm") state.volumes = state.volumes.filter((v) => v !== args.at(-1));
+else if (kind === "volume" && verb === "ls") print(state.volumes);
+else if (kind === "run") {
+  const name = args[args.indexOf("--name") + 1];
+  if (has(name)) process.exitCode = 125;
+  else state.containers.push({ name, args });
+} else if (kind === "container" && verb === "inspect") process.exitCode = has(args[2]) ? 0 : 1;
+else if (kind === "inspect") has(args.at(-1)) ? console.log("healthy") : (process.exitCode = 1);
+else if (kind === "rm") state.containers = state.containers.filter((c) => c.name !== args.at(-1));
+else if (kind === "container" && verb === "ls" && !args.some((a) => a.includes("working_dir"))) print(state.containers.map((c) => c.name + "\\t" + c.name));
 writeFileSync(file, JSON.stringify(state));
 `;
 
@@ -43,7 +54,7 @@ test("check passes when remove undoes create, and records the hooks", (t) => {
   const r = run(["hooks", "test"]);
   assert.equal(r.status, 0, r.all);
   assert.match(r.err, /The hooks passed/);
-  assert.deepEqual(state(), []);
+  assert.deepEqual(state().volumes, []);
   const config = parse(readFileSync(join(home, "config.toml"), "utf8"));
   assert.deepEqual(Object.keys(config.repos.demo.checked).sort(), ["create.mjs", "remove.mjs"]);
   assert.doesNotMatch(run(["doctor"]).out, /not tested since changed/);
@@ -78,4 +89,64 @@ test("check runs the hooks of the folder it runs in, such as an agent's branch",
   const r = nk(["hooks", "test"], { cwd: ws, home, env: { PATH: `${join(root, "bin")}${delimiter}${process.env.PATH}`, FAKE_DOCKER_STATE: join(root, "docker.json") } });
   assert.equal(r.status, 0, r.all);
   assert.match(r.all, /branch hook ran/);
+});
+
+const workflow = `name: CI
+on: [push]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ["5432:5432"]
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/app
+      API_TOKEN: \${{ secrets.TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node -e "require('fs').writeFileSync('setup.txt', 'done')"
+      - run: npm test
+      - run: node -e "console.log('ci cleanup')"
+        if: always()
+`;
+
+test("hooks write turns CI into hooks that pass hooks test; a CI change then stops nk -b", (t) => {
+  const { home, repo, run, state } = setup(t, { ".github/workflows/ci.yml": workflow, ".gitignore": "setup.txt\n.env\n" });
+  let r = run(["hooks", "write"]);
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.err, /Wrote \.nook\/create\.mjs, \.nook\/open\.mjs, \.nook\/remove\.mjs from \.github\/workflows\/ci\.yml \(job test\)/);
+  assert.match(r.err, /API_TOKEN comes from a CI expression/);
+  assert.match(r.err, /Left out 2 CI-only steps/);
+
+  r = run(["hooks", "test"]);
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.all, /ci cleanup/);
+  assert.deepEqual(state().containers, [], "remove deleted the service container");
+
+  assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
+  r = run(["-b", "feat"]);
+  assert.equal(r.status, 0, r.all);
+  const ws = join(home, "workspaces", "demo", "feat");
+  assert.equal(readFileSync(join(ws, "setup.txt"), "utf8"), "done");
+  const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;
+  assert.match(readFileSync(join(ws, ".env"), "utf8"), new RegExp(`DATABASE_URL=postgres://postgres:postgres@localhost:${port}/app`));
+  assert.ok(state().containers[0].args.join(" ").includes(`-p 127.0.0.1:${port}:5432`));
+
+  write(repo, { ".github/workflows/ci.yml": workflow.replace("postgres:16", "postgres:17") });
+  sh("git", ["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qam", "newer postgres"], repo);
+  r = run(["-b", "second"]);
+  assert.equal(r.status, 1);
+  assert.match(r.err, /the CI configuration changed since nk hooks test last passed/);
+  assert.equal(run(["-b", "second", "--untested"]).status, 0);
+});
+
+test("hooks write never replaces hooks written by hand", (t) => {
+  const { run } = setup(t, { ".github/workflows/ci.yml": workflow, ".nook/create.mjs": "console.log('mine')\n" });
+  const r = run(["hooks", "write"]);
+  assert.equal(r.status, 1);
+  assert.match(r.err, /already has hooks written by hand: create\.mjs/);
 });

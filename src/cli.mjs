@@ -19,14 +19,17 @@ const HELP = `nk - one home for your git worktrees
 Usage:
   nk init [--yes] [--name <short-name>]   register this repository (once per repository)
   nk -b <name> [agent] [-p <prompt>] [-y] create a workspace; start the agent if given
-                                         (-y: keep the converted name without asking)
+                                         (-y: keep the converted name without asking;
+                                         --untested: start even if hooks or CI changed
+                                         since nk hooks test last passed)
   nk <name> [agent] [-p <prompt>]         open a workspace; start the agent if given
   nk ls [--json]                          list workspaces: changes, commits, PR and CI
   nk rm <name>... [-n] [-y]               back up and remove workspaces
   nk clean [-n] [-y]                      remove workspaces whose work is merged
   nk hooks                                the repository's .nook hooks: allowed? tested?
-  nk hooks write [agent]                  an agent writes the hooks in a workspace of its own
-                                         (no agent: print the prompt to give one yourself)
+  nk hooks write [agent]                  write the hooks from the repository's CI (GitHub Actions);
+                                         with an agent: in a workspace of its own, the agent
+                                         finishes what CI could not tell
   nk hooks test                           run this folder's hooks in a temporary workspace;
                                          fails if remove leaves anything behind
   nk doctor                               check nk's tools: node, git, gh, docker, agents
@@ -110,12 +113,13 @@ export async function run(argv, io = {}) {
         prompt: { type: "string", short: "p" },
         repo: { type: "string" },
         yes: { type: "boolean", short: "y" },
+        untested: { type: "boolean" },
       });
       const create = values.b !== undefined;
       const name = create ? values.b : positionals.shift();
       if (!name || positionals.length > 1) throw new NookError("Usage: nk [-b] <name> [agent] [-p <prompt>]");
       const options = { name, repo: values.repo, agent: positionals[0], prompt: values.prompt, extra };
-      return create ? createWorkspace(ctx, { ...options, prompter: createPrompter({ yes: values.yes }) }) : openWorkspace(ctx, options);
+      return create ? createWorkspace(ctx, { ...options, untested: values.untested, prompter: createPrompter({ yes: values.yes }) }) : openWorkspace(ctx, options);
     }
   }
 }
