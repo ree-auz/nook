@@ -114,18 +114,24 @@ jobs:
         if: always()
 `;
 
+// Generated hooks call docker without a shell, as a real docker.exe needs. Windows
+// cannot run the stand-in docker.cmd that way, so there the CI has no services.
+const services = process.platform !== "win32";
+const ciWorkflow = services ? workflow : workflow.replace(/    services:[^]*?(?=    env:)/, "");
+
 test("hooks write turns CI into hooks that pass hooks test; a CI change then stops nk -b", (t) => {
+  const workflow = ciWorkflow;
   const { home, repo, run, state } = setup(t, { ".github/workflows/ci.yml": workflow, "package.json": '{"name":"demo","private":true}\n', ".gitignore": "package-lock.json\nnode_modules\n.env\n" });
   let r = run(["hooks", "write"]);
   assert.equal(r.status, 0, r.all);
-  assert.match(r.err, /Wrote \.nook\/create\.mjs, \.nook\/open\.mjs, \.nook\/remove\.mjs from \.github\/workflows\/ci\.yml \(job test\)/);
+  assert.match(r.err, services ? /Wrote \.nook\/create\.mjs, \.nook\/open\.mjs, \.nook\/remove\.mjs from \.github\/workflows\/ci\.yml \(job test\)/ : /Wrote \.nook\/create\.mjs from/);
   assert.match(r.err, /API_TOKEN comes from a CI expression/);
   assert.match(r.err, /Left out 2 CI-only steps/);
   assert.match(r.err, /Not added; review these[^]*ci cleanup[^]*not a dependency install/);
 
   r = run(["hooks", "test"]);
   assert.equal(r.status, 0, r.all);
-  assert.deepEqual(state().containers, [], "remove deleted the service container");
+  if (services) assert.deepEqual(state().containers, [], "remove deleted the service container");
 
   assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
   r = run(["-b", "feat"]);
@@ -133,10 +139,12 @@ test("hooks write turns CI into hooks that pass hooks test; a CI change then sto
   const ws = join(home, "workspaces", "demo", "feat");
   assert.ok(existsSync(join(ws, "package-lock.json")), "create ran npm install in the workspace");
   const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;
-  assert.match(readFileSync(join(ws, ".env"), "utf8"), new RegExp(`DATABASE_URL=postgres://postgres:postgres@localhost:${port}/app`));
-  assert.ok(state().containers[0].args.join(" ").includes(`-p 127.0.0.1:${port}:5432`));
+  if (services) {
+    assert.match(readFileSync(join(ws, ".env"), "utf8"), new RegExp(`DATABASE_URL=postgres://postgres:postgres@localhost:${port}/app`));
+    assert.ok(state().containers[0].args.join(" ").includes(`-p 127.0.0.1:${port}:5432`));
+  }
 
-  write(repo, { ".github/workflows/ci.yml": workflow.replace("postgres:16", "postgres:17") });
+  write(repo, { ".github/workflows/ci.yml": workflow.replace("node-version: 22", "node-version: 24") });
   sh("git", ["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qam", "newer postgres"], repo);
   r = run(["-b", "second"]);
   assert.equal(r.status, 1);
@@ -145,7 +153,7 @@ test("hooks write turns CI into hooks that pass hooks test; a CI change then sto
 });
 
 test("hooks write never replaces hooks written by hand", (t) => {
-  const { run } = setup(t, { ".github/workflows/ci.yml": workflow, ".nook/create.mjs": "console.log('mine')\n" });
+  const { run } = setup(t, { ".github/workflows/ci.yml": ciWorkflow, ".nook/create.mjs": "console.log('mine')\n" });
   const r = run(["hooks", "write"]);
   assert.equal(r.status, 1);
   assert.match(r.err, /already has hooks written by hand: create\.mjs/);
