@@ -84,8 +84,13 @@ works everywhere.
 Hooks see `NOOK_WORKSPACE`, `NOOK_PATH`, `NOOK_REPO`, `NOOK_SHARED` and
 `NOOK_PORT` (the first of 10 ports reserved for the workspace).
 
-Before a hook runs for the first time, and again after it changes, Nook shows it
-and asks. Rerunning `nk init` also asks.
+Before hooks run for the first time, and again after one changes, Nook lists
+them (event and file, not the contents) and asks once: "Allow and remember?".
+Rerunning `nk init` also asks. Each run's output is saved in `~/nook/logs/`.
+
+Output lines start with ◎ (running now), ✓ (done), ▲ (needs attention) or
+○ (information), as in worktrunk. Colors are used on a terminal unless
+`NO_COLOR` is set.
 
 ## Removing a workspace
 

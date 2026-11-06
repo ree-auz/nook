@@ -25,7 +25,7 @@ export function listWorkspaces(ctx, { repo: repoFlag } = {}) {
     }
   }
   if (rows.length === 1) {
-    ctx.note("No workspaces. Create one with: nk -b <name>");
+    ctx.info("No workspaces. Create one with: nk -b <name>");
     return 0;
   }
   ctx.print(table(rows));

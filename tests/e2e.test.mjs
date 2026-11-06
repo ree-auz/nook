@@ -88,7 +88,7 @@ test("init -> -b -> open -> rm", async (t) => {
   await new Promise((done) => setTimeout(done, 500));
   r = run(["rm", "smoke"]);
   assert.equal(r.status, 1, "asks for confirmation; no terminal means no removal");
-  assert.match(r.err, new RegExp(`PID ${child.pid}`));
+  assert.match(r.err, new RegExp(`${child.pid} node`));
   assert.ok(existsSync(ws));
 
   const exited = new Promise((done) => child.once("exit", done));
@@ -115,8 +115,8 @@ test("a changed hook needs a new OK; a failing create hook keeps the workspace",
   sh("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", "commit", "-qam", "change hook"], repo);
   let r = run(["-b", "changed"]);
   assert.equal(r.status, 1);
-  assert.match(r.err, /Changed hook \.nook\/create\.mjs/);
-  assert.match(r.err, /needs your OK/);
+  assert.match(r.err, /create: \.nook\/create\.mjs \(changed\)/);
+  assert.match(r.err, /need your OK/);
 
   assert.equal(run(["init", "--yes"]).status, 0, "init allows the new version");
   const ws = join(home, "workspaces", "demo", "failing");

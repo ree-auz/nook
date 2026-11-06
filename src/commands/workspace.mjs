@@ -4,7 +4,7 @@ import { agentCommand, launch } from "../agents.mjs";
 import { NookError } from "../errors.mjs";
 import { exists } from "../home.mjs";
 import { baseRef, git, gitTry, refExists, remoteUrl } from "../git.mjs";
-import { ensureTrusted, findHook, runHook } from "../hooks.mjs";
+import { ensureTrusted, findHook, findHooks, runHook } from "../hooks.mjs";
 import { nameProblem, normalizeName, toName } from "../names.mjs";
 import { allocatePort } from "../ports.mjs";
 import { createPrompter } from "../prompt.mjs";
@@ -15,7 +15,14 @@ import { resolveRepo, resolveWorkspace, workspaceEnv } from "../context.mjs";
 export async function hook(ctx, target, event, { prompter = createPrompter() } = {}) {
   const found = findHook(target.ws.path, event);
   if (!found) return null;
-  await ensureTrusted({ repoConfig: target.repo, hook: found, prompter, save: () => ctx.save(), output: ctx.err });
+  await ensureTrusted({
+    repoName: target.repoName,
+    repoConfig: target.repo,
+    hooks: findHooks(target.ws.path),
+    prompter,
+    save: () => ctx.save(),
+    ui: ctx,
+  });
   const result = await runHook(found, {
     cwd: target.ws.path,
     env: workspaceEnv(ctx, target),
@@ -35,7 +42,7 @@ async function finish(ctx, target, { agent, prompt, extra }) {
     return 0;
   }
   const command = agentCommand(ctx.config, agent, { prompt, extra }, ctx.env);
-  ctx.note(`Starting ${agent} in ${target.ws.path}`);
+  ctx.step(`Starting ${agent} in ${target.ws.path}`);
   return launch(command, { cwd: target.ws.path, env: workspaceEnv(ctx, target) });
 }
 
@@ -58,14 +65,14 @@ async function pickName(ctx, input, prompter) {
   let name = toName(input);
   if (name === input) return name;
   if (!prompter.interactive) {
-    ctx.note(`Using the name ${name}`);
+    ctx.info(`Using the name ${name}`);
     return name;
   }
   for (;;) {
     const edited = normalizeName(await prompter.edit("Workspace name (edit or press Enter)", name));
     const problem = nameProblem(edited);
     if (!problem) return edited;
-    ctx.note(problem);
+    ctx.warn(problem);
   }
 }
 
@@ -85,11 +92,11 @@ export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent,
   repo.workspaces[name] = ws;
   ctx.save();
   const target = { repoName, repo, name, ws };
-  ctx.note(`Created workspace ${name} (ports ${port}-${port + 9})`);
+  ctx.ok(`Created workspace ${name} @ ${path} (ports ${port}–${port + 9})`);
 
   const shared = copyShared(join(ctx.paths.shared, repoName), path);
-  if (shared.copied.length) ctx.note(`Copied shared files: ${shared.copied.join(", ")}`);
-  if (shared.skipped.length) ctx.note(`Skipped (not ignored by git here): ${shared.skipped.join(", ")}`);
+  if (shared.copied.length) ctx.info(`Copied shared files: ${shared.copied.join(", ")}`);
+  if (shared.skipped.length) ctx.warn(`Not copied (git does not ignore them here): ${shared.skipped.join(", ")}`);
 
   try {
     await hook(ctx, target, "create");

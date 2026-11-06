@@ -3,11 +3,14 @@ import { loadConfig, saveConfig } from "./config.mjs";
 import { NookError } from "./errors.mjs";
 import { homePaths, isInside, nookHome } from "./home.mjs";
 import { gitTry, listWorktrees } from "./git.mjs";
+import { line, useColor } from "./ui.mjs";
 
 /** Shared state for one command run. */
 export function createContext({ env = process.env, cwd = process.cwd(), out = process.stdout, err = process.stderr } = {}) {
   const paths = homePaths(nookHome(env));
   const config = loadConfig(paths.config);
+  const color = useColor(err, env);
+  const say = (kind) => (text) => err.write(`${line(kind, text, color)}\n`);
   return {
     env,
     cwd,
@@ -18,12 +21,17 @@ export function createContext({ env = process.env, cwd = process.cwd(), out = pr
     save() {
       saveConfig(paths.config, config);
     },
-    print(line = "") {
-      out.write(`${line}\n`);
+    print(text = "") {
+      out.write(`${text}\n`);
     },
-    note(line = "") {
-      err.write(`${line}\n`);
+    note(text = "") {
+      err.write(`${text}\n`);
     },
+    step: say("step"),
+    ok: say("ok"),
+    warn: say("warn"),
+    info: say("info"),
+    item: say("item"),
   };
 }
 
