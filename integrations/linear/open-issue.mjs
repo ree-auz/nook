@@ -106,9 +106,7 @@ function option(argv, name) {
 
 function fromLinear(argv) {
   const terminal = option(argv, "--terminal") ?? "wt";
-  const optionValues = new Set(["--terminal", "--agent-label"].map((name) => argv.indexOf(name) + 1).filter((i) => i > 0));
-  const fallback = argv.find((arg, i) => !arg.startsWith("--") && !optionValues.has(i)) ?? "codex";
-  const agent = agentFromLabels(process.env.LINEAR_PROMPT ?? "", option(argv, "--agent-label")) ?? fallback;
+  const agent = agentFromLabels(process.env.LINEAR_PROMPT ?? "", option(argv, "--agent-label")) ?? option(argv, "--agent") ?? "codex";
   const open = TERMINALS[terminal];
   if (!open) throw new Error(`Unknown terminal "${terminal}"; use ${Object.keys(TERMINALS).join(" or ")}`);
   const { LINEAR_ISSUE_BRANCH_NAME: branch, LINEAR_WORK_DIR: dir, LINEAR_ISSUE_IDENTIFIER: id = "issue", LINEAR_PROMPT: prompt = "" } = process.env;

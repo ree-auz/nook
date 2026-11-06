@@ -21,7 +21,7 @@ Supported so far: Windows, with Windows Terminal (default) or Warp.
    {
      "openIssue": {
        "path": "C:\\Program Files\\nodejs\\node.exe",
-       "args": ["<nook folder>\\integrations\\linear\\open-issue.mjs", "codex"],
+       "args": ["<nook folder>\\integrations\\linear\\open-issue.mjs", "--agent", "codex"],
        "env": ["LINEAR_ISSUE_IDENTIFIER", "LINEAR_ISSUE_BRANCH_NAME", "LINEAR_PROMPT", "LINEAR_WORK_DIR"]
      }
    }
@@ -36,15 +36,15 @@ Supported so far: Windows, with Windows Terminal (default) or Warp.
      shell setup.
    - `<nook folder>` is where Nook is installed: the cloned folder, or
      `npm root -g` + `\@ree-auz\nook`.
-   - After the script comes the agent: `codex`, `claude` or any command
-     `nk -b <name> <agent>` accepts.
+   - `--agent` is the agent to start: `codex` (the default), `claude` or any
+     command `nk -b <name> <agent>` accepts.
    - To open the tab in Warp instead of Windows Terminal, add
      `"--terminal", "warp"` to `args`.
    - To let each issue pick its agent, label issues from one label group
      (say `Agent › Codex`, `Agent › Claude`) and add `"--agent-label", "Agent"`
      to `args`. Linear's prompt lists the issue's labels, and the script starts
-     the agent named by that group's label (lowercased), or the one in `args`
-     when the issue has none.
+     the agent named by that group's label (lowercased, spaces as `-`), or the
+     `--agent` one when the issue has none.
    - `env` is an allowlist: Linear only passes the variables listed here.
 
 ## Use
