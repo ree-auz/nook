@@ -11,14 +11,19 @@ import { createPrompter } from "../prompt.mjs";
 import { copyShared } from "../shared.mjs";
 import { resolveRepo, resolveWorkspace, workspaceEnv } from "../context.mjs";
 
-/** Runs one hook if the workspace has it. Throws on a non-zero exit. */
+/**
+ * Runs one hook of the repository in the workspace. Hooks are read from the
+ * main checkout, like worktrunk reads its project config from where the
+ * command runs, so a branch made before the hooks existed still gets them.
+ * Throws on a non-zero exit.
+ */
 export async function hook(ctx, target, event, { prompter = createPrompter() } = {}) {
-  const found = findHook(target.ws.path, event);
+  const found = findHook(target.repo.path, event);
   if (!found) return null;
   await ensureTrusted({
     repoName: target.repoName,
     repoConfig: target.repo,
-    hooks: findHooks(target.ws.path),
+    hooks: findHooks(target.repo.path),
     prompter,
     save: () => ctx.save(),
     ui: ctx,
@@ -46,11 +51,13 @@ async function finish(ctx, target, { agent, prompt, extra }) {
   return launch(command, { cwd: target.ws.path, env: workspaceEnv(ctx, target) });
 }
 
+/** An existing local or origin branch spelled exactly like `input`, or null. */
+function existingBranch(repoPath, input) {
+  if (!gitTry(["check-ref-format", "--branch", input], { cwd: repoPath }).ok) return null;
+  return refExists(repoPath, `refs/heads/${input}`) || refExists(repoPath, `refs/remotes/origin/${input}`) ? input : null;
+}
+
 function addWorktree(repoPath, name, path, defaultBranch) {
-  if (remoteUrl(repoPath)) {
-    const fetched = gitTry(["fetch", "--quiet", "origin", defaultBranch], { cwd: repoPath });
-    if (!fetched.ok) process.stderr.write(`Could not fetch origin/${defaultBranch}; using what is local\n`);
-  }
   if (refExists(repoPath, `refs/heads/${name}`)) git(["worktree", "add", path, name], { cwd: repoPath });
   else if (refExists(repoPath, `refs/remotes/origin/${name}`))
     git(["worktree", "add", "--track", "-b", name, path, `origin/${name}`], { cwd: repoPath });
@@ -78,8 +85,16 @@ async function pickName(ctx, input, prompter) {
 
 /** nk -b <name> [agent] */
 export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent, prompt, extra = [], prompter = createPrompter() }) {
-  const name = await pickName(ctx, input, prompter);
   const { name: repoName, repo } = resolveRepo(ctx, repoFlag);
+  if (remoteUrl(repo.path)) {
+    const fetched = gitTry(["fetch", "--quiet", "origin", repo.default_branch], { cwd: repo.path });
+    if (!fetched.ok) ctx.warn(`Could not fetch origin/${repo.default_branch}; using what is local`);
+  }
+  // A branch that already exists keeps its own name, "/" and all; the folder uses the converted name.
+  const existing = existingBranch(repo.path, String(input));
+  const name = existing ? toName(existing) : await pickName(ctx, input, prompter);
+  if (existing && existing !== name) ctx.info(`Using the name ${name} for branch ${existing}`);
+  const branch = existing ?? name;
   if (repo.workspaces[name]) throw new NookError(`Workspace "${name}" already exists. Open it with: nk ${name}`);
   const dir = join(ctx.paths.workspaces, repoName);
   const path = join(dir, name);
@@ -87,8 +102,8 @@ export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent,
   mkdirSync(dir, { recursive: true });
 
   const port = await allocatePort(ctx.config);
-  addWorktree(repo.path, name, path, repo.default_branch);
-  const ws = { path, port, created: new Date().toISOString() };
+  addWorktree(repo.path, branch, path, repo.default_branch);
+  const ws = { path, port, created: new Date().toISOString(), ...(branch !== name && { branch }) };
   repo.workspaces[name] = ws;
   ctx.save();
   const target = { repoName, repo, name, ws };

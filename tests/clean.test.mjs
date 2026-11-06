@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
@@ -87,7 +88,14 @@ test("clean removes merged workspaces and keeps the rest", async (t) => {
   await assert.rejects(cleanWorkspaces(ctx(), { prs: lookup, now, prompter: no }), /Nothing was removed/);
   assert.ok(existsSync(ws("squashed")));
 
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { cwd: ws("old"), stdio: "ignore" });
+  t.after(() => child.kill());
+  const exited = new Promise((done) => child.once("exit", done));
+  await new Promise((done) => setTimeout(done, 500));
+  lines.length = 0;
   assert.equal(await cleanWorkspaces(ctx(), { yes: true, prs: lookup, now }), 0);
+  assert.match(lines.join(""), new RegExp(`${child.pid} node \\(old\\)`));
+  await exited;
   for (const name of ["squashed", "old"]) {
     assert.ok(!existsSync(ws(name)), `${name} removed`);
     assert.equal(sh("git", ["branch", "--list", name], repo), "");

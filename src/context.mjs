@@ -87,6 +87,11 @@ export function resolveWorkspace(ctx, name, flag) {
   throw new NookError(`"${name}" exists in ${candidates.map((c) => c.repoName).join(", ")}; pass --repo`);
 }
 
+/** The git branch of a workspace: its name, unless the branch had characters a name cannot use. */
+export function branchOf(name, ws) {
+  return ws.branch ?? name;
+}
+
 /** Variables hooks and agents see. */
 export function workspaceEnv(ctx, { repoName, repo, name, ws }) {
   return {

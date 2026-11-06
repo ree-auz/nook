@@ -4,7 +4,7 @@ import { isInside } from "../home.mjs";
 import { gitTry, remoteUrl } from "../git.mjs";
 import { githubPrs } from "../forge.mjs";
 import { inspectWorkspace, isMerged } from "../backup.mjs";
-import { findOccupants } from "../occupancy.mjs";
+import { describeOccupants, findOccupants, stopProcesses } from "../occupancy.mjs";
 import { createPrompter } from "../prompt.mjs";
 import { branchTip, contains } from "../status.mjs";
 import { collect } from "./ls.mjs";
@@ -20,21 +20,21 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
  * fresh workspace that has no commits yet is kept (worktrunk's --min-age).
  */
 export function mergedReason(item, now = Date.now()) {
-  const { name, repo, base, pr, ws } = item;
+  const { branch, repo, base, pr, ws } = item;
   if (pr?.state === "merged") {
-    const tip = branchTip(repo.path, name);
+    const tip = branchTip(repo.path, branch);
     if (!tip || (pr.head && contains(repo.path, pr.head, tip))) return { ok: `PR #${pr.number} merged` };
     return { skip: `has commits that are not in PR #${pr.number}` };
   }
   if (pr) return null;
   const age = now - Date.parse(ws.created ?? "");
   if (!(age >= DAY)) return null;
-  if (branchTip(repo.path, name) && isMerged(repo.path, name, base)) return { ok: `merged into ${base}` };
+  if (branchTip(repo.path, branch) && isMerged(repo.path, branch, base)) return { ok: `merged into ${base}` };
   return null;
 }
 
 /** nk clean [-n] [-y]: remove workspaces whose work is merged. */
-export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes = false, prs = githubPrs, scan = findOccupants, prompter = createPrompter(), now = Date.now() } = {}) {
+export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes = false, prs = githubPrs, scan = findOccupants, stop = stopProcesses, prompter = createPrompter(), now = Date.now() } = {}) {
   if (repoFlag && !ctx.config.repos[repoFlag]) throw new NookError(`Unknown repository "${repoFlag}"`);
   for (const [name, repo] of Object.entries(ctx.config.repos)) {
     if ((repoFlag && name !== repoFlag) || !Object.keys(repo.workspaces).length || !remoteUrl(repo.path)) continue;
@@ -53,11 +53,7 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
     if (reason.skip) skipped.push(`${label}: ${reason.skip}`);
     else if (isInside(ctx.cwd, item.ws.path)) skipped.push(`${label}: you are inside it`);
     else if (item.changes) skipped.push(`${label}: ${plural(item.changes, "uncommitted change")}`);
-    else {
-      const running = item.changes === null ? [] : scan(item.ws.path).processes;
-      if (running.length) skipped.push(`${label}: ${plural(running.length, "program")} running (nk rm ${item.name} stops them)`);
-      else remove.push({ item, label, reason: reason.ok });
-    }
+    else remove.push({ item, label, reason: reason.ok, running: item.changes === null ? [] : scan(item.ws.path).processes });
   }
 
   if (skipped.length) {
@@ -71,6 +67,12 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
   ctx.info(`${remove.length === 1 ? "1 workspace is" : `${remove.length} workspaces are`} merged:`);
   const width = Math.max(...remove.map((entry) => entry.label.length));
   for (const entry of remove) ctx.item(`${entry.label.padEnd(width)}  ${entry.reason}`);
+  const running = remove.flatMap((entry) => entry.running);
+  if (running.length) {
+    // Same as nk rm: programs inside are listed, and stopped after one yes.
+    ctx.warn(`${plural(running.length, "program")} running in them:`);
+    for (const entry of remove) for (const p of entry.running) ctx.item(`${p.pid} ${p.name} (${entry.item.name})`);
+  }
   if (dryRun) {
     ctx.info("Dry run; nothing was removed");
     return 0;
@@ -78,7 +80,8 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
   if (!yes) {
     let ok;
     try {
-      ok = await prompter.confirm(`Remove ${remove.length === 1 ? "it" : `these ${remove.length}`}?`, false);
+      const what = remove.length === 1 ? "it" : `these ${remove.length}`;
+      ok = await prompter.confirm(running.length ? `Stop the programs and remove ${what}?` : `Remove ${what}?`, false);
     } catch {
       throw new NookError("Confirmation needs a terminal; pass -y to remove without asking");
     }
@@ -86,10 +89,16 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
   }
 
   let failed = 0;
-  for (const { item } of remove) {
+  for (const { item, running: inside } of remove) {
     const target = { repoName: item.repoName, repo: item.repo, name: item.name, ws: item.ws };
-    const state = inspectWorkspace({ repo: item.repo.path, path: item.ws.path, branch: item.name, base: item.base });
+    const state = inspectWorkspace({ repo: item.repo.path, path: item.ws.path, branch: item.branch, base: item.base });
     try {
+      if (inside.length) {
+        await stop(inside);
+        const left = scan(item.ws.path).processes;
+        if (left.length) throw new NookError(`Could not stop:\n${describeOccupants(left)}`);
+        ctx.ok(`Stopped ${plural(inside.length, "program")} in ${item.name}`);
+      }
       await deleteWorkspace(ctx, target, { state, base: item.base, backupRoot: join(ctx.paths.backup, item.repoName), prompter, scan });
       ctx.ok(`Removed ${item.name}`);
     } catch (error) {

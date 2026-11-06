@@ -6,7 +6,7 @@ import { NookError } from "../errors.mjs";
 import { exists, isInside, samePath } from "../home.mjs";
 import { defaultBranch, listWorktrees, mainWorktree, remoteUrl } from "../git.mjs";
 import { ensureTrusted, findHooks } from "../hooks.mjs";
-import { assertName, nameProblem, suggestRepoName } from "../names.mjs";
+import { assertName, nameProblem, normalizeName, suggestRepoName } from "../names.mjs";
 import { allocatePort } from "../ports.mjs";
 import { createPrompter, splitArgs } from "../prompt.mjs";
 import { copyFile, includePatterns, knownSecretFiles, listFiles, sharedCandidates, templateFiles } from "../shared.mjs";
@@ -25,13 +25,13 @@ function openEditor(ctx, file, prompter) {
   return true;
 }
 
+/**
+ * Fills the shared folder. A file already there is never replaced, so running
+ * init again only adds what is new (a template added since, for example).
+ */
 async function prepareShared(ctx, { repoPath, sharedDir, prompter }) {
   mkdirSync(sharedDir, { recursive: true });
-  const current = listFiles(sharedDir);
-  if (current.length) {
-    ctx.info(`Shared files already in ${sharedDir}: ${current.join(", ")}`);
-    if (!(await prompter.confirm("Prepare the shared files again?", false))) return;
-  }
+  const present = new Set(listFiles(sharedDir));
   const { patterns, source } = includePatterns(repoPath);
   ctx.info(`Shared files follow ${source === "default" ? "the default pattern .env*" : ".worktreeinclude"}; only files git ignores are used`);
   const candidates = sharedCandidates(repoPath, patterns);
@@ -39,21 +39,23 @@ async function prepareShared(ctx, { repoPath, sharedDir, prompter }) {
   const copies = [];
   const fill = [];
   for (const template of templates) {
+    if (present.has(template.to)) continue;
     // A committed template is the safe start: the same file in the main checkout may be production.
     copies.push({ from: join(repoPath, template.from), to: template.to });
     fill.push(join(sharedDir, template.to));
     ctx.info(`Starting shared ${template.to} from ${template.from}`);
   }
-  const fromTemplate = new Set(templates.map((template) => template.to));
-  const others = candidates.filter((file) => !fromTemplate.has(file));
+  const covered = new Set([...templates.map((template) => template.to), ...present]);
+  const others = candidates.filter((file) => !covered.has(file));
   if (others.length && (await prompter.confirm(`Copy ${others.join(", ")} from the repository into the shared folder? (only development files, not production)`, false)))
     for (const file of others) copies.push({ from: join(repoPath, file), to: file });
 
-  for (const file of knownSecretFiles(repoPath, [...candidates, ...fromTemplate]))
-    if (await prompter.confirm(`Found ignored ${file}. Share it with new workspaces too?`, false))
+  for (const file of knownSecretFiles(repoPath, [...candidates, ...covered]))
+    if (!present.has(file) && (await prompter.confirm(`Found ignored ${file}. Share it with new workspaces too?`, false)))
       copies.push({ from: join(repoPath, file), to: file });
 
   for (const copy of copies) copyFile(copy.from, join(sharedDir, copy.to));
+  if (present.size) ctx.info(`Kept shared files: ${[...present].join(", ")} (edit them in ${sharedDir})`);
   if (copies.length) ctx.ok(`Shared files in ${sharedDir}: ${copies.map((c) => c.to).join(", ")}`);
   for (const file of fill) {
     if (openEditor(ctx, file, prompter)) ctx.ok(`Saved ${file}`);
@@ -84,12 +86,23 @@ async function adoptWorktrees(ctx, { repoPath, repo, prompter }) {
   ctx.info("Other worktrees of this repository:");
   for (const w of others) ctx.item(`${w.branch ?? "(detached)"}  ${w.path}`);
   for (const w of others) {
-    if (!w.branch || nameProblem(w.branch) || repo.workspaces[w.branch]) {
-      ctx.info(`Leaving ${w.path} alone (its branch name cannot be a workspace name)`);
+    const name = w.branch ? normalizeName(w.branch) : "";
+    if (!w.branch) {
+      ctx.info(`Leaving ${w.path} alone (no branch checked out)`);
       continue;
     }
-    if (await prompter.confirm(`Let Nook manage ${w.branch}? (No keeps it as it is)`, false))
-      repo.workspaces[w.branch] = { path: w.path, port: await allocatePort(ctx.config), created: new Date().toISOString() };
+    if (nameProblem(name) || repo.workspaces[name]) {
+      ctx.info(`Leaving ${w.path} alone (${repo.workspaces[name] ? `${name} is taken` : nameProblem(name)})`);
+      continue;
+    }
+    const label = name === w.branch ? name : `${w.branch} as ${name}`;
+    if (await prompter.confirm(`Let Nook manage ${label}? (No keeps it as it is)`, false))
+      repo.workspaces[name] = {
+        path: w.path,
+        port: await allocatePort(ctx.config),
+        created: new Date().toISOString(),
+        ...(name !== w.branch && { branch: w.branch }),
+      };
   }
 }
 

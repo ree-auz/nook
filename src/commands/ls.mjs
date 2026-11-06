@@ -2,6 +2,7 @@ import { baseRef, remoteUrl } from "../git.mjs";
 import { githubPrs } from "../forge.mjs";
 import { aheadBehind, changeCount } from "../status.mjs";
 import { useColor } from "../ui.mjs";
+import { branchOf } from "../context.mjs";
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -21,8 +22,9 @@ export async function collect(ctx, { repo: repoFlag, prs: lookup = githubPrs } =
     if (error) problems.add(error);
     const base = baseRef(repo.path, repo.default_branch);
     for (const [name, ws] of Object.entries(repo.workspaces)) {
-      const pr = prs?.get(name) ?? null;
-      items.push({ name, repoName, repo, ws, base, changes: changeCount(ws.path), commits: aheadBehind(repo.path, name, base), pr });
+      const branch = branchOf(name, ws);
+      const pr = prs?.get(branch) ?? null;
+      items.push({ name, branch, repoName, repo, ws, base, changes: changeCount(ws.path), commits: aheadBehind(repo.path, branch, base), pr });
     }
   });
   return { items, problems: [...problems] };
@@ -49,8 +51,9 @@ function prText(pr) {
 export async function listWorkspaces(ctx, { repo: repoFlag, json = false, prs } = {}) {
   const { items, problems } = await collect(ctx, { repo: repoFlag, prs });
   if (json) {
-    const data = items.map(({ name, repoName, ws, base, changes, commits, pr }) => ({
+    const data = items.map(({ name, branch, repoName, ws, base, changes, commits, pr }) => ({
       name,
+      branch,
       repo: repoName,
       path: ws.path,
       port: ws.port ?? null,
