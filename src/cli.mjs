@@ -4,6 +4,7 @@ import { createContext } from "./context.mjs";
 import { NookError } from "./errors.mjs";
 import { doctor } from "./commands/doctor.mjs";
 import { init } from "./commands/init.mjs";
+import { line, useColor } from "./ui.mjs";
 import { listWorkspaces } from "./commands/ls.mjs";
 import { removeWorkspace } from "./commands/rm.mjs";
 import { createWorkspace, openWorkspace } from "./commands/workspace.mjs";
@@ -97,7 +98,13 @@ export async function main(argv, io = {}) {
     return await run(argv, io);
   } catch (error) {
     if (error instanceof NookError) {
-      (io.err ?? process.stderr).write(`nk: ${error.message}\n`);
+      const err = io.err ?? process.stderr;
+      const color = useColor(err, io.env ?? process.env);
+      // First line says what failed; later lines say why and what to do next.
+      const [first, ...rest] = error.message.split("\n");
+      const lines = [line("fail", first, color)];
+      for (const text of rest) lines.push(/^\s/.test(text) ? line("item", text.trim(), color) : line("info", text, color));
+      err.write(`${lines.join("\n")}\n`);
       return error.code;
     }
     throw error;

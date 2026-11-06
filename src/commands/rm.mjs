@@ -12,11 +12,12 @@ import { toName } from "../names.mjs";
 import { hook } from "./workspace.mjs";
 
 function occupants(ctx, path, scan) {
-  ctx.note("Checking for programs running in the folder...");
   const result = scan(path);
-  if (result.unsupported) ctx.note(`Could not check for running programs: ${result.unsupported}`);
+  if (result.unsupported) ctx.warn(`Could not check for running programs: ${result.unsupported}`);
   return result.processes;
 }
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** nk rm <name> [-n] [-y] */
 export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun = false, yes = false, scan = findOccupants, stop = stopProcesses, prompter = createPrompter() }) {
@@ -31,22 +32,26 @@ export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun
   const backupRoot = join(ctx.paths.backup, target.repoName);
   const removeHook = state.present ? findHook(ws.path, "remove") : null;
 
-  ctx.note(`nk rm ${name} will:`);
-  if (needsBackup(state)) ctx.note(`  back up changes to ${backupRoot}`);
-  if (removeHook) ctx.note(`  run .nook/${removeHook.name}`);
-  ctx.note(`  delete ${state.present ? ws.path : `${ws.path} (already missing)`}`);
-  ctx.note(`  delete branch ${name}`);
+  ctx.info(`Removing ${name} @ ${ws.path}${state.present ? "" : " (folder already missing)"} and its branch`);
+  if (removeHook) ctx.info(`Runs .nook/${removeHook.name} first`);
+  if (needsBackup(state)) ctx.info(`Backs up changes to ${backupRoot}`);
   if (state.changes.length) {
-    ctx.note(`  ! ${state.changes.length} uncommitted change(s):`);
-    for (const line of state.changes.slice(0, 10)) ctx.note(`      ${line}`);
-    if (state.changes.length > 10) ctx.note(`      ... ${state.changes.length - 10} more`);
+    ctx.warn(`${plural(state.changes.length, "uncommitted change")}:`);
+    for (const change of state.changes.slice(0, 10)) ctx.item(change);
+    if (state.changes.length > 10) ctx.item(`... ${state.changes.length - 10} more`);
   }
-  if (state.unpushed.length) ctx.note(`  ! ${state.unpushed.length} commit(s) not pushed`);
-  if (!state.merged) ctx.note(`  ! branch ${name} is not merged into ${base}`);
-  if (dryRun) return 0;
+  if (state.unpushed.length) ctx.warn(`${plural(state.unpushed.length, "commit")} not pushed`);
+  if (!state.merged) ctx.warn(`Branch ${name} is not merged into ${base}`);
+  if (dryRun) {
+    ctx.info("Dry run; nothing was removed");
+    return 0;
+  }
 
   const running = state.present ? occupants(ctx, ws.path, scan) : [];
-  if (running.length) ctx.note(`Programs running in ${ws.path}:\n${describeOccupants(running)}`);
+  if (running.length) {
+    ctx.warn(`${plural(running.length, "program")} running in the workspace:`);
+    for (const item of running) ctx.item(`${item.pid} ${item.name}`);
+  }
   if (!yes) {
     const question = running.length ? `Stop ${running.length === 1 ? "it" : "them"} and remove ${name}?` : `Remove ${name}?`;
     let ok;
@@ -61,11 +66,12 @@ export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun
     await stop(running);
     const left = occupants(ctx, ws.path, scan);
     if (left.length) throw new NookError(`Could not stop:\n${describeOccupants(left)}\nNothing was removed`);
+    ctx.ok(`Stopped ${plural(running.length, "program")}`);
   }
 
   if (needsBackup(state)) {
     const dir = createBackup({ repo: repo.path, path: ws.path, branch: name, base, state, dir: backupDir(backupRoot, name) });
-    ctx.note(`Backed up to ${dir}`);
+    ctx.ok(`Backed up changes to ${dir}`);
   }
   if (state.present) {
     try {
@@ -87,9 +93,9 @@ export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun
   }
   gitTry(["worktree", "prune"], { cwd: repo.path });
   const branch = gitTry(["branch", "-D", name], { cwd: repo.path });
-  if (!branch.ok && !/not found/i.test(branch.err)) ctx.note(`Branch ${name} was kept: ${branch.err}`);
+  if (!branch.ok && !/not found/i.test(branch.err)) ctx.warn(`Branch ${name} was kept: ${branch.err}`);
   delete repo.workspaces[name];
   ctx.save();
-  ctx.note(`Removed ${name}`);
+  ctx.ok(`Removed ${name}`);
   return 0;
 }

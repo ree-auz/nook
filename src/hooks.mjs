@@ -1,15 +1,21 @@
 import { createHash } from "node:crypto";
 import { createWriteStream, mkdirSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import spawn from "cross-spawn";
 import { which } from "./agents.mjs";
 import { NookError } from "./errors.mjs";
+import { line, useColor } from "./ui.mjs";
 
 export const HOOK_EVENTS = ["create", "open", "remove"];
 
 /** Extensions tried for a hook, in order. Platform scripts first, then portable ones. */
 export function hookExtensions(platform = process.platform) {
   return platform === "win32" ? [".ps1", ".cmd", ".mjs", ".py"] : [".sh", ".mjs", ".py"];
+}
+
+/** Every hook in `<dir>/.nook/` for this platform. */
+export function findHooks(dir, platform = process.platform) {
+  return HOOK_EVENTS.map((event) => findHook(dir, event, platform)).filter(Boolean);
 }
 
 /** The hook file for `event` in `<dir>/.nook/`, or null. */
@@ -66,27 +72,29 @@ export function trustState(repoConfig, hook) {
 }
 
 /**
- * Shows the hook and asks before its first run, and again after it changes.
- * Calls `save` after the person says yes.
+ * Asks once before hooks run for the first time, and again after one changes,
+ * listing every such hook of the repository (like worktrunk's approval prompt).
+ * The file contents are not printed; the paths say where to read them.
+ * `ui` is the command context (warn, info, item, note). Calls `save` after a yes.
  */
-export async function ensureTrusted({ repoConfig, hook, prompter, save, output = process.stderr }) {
-  const state = trustState(repoConfig, hook);
-  if (state === "trusted") return;
-  const text = readFileSync(hook.file, "utf8");
-  const lines = text.split(/\r?\n/);
-  output.write(`\n${state === "new" ? "New" : "Changed"} hook .nook/${hook.name} wants to run:\n`);
-  output.write(`${"-".repeat(60)}\n${lines.slice(0, 200).join("\n")}\n`);
-  if (lines.length > 200) output.write(`... ${lines.length - 200} more lines in ${hook.file}\n`);
-  output.write(`${"-".repeat(60)}\n`);
+export async function ensureTrusted({ repoName, repoConfig, hooks, prompter, save, ui }) {
+  const pending = hooks.filter((hook) => trustState(repoConfig, hook) !== "trusted");
+  if (!pending.length) return;
+  const changed = pending.some((hook) => trustState(repoConfig, hook) === "changed");
+  const count = pending.length === 1 ? "1 hook" : `${pending.length} hooks`;
+  ui.warn(`${repoName} needs approval to run ${count}${changed ? " (changed since you allowed them)" : ""}:`);
+  for (const hook of pending)
+    ui.item(`${hook.event}: .nook/${hook.name}${trustState(repoConfig, hook) === "changed" ? " (changed)" : ""}`);
+  ui.info(`Read them in ${dirname(pending[0].file)}`);
   let ok;
   try {
-    ok = await prompter.confirm(`Allow .nook/${hook.name} to run?`, false);
-  } catch (error) {
-    throw new NookError(`Hook .nook/${hook.name} is ${state} and needs your OK. Run nk in a terminal once, or run nk init again`);
+    ok = await prompter.confirm("Allow and remember?", false);
+  } catch {
+    throw new NookError(`Hooks of ${repoName} need your OK. Run nk in a terminal once, or run nk init again`);
   }
-  if (!ok) throw new NookError(`Hook .nook/${hook.name} was not allowed`);
+  if (!ok) throw new NookError("Hooks were not allowed; nothing ran");
   repoConfig.hooks ??= {};
-  repoConfig.hooks[hook.name] = hookHash(hook.file);
+  for (const hook of pending) repoConfig.hooks[hook.name] = hookHash(hook.file);
   save();
 }
 
@@ -104,7 +112,7 @@ export function runHook(hook, { cwd, env, logsDir, label, output = process.stder
   const log = join(logsDir, `${label}-${hook.event}-${stamp()}.log`);
   const stream = createWriteStream(log);
   const { command, args } = hookCommand(hook);
-  output.write(`> .nook/${hook.name}\n`);
+  output.write(`${line("step", `Running ${hook.event} hook .nook/${hook.name}`, useColor(output))}\n`);
   return new Promise((done) => {
     const child = spawn(command, args, { cwd, env, stdio: ["inherit", "pipe", "pipe"], windowsHide: true });
     const forward = (chunk) => {

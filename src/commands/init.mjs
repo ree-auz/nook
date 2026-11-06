@@ -5,7 +5,7 @@ import { detectAgents, which } from "../agents.mjs";
 import { NookError } from "../errors.mjs";
 import { exists, isInside, samePath } from "../home.mjs";
 import { defaultBranch, listWorktrees, mainWorktree, remoteUrl } from "../git.mjs";
-import { HOOK_EVENTS, ensureTrusted, findHook } from "../hooks.mjs";
+import { ensureTrusted, findHooks } from "../hooks.mjs";
 import { assertName, nameProblem, suggestRepoName } from "../names.mjs";
 import { allocatePort } from "../ports.mjs";
 import { createPrompter, splitArgs } from "../prompt.mjs";
@@ -29,11 +29,11 @@ async function prepareShared(ctx, { repoPath, sharedDir, prompter }) {
   mkdirSync(sharedDir, { recursive: true });
   const current = listFiles(sharedDir);
   if (current.length) {
-    ctx.note(`Shared files already in ${sharedDir}: ${current.join(", ")}`);
+    ctx.info(`Shared files already in ${sharedDir}: ${current.join(", ")}`);
     if (!(await prompter.confirm("Prepare the shared files again?", false))) return;
   }
   const { patterns, source } = includePatterns(repoPath);
-  ctx.note(`Shared files follow ${source === "default" ? "the default pattern .env*" : ".worktreeinclude"}; only files git ignores are used`);
+  ctx.info(`Shared files follow ${source === "default" ? "the default pattern .env*" : ".worktreeinclude"}; only files git ignores are used`);
   const candidates = sharedCandidates(repoPath, patterns);
   const templates = templateFiles(repoPath);
   const copies = [];
@@ -42,7 +42,7 @@ async function prepareShared(ctx, { repoPath, sharedDir, prompter }) {
     // A committed template is the safe start: the same file in the main checkout may be production.
     copies.push({ from: join(repoPath, template.from), to: template.to });
     fill.push(join(sharedDir, template.to));
-    ctx.note(`Starting shared ${template.to} from ${template.from}`);
+    ctx.info(`Starting shared ${template.to} from ${template.from}`);
   }
   const fromTemplate = new Set(templates.map((template) => template.to));
   const others = candidates.filter((file) => !fromTemplate.has(file));
@@ -54,10 +54,10 @@ async function prepareShared(ctx, { repoPath, sharedDir, prompter }) {
       copies.push({ from: join(repoPath, file), to: file });
 
   for (const copy of copies) copyFile(copy.from, join(sharedDir, copy.to));
-  if (copies.length) ctx.note(`Shared files: ${copies.map((c) => c.to).join(", ")}`);
+  if (copies.length) ctx.ok(`Shared files in ${sharedDir}: ${copies.map((c) => c.to).join(", ")}`);
   for (const file of fill) {
-    if (openEditor(ctx, file, prompter)) ctx.note(`Saved ${file}`);
-    else ctx.note(`Fill in ${file} once; every new workspace copies it`);
+    if (openEditor(ctx, file, prompter)) ctx.ok(`Saved ${file}`);
+    else ctx.warn(`Fill in ${file} once; every new workspace copies it`);
   }
 }
 
@@ -67,9 +67,9 @@ async function prepareShared(ctx, { repoPath, sharedDir, prompter }) {
  */
 function recordAgents(ctx) {
   const found = detectAgents(ctx.env);
-  ctx.note(found.length ? "Agents found (start one with nk <name> <agent>):" : "No known agents found on PATH");
+  ctx.info(found.length ? "Agents found (start one with nk <name> <agent>):" : "No known agents found on PATH");
   for (const agent of found) {
-    ctx.note(`  ${agent.name}  ${agent.version || "?"}  ${agent.path}`);
+    ctx.item(`${agent.name}  ${agent.version || "?"}  ${agent.path}`);
     const args = ctx.config.agents[agent.name]?.args ?? [];
     ctx.config.agents[agent.name] = { path: agent.path, version: agent.version, args };
   }
@@ -81,11 +81,11 @@ async function adoptWorktrees(ctx, { repoPath, repo, prompter }) {
     .slice(1)
     .filter((w) => !known.some((path) => samePath(path, w.path)));
   if (!others.length) return;
-  ctx.note("Other worktrees of this repository:");
-  for (const w of others) ctx.note(`  ${w.branch ?? "(detached)"}  ${w.path}`);
+  ctx.info("Other worktrees of this repository:");
+  for (const w of others) ctx.item(`${w.branch ?? "(detached)"}  ${w.path}`);
   for (const w of others) {
     if (!w.branch || nameProblem(w.branch) || repo.workspaces[w.branch]) {
-      ctx.note(`  leaving ${w.path} alone (branch name cannot be a workspace name)`);
+      ctx.info(`Leaving ${w.path} alone (its branch name cannot be a workspace name)`);
       continue;
     }
     if (await prompter.confirm(`Let Nook manage ${w.branch}? (No keeps it as it is)`, false))
@@ -114,27 +114,24 @@ export async function init(ctx, { yes = false, name: nameFlag } = {}) {
   repo.default_branch = defaultBranch(repoPath);
   repo.workspaces ??= {};
   repo.hooks ??= {};
-  ctx.note(`Repository ${name}: ${repoPath}`);
-  ctx.note(`  remote ${repo.remote || "(none)"}, default branch ${repo.default_branch}`);
+  ctx.ok(`Registered ${name} @ ${repoPath}`);
+  ctx.info(`Remote ${repo.remote || "(none)"}, default branch ${repo.default_branch}`);
   mkdirSync(join(ctx.paths.workspaces, name), { recursive: true });
 
   await adoptWorktrees(ctx, { repoPath, repo, prompter });
   recordAgents(ctx);
   const tools = toolStatus(ctx.env);
-  ctx.note(`gh: ${tools.gh}; docker: ${tools.docker}`);
+  ctx.info(`gh: ${tools.gh}; docker: ${tools.docker}`);
   await prepareShared(ctx, { repoPath, sharedDir: join(ctx.paths.shared, name), prompter });
   ctx.save();
 
   const hookPrompter = yes ? { confirm: async () => true } : prompter;
-  for (const event of HOOK_EVENTS) {
-    const hook = findHook(repoPath, event);
-    if (!hook) continue;
-    await ensureTrusted({ repoConfig: repo, hook, prompter: hookPrompter, save: () => ctx.save(), output: ctx.err });
-    if (yes) ctx.note(`Allowed .nook/${hook.name} (--yes)`);
-  }
-  if (!exists(join(repoPath, ".nook"))) ctx.note("No .nook/ hooks in this repository");
+  const hooks = findHooks(repoPath);
+  await ensureTrusted({ repoName: name, repoConfig: repo, hooks, prompter: hookPrompter, save: () => ctx.save(), ui: ctx });
+  if (yes && hooks.length) ctx.info(`Allowed ${hooks.map((h) => `.nook/${h.name}`).join(", ")} (--yes)`);
+  if (!exists(join(repoPath, ".nook"))) ctx.info("No .nook/ hooks in this repository");
   ctx.save();
-  ctx.note(`Done. Config: ${ctx.paths.config}`);
-  ctx.note("Next: nk -b <name> [agent]");
+  ctx.ok(`Done. Config: ${ctx.paths.config}`);
+  ctx.info("Next: nk -b <name> [agent]");
   return 0;
 }
