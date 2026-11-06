@@ -69,7 +69,7 @@ function existingHooks(dir) {
 export function generateHooks(dir) {
   const ci = planFromCi(dir);
   if (!ci.files.length) return { reason: "no GitHub Actions workflow (.github/workflows/*.yml)" };
-  if (!ci.best) return { reason: `could not read ${ci.errors.map((e) => e.source).join(", ")}` };
+  if (!ci.best) return { reason: `could not read ${ci.errors.map((e) => `${e.source} (${e.error.split("\n")[0]})`).join(", ")}` };
   const handWritten = existingHooks(dir).filter((hook) => !hook.generated);
   if (handWritten.length) return { reason: `.nook already has hooks written by hand: ${handWritten.map((h) => h.file).join(", ")}`, plan: ci.best };
   const files = hookFiles(ci.best);

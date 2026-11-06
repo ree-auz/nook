@@ -117,7 +117,7 @@ jobs:
 // Generated hooks call docker without a shell, as a real docker.exe needs. Windows
 // cannot run the stand-in docker.cmd that way, so there the CI has no services.
 const services = process.platform !== "win32";
-const ciWorkflow = services ? workflow : workflow.replace(/    services:[^]*?(?=    env:)/, "");
+const ciWorkflow = services ? workflow : workflow.replace(/^    services:[^]*?(?=^    env:)/m, "");
 
 test("hooks write turns CI into hooks that pass hooks test; a CI change then stops nk -b", (t) => {
   const workflow = ciWorkflow;
