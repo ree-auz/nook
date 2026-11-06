@@ -10,9 +10,9 @@ import { cleanWorkspaces } from "./commands/clean.mjs";
 import { listWorkspaces } from "./commands/ls.mjs";
 import { removeWorkspace } from "./commands/rm.mjs";
 import { createWorkspace, openWorkspace } from "./commands/workspace.mjs";
-import { writeHooks } from "./commands/hooks-write.mjs";
+import { writeHooks } from "./commands/write-hooks.mjs";
 import { listHooks } from "./commands/hooks.mjs";
-import { testHooks } from "./commands/hooks-test.mjs";
+import { testHooks } from "./commands/test-hooks.mjs";
 
 const HELP = `nk - one home for your git worktrees
 

@@ -333,7 +333,7 @@ test("nk hooks write fills the prompt with what nk knows and never reads out val
   const { home, repo } = setup(t);
   write(repo, { "pnpm-lock.yaml": "", "compose.yaml": "services: {}\n" });
   sh("git", ["add", "-A"], repo);
-  sh("git", ["commit", "-qm", "markers"], repo);
+  sh("git", ["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "markers"], repo);
   assert.equal(nk(["init", "--yes"], { cwd: repo, home }).status, 0);
   write(join(home, "shared", "demo"), { ".env": "API_KEY=\nDB_PASSWORD=secret-value\n" });
   const r = nk(["hooks", "write"], { cwd: repo, home });

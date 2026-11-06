@@ -11,7 +11,7 @@ import { createPrompter } from "../prompt.mjs";
 import { branchOf, resolveWorkspace } from "../context.mjs";
 import { toName } from "../names.mjs";
 import { approveHooks, hook } from "./workspace.mjs";
-import { uncheckedHooks } from "./hooks-test.mjs";
+import { uncheckedHooks } from "./test-hooks.mjs";
 import { describeProject, dockerCli, findComposeProjects, removeComposeProject } from "../compose.mjs";
 
 function occupants(ctx, path, scan) {
