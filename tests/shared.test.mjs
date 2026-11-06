@@ -14,7 +14,7 @@ test("defaults to ignored .env* files", (t) => {
   assert.ok(files.includes(".env.local"));
   assert.ok(!files.includes(".env.example"), "tracked template is not a shared file");
   assert.ok(!files.includes(".envrc.untracked"), "untracked but not ignored files are skipped");
-  assert.deepEqual(templateFiles(repo), [".env.example"]);
+  assert.deepEqual(templateFiles(repo), [{ from: ".env.example", to: ".env" }]);
 });
 
 test(".worktreeinclude replaces the default", (t) => {
@@ -46,4 +46,19 @@ test("copies only files git ignores in the workspace", (t) => {
   assert.equal(readFileSync(join(repo, ".env"), "utf8"), "KEY=fake\n");
   assert.equal(readFileSync(join(repo, "config.json"), "utf8"), "{}\n");
   assert.ok(existsSync(join(repo, "local/key.txt")));
+});
+
+test("finds templates for any ignored file, in any folder", (t) => {
+  const repo = makeRepo(join(tempDir(t), "demo"), {
+    ".gitignore": ".env\n.dev.vars\nconfig/database.yml\n",
+    ".env.sample": "KEY=\n",
+    "apps/api/.dev.vars.example": "TOKEN=\n",
+    "config/database.yml.dist": "host: localhost\n",
+    "docs/readme.template": "not a secret\n",
+  });
+  assert.deepEqual(templateFiles(repo), [
+    { from: ".env.sample", to: ".env" },
+    { from: "apps/api/.dev.vars.example", to: "apps/api/.dev.vars" },
+    { from: "config/database.yml.dist", to: "config/database.yml" },
+  ]);
 });
