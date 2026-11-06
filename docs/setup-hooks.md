@@ -17,8 +17,10 @@ for the rules and examples, then:
    pyproject.toml, compose files, README and contributing docs, Makefile or
    justfile, existing setup scripts.
 2. Write .nook/create.mjs (install dependencies, start per-workspace
-   services), and only if needed .nook/open.mjs (start stopped services again)
-   and .nook/remove.mjs (delete what create started).
+   services) and, only if needed, .nook/open.mjs (start stopped services
+   again). nk itself removes the workspace's files, its running programs and
+   the Docker Compose projects started in it. Write .nook/remove.mjs only for
+   something else the hooks create outside the folder.
 3. Tell me which commands each hook runs and anything I must fill in once,
    such as values in ~/nook/shared/<repo>/.env. Do not commit; I will review.
 ```
@@ -34,6 +36,10 @@ for the rules and examples, then:
 - `create` runs once, after shared files such as `.env` are copied. `open`
   runs every time the workspace is opened, so it must be safe to run again.
   `remove` runs before the folder is deleted; when it fails nothing is deleted.
+- `nk rm` already stops programs running in the folder and removes the
+  Compose projects started inside it (found by Compose's own labels). A
+  `remove` hook is for anything else outside the folder, such as a database
+  created in a shared local server.
 - Never touch the main checkout or its services: do not read or copy its
   `.env`, and do not stop or remove its containers.
 - Servers and containers use ports from `NOOK_PORT` to `NOOK_PORT + 9`.
@@ -98,15 +104,10 @@ workspace later finds the same project.
 run("docker", "compose", "start");
 ```
 
-```js
-// .nook/remove.mjs: delete everything the project created, found by its label
-import { spawnSync } from "node:child_process";
-const project = process.env.NOOK_WORKSPACE.toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
-const result = spawnSync("docker", ["compose", "--project-name", project, "down", "--volumes", "--remove-orphans"], { stdio: "inherit" });
-process.exit(result.status ?? 1);
-```
+No `remove.mjs` is needed: `nk rm` finds the project by the folder Compose
+labels its containers with, and removes its containers, volumes, networks and
+built images.
 
 A fuller setup with a database per workspace also refuses the production
-project name in every hook, and removes containers, volumes and networks by
-the label `com.docker.compose.project=<project>`, which still works when the
-workspace's `.env` or compose file is gone.
+project name in every hook, so a mistyped name can never start or stop the
+main checkout's services.

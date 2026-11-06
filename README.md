@@ -124,8 +124,21 @@ working directory is inside it), asks once, then:
 1. stops those programs and their child processes;
 2. saves changes and unpushed commits to `~/nook/backup/<repo>/<name>-<time>/`
    (`changes.patch`, `untracked/`, `commits.bundle`);
-3. runs the `remove` hook;
-4. deletes the folder and the branch.
+3. runs the `remove` hook, if the repository has one;
+4. removes the Docker Compose projects started inside the folder: their
+   containers, volumes, networks and built images;
+5. deletes the folder and the branch.
+
+Nothing has to be written down when the workspace is created. Compose labels
+every container with the folder it was started from, so nk asks Docker at
+removal time and also finds services an agent started later. A project that
+also has containers started elsewhere (the main checkout's, for example) is
+kept. `nk doctor` lists Compose projects left behind by workspaces that no
+longer exist.
+
+So a workspace's files, its running programs and its Compose services need no
+`remove` hook. Write one only for what lives elsewhere without a label, such
+as a database created in a shared local server.
 
 ## Listing and cleaning up
 

@@ -4,11 +4,12 @@ import { which } from "../agents.mjs";
 import { exists, samePath } from "../home.mjs";
 import { gitTry, listWorktrees } from "../git.mjs";
 import { line, useColor } from "../ui.mjs";
+import { dockerCli, leftoverComposeProjects } from "../compose.mjs";
 import { HOOK_EVENTS, findHook, trustState } from "../hooks.mjs";
 import { gitVersion, toolStatus } from "../tools.mjs";
 
 /** nk doctor: checks only, changes nothing. Exit 1 when something is broken. */
-export function doctor(ctx) {
+export function doctor(ctx, { docker = dockerCli } = {}) {
   let broken = 0;
   let warnings = 0;
   const color = useColor(ctx.out, ctx.env);
@@ -66,6 +67,9 @@ export function doctor(ctx) {
       else ok(`workspace ${name}`);
     }
     const dir = join(ctx.paths.workspaces, repoName);
+    if (tools.docker === "running")
+      for (const project of leftoverComposeProjects(dir, worktrees.map((w) => w.path), docker))
+        warn(`Compose project ${project.name} was started in ${project.dir}, which is no longer a workspace (remove it with: docker compose -p ${project.name} down --volumes)`);
     if (exists(dir))
       for (const entry of readdirSync(dir)) {
         if (repo.workspaces[entry]) continue;

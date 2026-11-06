@@ -11,6 +11,7 @@ import { createPrompter } from "../prompt.mjs";
 import { branchOf, resolveWorkspace } from "../context.mjs";
 import { toName } from "../names.mjs";
 import { approveHooks, hook } from "./workspace.mjs";
+import { describeProject, dockerCli, findComposeProjects, removeComposeProject } from "../compose.mjs";
 
 function occupants(ctx, path, scan) {
   const result = scan(path);
@@ -24,7 +25,7 @@ const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
  * Backs up what would be lost, runs the remove hook, deletes the folder and
  * the branch, and forgets the workspace. Programs must already be stopped.
  */
-export async function deleteWorkspace(ctx, target, { state, base, backupRoot, prompter, scan = findOccupants }) {
+export async function deleteWorkspace(ctx, target, { state, base, backupRoot, prompter, scan = findOccupants, docker = dockerCli }) {
   const { repo, ws, name } = target;
   const branchName = branchOf(name, ws);
   if (needsBackup(state)) {
@@ -38,6 +39,18 @@ export async function deleteWorkspace(ctx, target, { state, base, backupRoot, pr
       if (error instanceof NookError) error.message += "\nStopped; nothing was deleted";
       throw error;
     }
+  }
+  // What the workspace started with Docker Compose goes too, so no remove hook is needed for it.
+  // Checked again after the hook, which may have removed some of it already.
+  for (const project of findComposeProjects(ws.path, docker).projects) {
+    try {
+      removeComposeProject(project, docker);
+    } catch (error) {
+      throw new NookError(`${error.message}\nStopped; the folder was not deleted`);
+    }
+    ctx.ok(`Removed ${describeProject(project)}`);
+  }
+  if (state.present) {
     const after = occupants(ctx, ws.path, scan);
     if (after.length) throw new NookError(`Programs started running in ${ws.path}:\n${describeOccupants(after)}\nNothing was deleted`);
     const removed = gitTry(["worktree", "remove", "--force", ws.path], { cwd: repo.path });
@@ -59,7 +72,7 @@ export async function deleteWorkspace(ctx, target, { state, base, backupRoot, pr
 }
 
 /** What removing one workspace involves, checked before anything changes. */
-async function planRemoval(ctx, input, { repoFlag, scan, prs }) {
+async function planRemoval(ctx, input, { repoFlag, scan, prs, docker }) {
   const name = toName(input);
   const target = resolveWorkspace(ctx, name, repoFlag);
   const { repo, ws } = target;
@@ -76,6 +89,10 @@ async function planRemoval(ctx, input, { repoFlag, scan, prs }) {
 
   ctx.info(`Removing ${target.name} @ ${ws.path}${state.present ? "" : " (folder already missing)"}${!branchName ? "" : branchName === target.name ? " and its branch" : ` and its branch ${branchName}`}`);
   if (removeHook) ctx.info(`Runs .nook/${removeHook.name} first`);
+  const compose = findComposeProjects(ws.path, docker);
+  for (const project of compose.projects) ctx.info(`Removes ${describeProject(project)}`);
+  for (const name of compose.shared) ctx.warn(`Compose project ${name} also has containers outside this workspace; it is kept`);
+  if (compose.unavailable && compose.unavailable !== "not installed") ctx.warn(`Could not check for Docker containers: ${compose.unavailable}`);
   if (needsBackup(state)) ctx.info(`Backs up changes to ${backupRoot}`);
   if (state.changes.length) {
     ctx.warn(`${plural(state.changes.length, "uncommitted change")}:`);
@@ -94,9 +111,9 @@ async function planRemoval(ctx, input, { repoFlag, scan, prs }) {
 }
 
 /** nk rm <name>... [-n] [-y]: checks every workspace first, asks once, then removes them in turn. */
-export async function removeWorkspace(ctx, { name, names = [name], repo: repoFlag, dryRun = false, yes = false, scan = findOccupants, stop = stopProcesses, prompter = createPrompter(), prs = githubPrs }) {
+export async function removeWorkspace(ctx, { name, names = [name], repo: repoFlag, dryRun = false, yes = false, scan = findOccupants, stop = stopProcesses, prompter = createPrompter(), prs = githubPrs, docker = dockerCli }) {
   const plans = [];
-  for (const input of [...new Set(names.map(toName))]) plans.push(await planRemoval(ctx, input, { repoFlag, scan, prs }));
+  for (const input of [...new Set(names.map(toName))]) plans.push(await planRemoval(ctx, input, { repoFlag, scan, prs, docker }));
   if (dryRun) {
     ctx.info("Dry run; nothing was removed");
     return 0;
@@ -133,7 +150,7 @@ export async function removeWorkspace(ctx, { name, names = [name], repo: repoFla
   }
 
   for (const { target, state, base, backupRoot } of plans) {
-    await deleteWorkspace(ctx, target, { state, base, backupRoot, prompter, scan });
+    await deleteWorkspace(ctx, target, { state, base, backupRoot, prompter, scan, docker });
     ctx.ok(`Removed ${target.name}`);
   }
   return 0;
