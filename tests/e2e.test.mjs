@@ -86,18 +86,12 @@ test("init -> -b -> open -> rm", async (t) => {
   const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { cwd: ws, stdio: "ignore" });
   t.after(() => child.kill());
   await new Promise((done) => setTimeout(done, 500));
-  r = run(["rm", "smoke", "-y"]);
-  assert.equal(r.status, 1, r.all);
-  assert.match(r.err, /still using/);
-  assert.match(r.err, new RegExp(`PID ${child.pid}`));
-  assert.ok(existsSync(ws));
-  child.kill();
-  await new Promise((done) => child.once("exit", done));
-
   r = run(["rm", "smoke"]);
   assert.equal(r.status, 1, "asks for confirmation; no terminal means no removal");
+  assert.match(r.err, new RegExp(`PID ${child.pid}`));
   assert.ok(existsSync(ws));
 
+  const exited = new Promise((done) => child.once("exit", done));
   r = run(["rm", "smoke", "-y"]);
   assert.equal(r.status, 0, r.all);
   assert.match(r.all, /remove hook for smoke/);
@@ -108,6 +102,7 @@ test("init -> -b -> open -> rm", async (t) => {
   assert.match(readFileSync(join(home, "backup", "demo", backup, "changes.patch"), "utf8"), /# changed/);
   assert.equal(readFileSync(join(home, "backup", "demo", backup, "untracked", "notes.txt"), "utf8"), "draft\n");
   assert.ok(readdirSync(join(home, "logs")).some((file) => file.startsWith("demo-smoke-remove-")));
+  await exited;
   assert.equal(parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.smoke, undefined);
 });
 

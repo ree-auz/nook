@@ -5,23 +5,21 @@ import { exists, isInside } from "../home.mjs";
 import { baseRef, gitTry } from "../git.mjs";
 import { findHook } from "../hooks.mjs";
 import { backupDir, createBackup, inspectWorkspace, needsBackup } from "../backup.mjs";
-import { describeOccupants, findOccupants } from "../occupancy.mjs";
+import { describeOccupants, findOccupants, stopProcesses } from "../occupancy.mjs";
 import { createPrompter } from "../prompt.mjs";
 import { resolveWorkspace } from "../context.mjs";
 import { toName } from "../names.mjs";
 import { hook } from "./workspace.mjs";
 
-function checkOccupied(ctx, path, scan) {
+function occupants(ctx, path, scan) {
+  ctx.note("Checking for programs running in the folder...");
   const result = scan(path);
   if (result.unsupported) ctx.note(`Could not check for running programs: ${result.unsupported}`);
-  if (result.processes.length)
-    throw new NookError(
-      `Programs are still using ${path}:\n${describeOccupants(result.processes)}\nClose them, then run nk rm again`,
-    );
+  return result.processes;
 }
 
 /** nk rm <name> [-n] [-y] */
-export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun = false, yes = false, scan = findOccupants, prompter = createPrompter() }) {
+export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun = false, yes = false, scan = findOccupants, stop = stopProcesses, prompter = createPrompter() }) {
   const name = toName(input);
   const target = resolveWorkspace(ctx, name, repoFlag);
   const { repo, ws } = target;
@@ -47,15 +45,22 @@ export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun
   if (!state.merged) ctx.note(`  ! branch ${name} is not merged into ${base}`);
   if (dryRun) return 0;
 
-  if (state.present) checkOccupied(ctx, ws.path, scan);
+  const running = state.present ? occupants(ctx, ws.path, scan) : [];
+  if (running.length) ctx.note(`Programs running in ${ws.path}:\n${describeOccupants(running)}`);
   if (!yes) {
+    const question = running.length ? `Stop ${running.length === 1 ? "it" : "them"} and remove ${name}?` : `Remove ${name}?`;
     let ok;
     try {
-      ok = await prompter.confirm(`Remove ${name}?`, false);
+      ok = await prompter.confirm(question, false);
     } catch {
       throw new NookError("Confirmation needs a terminal; pass -y to remove without asking");
     }
     if (!ok) throw new NookError("Nothing was removed");
+  }
+  if (running.length) {
+    await stop(running);
+    const left = occupants(ctx, ws.path, scan);
+    if (left.length) throw new NookError(`Could not stop:\n${describeOccupants(left)}\nNothing was removed`);
   }
 
   if (needsBackup(state)) {
@@ -69,7 +74,8 @@ export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun
       if (error instanceof NookError) error.message += "\nStopped; nothing was deleted";
       throw error;
     }
-    checkOccupied(ctx, ws.path, scan);
+    const after = occupants(ctx, ws.path, scan);
+    if (after.length) throw new NookError(`Programs started running in ${ws.path}:\n${describeOccupants(after)}\nNothing was deleted`);
     const removed = gitTry(["worktree", "remove", "--force", ws.path], { cwd: repo.path });
     if (!removed.ok && exists(ws.path)) {
       try {

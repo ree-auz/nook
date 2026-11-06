@@ -89,14 +89,16 @@ and asks. Rerunning `nk init` also asks.
 
 ## Removing a workspace
 
-`nk rm <name>` refuses while you are inside the workspace or while another
-program still has it as its working directory or holds a file in it. It lists
-uncommitted changes, unpushed commits and an unmerged branch, asks once, then:
+`nk rm <name>` refuses while you are inside the workspace. It lists
+uncommitted changes, unpushed commits, an unmerged branch and programs still
+running in the folder (terminals, dev servers, agents: any process whose
+working directory is inside it), asks once, then:
 
-1. saves changes and unpushed commits to `~/nook/backup/<repo>/<name>-<time>/`
+1. stops those programs and their child processes;
+2. saves changes and unpushed commits to `~/nook/backup/<repo>/<name>-<time>/`
    (`changes.patch`, `untracked/`, `commits.bundle`);
-2. runs the `remove` hook;
-3. deletes the folder and the branch.
+3. runs the `remove` hook;
+4. deletes the folder and the branch.
 
 ## Development
 

@@ -26,14 +26,6 @@ function linuxScan(root) {
     }
     try {
       if (isInside(readlinkSync(`/proc/${entry}/cwd`), root, "linux")) add(found, pid, name, "working directory");
-      for (const fd of readdirSync(`/proc/${entry}/fd`)) {
-        try {
-          const target = readlinkSync(`/proc/${entry}/fd/${fd}`);
-          if (target.startsWith("/") && isInside(target, root, "linux")) add(found, pid, name, "open file");
-        } catch {
-          /* A descriptor can close while we look. */
-        }
-      }
     } catch {
       inaccessible++;
     }
@@ -41,7 +33,7 @@ function linuxScan(root) {
   return { processes: [...found.values()], inaccessible };
 }
 
-/** Parses `lsof -F pcfn` output and keeps entries below `root`. */
+/** Parses `lsof -d cwd -F pcfn` output and keeps working directories below `root`. */
 export function parseLsof(text, root, platform = "darwin") {
   const found = new Map();
   let pid = 0;
@@ -56,7 +48,7 @@ export function parseLsof(text, root, platform = "darwin") {
     } else if (tag === "c") name = value;
     else if (tag === "f") fd = value;
     else if (tag === "n" && pid && pid !== process.pid && value.startsWith("/") && isInside(value, root, platform))
-      add(found, pid, name || String(pid), fd === "cwd" ? "working directory" : "open file");
+      fd === "cwd" && add(found, pid, name || String(pid), "working directory");
   }
   return [...found.values()];
 }
@@ -64,7 +56,7 @@ export function parseLsof(text, root, platform = "darwin") {
 function lsofScan(root, platform) {
   const lsof = which("lsof") ?? (["/usr/sbin/lsof", "/usr/bin/lsof"].find((p) => which(p)) || null);
   if (!lsof) return { processes: [], unsupported: "lsof not found" };
-  const result = spawnSync(lsof, ["-n", "-P", "-w", "-F", "pcfn"], { encoding: "utf8", maxBuffer: 512 * 1024 * 1024 });
+  const result = spawnSync(lsof, ["-n", "-P", "-w", "-d", "cwd", "-F", "pcfn"], { encoding: "utf8", maxBuffer: 512 * 1024 * 1024 });
   if (result.error) return { processes: [], unsupported: result.error.message };
   return { processes: parseLsof(result.stdout, root, platform) };
 }
@@ -88,9 +80,9 @@ function windowsScan(root) {
 }
 
 /**
- * Processes whose working directory is inside `root` or that hold a file
- * below it. Windows reads each process's current directory and asks Restart
- * Manager about open files; macOS and Linux use lsof and /proc.
+ * Processes whose working directory is inside `root`: terminals, dev servers
+ * and agents started there. Like worktrunk's `--reap`, open files are not
+ * scanned: that is slow and editors usually keep their directory elsewhere.
  */
 export function findOccupants(root, platform = process.platform) {
   const target = realPath(root);
@@ -101,4 +93,39 @@ export function findOccupants(root, platform = process.platform) {
 
 export function describeOccupants(processes) {
   return processes.map((item) => `  ${item.name} (PID ${item.pid}): ${item.reasons.join(", ")}`).join("\n");
+}
+
+/**
+ * Ends the processes and their children. Windows uses taskkill /T /F; macOS and
+ * Linux send SIGTERM, then SIGKILL to what is still running after 3 seconds.
+ */
+export async function stopProcesses(processes, platform = process.platform) {
+  if (platform === "win32") {
+    for (const { pid } of processes) spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    return;
+  }
+  const alive = (pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  for (const { pid } of processes) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch {
+      /* Already gone. */
+    }
+  }
+  for (let waited = 0; waited < 3000 && processes.some(({ pid }) => alive(pid)); waited += 100)
+    await new Promise((done) => setTimeout(done, 100));
+  for (const { pid } of processes) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      /* Already gone. */
+    }
+  }
 }
