@@ -56,3 +56,11 @@ test("for Warp, a tab config runs the launcher in the chosen folder", async (t) 
     `& 'C:\\Program Files\\nodejs\\node.exe' 'C:\\nook\\open-issue.mjs' '--run' 'C:\\Temp\\it''s.md' 'ree-270-x' 'codex' '--cleanup' '${config}'`,
   );
 });
+
+test("an issue label can pick the agent", async () => {
+  const { agentFromLabels } = await import("../integrations/linear/open-issue.mjs");
+  const prompt = "<issue>\n<label>Chore</label>\n<label>模型 › Sol · 低</label>\n<label>执行 › Claude</label>\n</issue>";
+  assert.equal(agentFromLabels(prompt, "执行"), "claude");
+  assert.equal(agentFromLabels(prompt, "Agent"), null, "no label in that group");
+  assert.equal(agentFromLabels(prompt, undefined), null, "only when asked for");
+});

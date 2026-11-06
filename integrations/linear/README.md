@@ -40,6 +40,11 @@ Supported so far: Windows, with Windows Terminal (default) or Warp.
      `nk -b <name> <agent>` accepts.
    - To open the tab in Warp instead of Windows Terminal, add
      `"--terminal", "warp"` to `args`.
+   - To let each issue pick its agent, label issues from one label group
+     (say `Agent › Codex`, `Agent › Claude`) and add `"--agent-label", "Agent"`
+     to `args`. Linear's prompt lists the issue's labels, and the script starts
+     the agent named by that group's label (lowercased), or the one in `args`
+     when the issue has none.
    - `env` is an allowlist: Linear only passes the variables listed here.
 
 ## Use

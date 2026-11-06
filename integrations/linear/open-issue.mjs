@@ -84,10 +84,31 @@ function which(command) {
 
 const TERMINALS = { wt: openInWindowsTerminal, warp: openInWarp };
 
+/**
+ * The agent named by a label in Linear's prompt, which lists the issue's
+ * labels as <label>Group › Name</label>: with group "Agent", an issue
+ * labelled "Agent › Claude" gets `claude`.
+ */
+export function agentFromLabels(prompt, group) {
+  if (!group) return null;
+  for (const [, text] of prompt.matchAll(/<label>([^<]*)<\/label>/g)) {
+    const [labelGroup, name] = text.split("›").map((part) => part.trim());
+    if (name && labelGroup === group) return name.toLowerCase().replace(/\s+/g, "-");
+  }
+  return null;
+}
+
+/** `--name value` from the arguments Linear passes. */
+function option(argv, name) {
+  const at = argv.indexOf(name);
+  return at >= 0 ? argv[at + 1] : undefined;
+}
+
 function fromLinear(argv) {
-  const terminalAt = argv.indexOf("--terminal");
-  const terminal = terminalAt >= 0 ? argv[terminalAt + 1] : "wt";
-  const agent = argv.find((arg, i) => !arg.startsWith("--") && i !== terminalAt + 1) ?? "codex";
+  const terminal = option(argv, "--terminal") ?? "wt";
+  const optionValues = new Set(["--terminal", "--agent-label"].map((name) => argv.indexOf(name) + 1).filter((i) => i > 0));
+  const fallback = argv.find((arg, i) => !arg.startsWith("--") && !optionValues.has(i)) ?? "codex";
+  const agent = agentFromLabels(process.env.LINEAR_PROMPT ?? "", option(argv, "--agent-label")) ?? fallback;
   const open = TERMINALS[terminal];
   if (!open) throw new Error(`Unknown terminal "${terminal}"; use ${Object.keys(TERMINALS).join(" or ")}`);
   const { LINEAR_ISSUE_BRANCH_NAME: branch, LINEAR_WORK_DIR: dir, LINEAR_ISSUE_IDENTIFIER: id = "issue", LINEAR_PROMPT: prompt = "" } = process.env;
