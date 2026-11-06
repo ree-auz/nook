@@ -200,7 +200,7 @@ test("an old branch without .nook still gets the hooks; a branch with / keeps it
   assert.ok(!existsSync(join(ws, ".nook")), "the branch has no hooks of its own");
   assert.ok(existsSync(join(ws, "hook-create.txt")), "the repository's hooks ran");
   assert.equal(parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces["feat-login"].branch, "feat/Login");
-  assert.equal(JSON.parse(run(["ls", "--json"]).out)[0].branch, "feat/Login");
+  assert.equal(JSON.parse(run(["ls", "--json"]).out).find((item) => !item.main).branch, "feat/Login");
   assert.equal(run(["doctor"]).status, 0);
 
   const removed = run(["rm", "feat-login", "-y"]);
@@ -218,4 +218,36 @@ test("init again keeps the shared files you filled in", (t) => {
   assert.equal(r.status, 0, r.all);
   assert.equal(readFileSync(shared, "utf8"), "API_KEY=filled\n");
   assert.match(r.err, /Kept shared files: \.env/);
+});
+
+test("worktrees made by other tools are listed and removable; the main checkout is not", (t) => {
+  const { root, home, repo } = setup(t);
+  const run = (args) => nk(args, { cwd: repo, home });
+  assert.equal(run(["init", "--yes"]).status, 0);
+  const other = join(root, "orca", "REE-228");
+  sh("git", ["worktree", "add", "-q", "-b", "ree-auz/REE-228", other, "main"], repo);
+  const locked = join(root, "orca", "kept");
+  sh("git", ["worktree", "add", "-q", "-b", "kept", locked, "main"], repo);
+  sh("git", ["worktree", "lock", locked], repo);
+
+  const data = JSON.parse(run(["ls", "--json"]).out);
+  const outside = data.find((item) => item.path === other);
+  assert.equal(outside.name, "ree-auz-ree-228");
+  assert.equal(outside.branch, "ree-auz/REE-228");
+  assert.equal(outside.managed, false);
+  assert.equal(data.find((item) => item.main).path, repo);
+  assert.equal(data.find((item) => item.path === locked).locked, true);
+
+  let r = run(["rm", "main", "-y"]);
+  assert.equal(r.status, 1);
+  assert.match(r.err, /main checkout/);
+  r = run(["rm", "kept", "-y"]);
+  assert.equal(r.status, 1);
+  assert.match(r.err, /locked/);
+  r = run(["rm", "ree-228", "-y"]);
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.all, /remove hook for ree-auz-ree-228/);
+  assert.ok(!existsSync(other));
+  assert.equal(sh("git", ["branch", "--list", "ree-auz/REE-228"], repo), "");
+  sh("git", ["worktree", "unlock", locked], repo);
 });

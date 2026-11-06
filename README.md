@@ -127,6 +127,15 @@ behind (↓) the default branch, and its pull request with the CI result
 why. Merged rows are dimmed. `nk ls --json` prints the same data for scripts
 and agents.
 
+Git is the source of truth, as in worktrunk: `nk ls` shows every worktree of
+the repository, including ones made by other tools (Orca, Conductor, plain
+`git worktree add`). Those have no port, and are named by their branch with
+the same conversion as `nk -b` (`ree-auz/REE-228` becomes `ree-auz-ree-228`).
+The first column marks the main checkout `^`, the worktree you are in `@`, and
+the others `+`. `nk rm`, `nk <name>` and `nk clean` work on all of them; a name
+matches the branch or the folder. The main checkout and worktrees locked with
+`git worktree lock` are never removed.
+
 `nk clean` removes workspaces whose work is merged, like worktrunk's
 `wt step prune` and gh-poi. It first fetches the default branch, then counts a
 workspace as merged when:
@@ -136,7 +145,7 @@ workspace as merged when:
 - it has no pull request, its branch is already in the default branch, and it
   is at least a day old (so a workspace you just created is kept).
 
-It keeps workspaces with uncommitted changes, with commits made after the PR
+It keeps locked worktrees, workspaces with uncommitted changes, with commits made after the PR
 was merged, and the one you are inside. It lists what it would remove, what it
 keeps, and the programs running in the ones it removes, asks once, then stops
 those programs and removes each workspace the way `nk rm` does (backup,

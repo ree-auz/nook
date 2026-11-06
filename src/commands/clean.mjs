@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { NookError } from "../errors.mjs";
 import { isInside } from "../home.mjs";
@@ -27,17 +28,27 @@ export function mergedReason(item, now = Date.now()) {
     return { skip: `has commits that are not in PR #${pr.number}` };
   }
   if (pr) return null;
-  const age = now - Date.parse(ws.created ?? "");
+  const age = now - (ws.created ? Date.parse(ws.created) : createdAt(ws.path));
   if (!(age >= DAY)) return null;
   if (branchTip(repo.path, branch) && isMerged(repo.path, branch, base)) return { ok: `merged into ${base}` };
   return null;
+}
+
+/** When a folder was made, for worktrees Nook did not record; NaN when unknown. */
+function createdAt(path) {
+  try {
+    const stat = statSync(path);
+    return stat.birthtimeMs || stat.ctimeMs;
+  } catch {
+    return Number.NaN;
+  }
 }
 
 /** nk clean [-n] [-y]: remove workspaces whose work is merged. */
 export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes = false, prs = githubPrs, scan = findOccupants, stop = stopProcesses, prompter = createPrompter(), now = Date.now() } = {}) {
   if (repoFlag && !ctx.config.repos[repoFlag]) throw new NookError(`Unknown repository "${repoFlag}"`);
   for (const [name, repo] of Object.entries(ctx.config.repos)) {
-    if ((repoFlag && name !== repoFlag) || !Object.keys(repo.workspaces).length || !remoteUrl(repo.path)) continue;
+    if ((repoFlag && name !== repoFlag) || !remoteUrl(repo.path)) continue;
     const fetched = gitTry(["fetch", "--quiet", "origin", repo.default_branch], { cwd: repo.path });
     if (!fetched.ok) ctx.warn(`Could not fetch origin/${repo.default_branch} for ${name}; using what is local`);
   }
@@ -47,10 +58,12 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
   const remove = [];
   const skipped = [];
   for (const item of items) {
+    if (item.main || !item.branch) continue;
     const reason = mergedReason(item, now);
     if (!reason) continue;
     const label = `${item.name} (${item.repoName})`;
-    if (reason.skip) skipped.push(`${label}: ${reason.skip}`);
+    if (item.ws.locked) skipped.push(`${label}: locked (git worktree unlock to allow)`);
+    else if (reason.skip) skipped.push(`${label}: ${reason.skip}`);
     else if (isInside(ctx.cwd, item.ws.path)) skipped.push(`${label}: you are inside it`);
     else if (item.changes) skipped.push(`${label}: ${plural(item.changes, "uncommitted change")}`);
     else remove.push({ item, label, reason: reason.ok, running: item.changes === null ? [] : scan(item.ws.path).processes });

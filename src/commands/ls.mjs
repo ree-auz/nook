@@ -2,7 +2,8 @@ import { baseRef, remoteUrl } from "../git.mjs";
 import { githubPrs } from "../forge.mjs";
 import { aheadBehind, changeCount } from "../status.mjs";
 import { useColor } from "../ui.mjs";
-import { branchOf } from "../context.mjs";
+import { branchOf, repoWorkspaces } from "../context.mjs";
+import { isInside } from "../home.mjs";
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -13,7 +14,7 @@ function table(rows) {
 
 /** Every workspace with its local state and, when gh can tell, its PR. */
 export async function collect(ctx, { repo: repoFlag, prs: lookup = githubPrs } = {}) {
-  const repos = Object.entries(ctx.config.repos).filter(([name, repo]) => (!repoFlag || name === repoFlag) && Object.keys(repo.workspaces).length);
+  const repos = Object.entries(ctx.config.repos).filter(([name]) => !repoFlag || name === repoFlag);
   const fetched = await Promise.all(repos.map(([, repo]) => (remoteUrl(repo.path) ? lookup(repo.path, ctx.env) : { prs: null })));
   const items = [];
   const problems = new Set();
@@ -21,10 +22,11 @@ export async function collect(ctx, { repo: repoFlag, prs: lookup = githubPrs } =
     const { prs, error } = fetched[i];
     if (error) problems.add(error);
     const base = baseRef(repo.path, repo.default_branch);
-    for (const [name, ws] of Object.entries(repo.workspaces)) {
-      const branch = branchOf(name, ws);
-      const pr = prs?.get(branch) ?? null;
-      items.push({ name, branch, repoName, repo, ws, base, changes: changeCount(ws.path), commits: aheadBehind(repo.path, branch, base), pr });
+    for (const item of repoWorkspaces(repoName, repo)) {
+      const branch = branchOf(item.name, item.ws);
+      const pr = item.main || !branch ? null : (prs?.get(branch) ?? null);
+      const commits = item.main || !branch ? null : aheadBehind(repo.path, branch, base);
+      items.push({ ...item, branch, base, changes: changeCount(item.ws.path), commits, pr });
     }
   });
   return { items, problems: [...problems] };
@@ -51,9 +53,12 @@ function prText(pr) {
 export async function listWorkspaces(ctx, { repo: repoFlag, json = false, prs } = {}) {
   const { items, problems } = await collect(ctx, { repo: repoFlag, prs });
   if (json) {
-    const data = items.map(({ name, branch, repoName, ws, base, changes, commits, pr }) => ({
+    const data = items.map(({ name, branch, repoName, ws, base, changes, commits, pr, main, managed }) => ({
       name,
       branch,
+      main,
+      managed,
+      locked: Boolean(ws.locked),
       repo: repoName,
       path: ws.path,
       port: ws.port ?? null,
@@ -67,12 +72,16 @@ export async function listWorkspaces(ctx, { repo: repoFlag, json = false, prs } 
     return 0;
   }
   if (!items.length) {
-    ctx.info("No workspaces. Create one with: nk -b <name>");
+    ctx.info("No repositories yet. Run nk init inside one");
     return 0;
   }
-  const rows = [["NAME", "REPO", "PORTS", "CHANGES", "BASE", "PR", "PATH"]];
-  for (const item of items)
-    rows.push([item.name, item.repoName, portsText(item.ws), changesText(item.changes), commitsText(item.commits), prText(item.pr), item.ws.path]);
+  // Gutter as in worktrunk: ^ main checkout, @ where you are, + another worktree.
+  const mark = (item) => (isInside(ctx.cwd, item.ws.path) && !items.some((o) => o !== item && o.ws.path.length > item.ws.path.length && isInside(ctx.cwd, o.ws.path)) ? "@" : item.main ? "^" : "+");
+  const rows = [["", "NAME", "REPO", "PORTS", "CHANGES", "BASE", "PR", "PATH"]];
+  for (const item of items) {
+    const name = item.ws.locked ? `${item.name} (locked)` : item.name;
+    rows.push([mark(item), name, item.repoName, portsText(item.ws), changesText(item.changes), commitsText(item.commits), prText(item.pr), item.ws.path]);
+  }
   const lines = table(rows);
   // Merged rows are dimmed, as worktrunk does for branches that are safe to delete.
   const dim = useColor(ctx.out, ctx.env);
@@ -81,9 +90,12 @@ export async function listWorkspaces(ctx, { repo: repoFlag, json = false, prs } 
   });
   ctx.print(lines.join("\n"));
 
-  const changed = items.filter((item) => item.changes).length;
-  const merged = items.filter((item) => item.pr?.state === "merged").length;
-  const parts = [`Showing ${plural(items.length, "workspace")}`];
+  const workspaces = items.filter((item) => !item.main);
+  const changed = workspaces.filter((item) => item.changes).length;
+  const merged = workspaces.filter((item) => item.pr?.state === "merged").length;
+  const outside = workspaces.filter((item) => !item.managed).length;
+  const parts = [`Showing ${plural(workspaces.length, "workspace")} and the main checkout`];
+  if (outside) parts.push(`${outside} made by other tools`);
   if (changed) parts.push(`${changed} with changes`);
   if (merged) parts.push(`${merged} merged (nk clean removes them)`);
   ctx.info(parts.join(", "));

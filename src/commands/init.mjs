@@ -6,8 +6,7 @@ import { NookError } from "../errors.mjs";
 import { exists, isInside, samePath } from "../home.mjs";
 import { defaultBranch, listWorktrees, mainWorktree, remoteUrl } from "../git.mjs";
 import { ensureTrusted, findHooks } from "../hooks.mjs";
-import { assertName, nameProblem, normalizeName, suggestRepoName } from "../names.mjs";
-import { allocatePort } from "../ports.mjs";
+import { assertName, suggestRepoName } from "../names.mjs";
 import { createPrompter, splitArgs } from "../prompt.mjs";
 import { copyFile, includePatterns, knownSecretFiles, listFiles, sharedCandidates, templateFiles } from "../shared.mjs";
 import { toolStatus } from "../tools.mjs";
@@ -77,33 +76,15 @@ function recordAgents(ctx) {
   }
 }
 
-async function adoptWorktrees(ctx, { repoPath, repo, prompter }) {
+/** Worktrees other tools made need no adopting: nk ls, rm and clean read them from git. */
+function listOtherWorktrees(ctx, { repoPath, repo }) {
   const known = Object.values(repo.workspaces).map((ws) => ws.path);
   const others = listWorktrees(repoPath)
     .slice(1)
     .filter((w) => !known.some((path) => samePath(path, w.path)));
   if (!others.length) return;
-  ctx.info("Other worktrees of this repository:");
+  ctx.info(`Other worktrees of this repository (nk ls, nk rm and nk clean include them):`);
   for (const w of others) ctx.item(`${w.branch ?? "(detached)"}  ${w.path}`);
-  for (const w of others) {
-    const name = w.branch ? normalizeName(w.branch) : "";
-    if (!w.branch) {
-      ctx.info(`Leaving ${w.path} alone (no branch checked out)`);
-      continue;
-    }
-    if (nameProblem(name) || repo.workspaces[name]) {
-      ctx.info(`Leaving ${w.path} alone (${repo.workspaces[name] ? `${name} is taken` : nameProblem(name)})`);
-      continue;
-    }
-    const label = name === w.branch ? name : `${w.branch} as ${name}`;
-    if (await prompter.confirm(`Let Nook manage ${label}? (No keeps it as it is)`, false))
-      repo.workspaces[name] = {
-        path: w.path,
-        port: await allocatePort(ctx.config),
-        created: new Date().toISOString(),
-        ...(name !== w.branch && { branch: w.branch }),
-      };
-  }
 }
 
 /** nk init: run once per repository; safe to run again. */
@@ -131,7 +112,7 @@ export async function init(ctx, { yes = false, name: nameFlag } = {}) {
   ctx.info(`Remote ${repo.remote || "(none)"}, default branch ${repo.default_branch}`);
   mkdirSync(join(ctx.paths.workspaces, name), { recursive: true });
 
-  await adoptWorktrees(ctx, { repoPath, repo, prompter });
+  listOtherWorktrees(ctx, { repoPath, repo });
   recordAgents(ctx);
   const tools = toolStatus(ctx.env);
   ctx.info(`gh: ${tools.gh}; docker: ${tools.docker}`);

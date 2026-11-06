@@ -50,8 +50,10 @@ export async function deleteWorkspace(ctx, target, { state, base, backupRoot, pr
     }
   }
   gitTry(["worktree", "prune"], { cwd: repo.path });
-  const branch = gitTry(["branch", "-D", branchName], { cwd: repo.path });
-  if (!branch.ok && !/not found/i.test(branch.err)) ctx.warn(`Branch ${branchName} was kept: ${branch.err}`);
+  if (branchName) {
+    const branch = gitTry(["branch", "-D", branchName], { cwd: repo.path });
+    if (!branch.ok && !/not found/i.test(branch.err)) ctx.warn(`Branch ${branchName} was kept: ${branch.err}`);
+  }
   delete repo.workspaces[name];
   ctx.save();
 }
@@ -61,16 +63,17 @@ export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun
   const name = toName(input);
   const target = resolveWorkspace(ctx, name, repoFlag);
   const { repo, ws } = target;
+  if (ws.locked) throw new NookError(`${ws.path} is locked. Unlock it first: git worktree unlock ${ws.path}`);
   if (exists(ws.path) && isInside(ctx.cwd, ws.path))
     throw new NookError(`You are inside ${ws.path}. Change to another folder first, e.g. cd ${repo.path}`);
 
   const base = baseRef(repo.path, repo.default_branch);
   const branchName = branchOf(name, ws);
-  const state = inspectWorkspace({ repo: repo.path, path: ws.path, branch: branchName, base });
+  const state = inspectWorkspace({ repo: repo.path, path: ws.path, branch: branchName ?? "", base });
   const backupRoot = join(ctx.paths.backup, target.repoName);
   const removeHook = state.present ? findHook(repo.path, "remove") : null;
 
-  ctx.info(`Removing ${name} @ ${ws.path}${state.present ? "" : " (folder already missing)"} and its branch${branchName === name ? "" : ` ${branchName}`}`);
+  ctx.info(`Removing ${name} @ ${ws.path}${state.present ? "" : " (folder already missing)"}${!branchName ? "" : branchName === name ? " and its branch" : ` and its branch ${branchName}`}`);
   if (removeHook) ctx.info(`Runs .nook/${removeHook.name} first`);
   if (needsBackup(state)) ctx.info(`Backs up changes to ${backupRoot}`);
   if (state.changes.length) {
@@ -79,7 +82,7 @@ export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun
     if (state.changes.length > 10) ctx.item(`... ${state.changes.length - 10} more`);
   }
   if (state.unpushed.length) ctx.warn(`${plural(state.unpushed.length, "commit")} not pushed`);
-  if (!state.merged) {
+  if (branchName && !state.merged) {
     // A squash merge leaves the branch outside the base; the PR says whether it was merged.
     const pr = remoteUrl(repo.path) ? (await prs(repo.path, ctx.env)).prs?.get(branchName) : null;
     if (pr?.state === "merged") ctx.info(`PR #${pr.number} is merged`);

@@ -107,11 +107,12 @@ test("clean removes merged workspaces and keeps the rest", async (t) => {
   text = lines.join("");
   assert.match(text, /open\s+demo\s+\d+-\d+\s+clean\s+#4 open running/);
   assert.match(text, /extra\s+demo\s+\d+-\d+\s+clean\s+↑2\s+#2 merged/);
-  assert.match(text, /Showing 4 workspaces, 1 with changes, 2 merged/);
+  assert.match(text, /Showing 4 workspaces and the main checkout, 1 with changes, 2 merged/);
 
   lines.length = 0;
   assert.equal(await listWorkspaces(ctx(), { json: true, prs: async () => ({ error: "gh is not logged in" }) }), 0);
   const data = JSON.parse(lines.join(""));
-  assert.deepEqual(data.map((item) => item.name).sort(), ["dirty", "extra", "fresh", "open"]);
+  assert.deepEqual(data.map((item) => item.name).sort(), ["dirty", "extra", "fresh", "main", "open"]);
+  assert.equal(data.find((item) => item.name === "main").main, true);
   assert.equal(data.find((item) => item.name === "dirty").changes, 1);
 });

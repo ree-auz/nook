@@ -1,7 +1,8 @@
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { loadConfig, saveConfig } from "./config.mjs";
 import { NookError } from "./errors.mjs";
-import { homePaths, isInside, nookHome } from "./home.mjs";
+import { homePaths, isInside, nookHome, samePath } from "./home.mjs";
+import { normalizeName } from "./names.mjs";
 import { gitTry, listWorktrees } from "./git.mjs";
 import { line, useColor } from "./ui.mjs";
 
@@ -71,17 +72,55 @@ export function resolveRepo(ctx, flag) {
   throw new NookError(`Several repositories are registered (${names.join(", ")}); run nk inside one or pass --repo`);
 }
 
-/** An existing workspace by name. */
+/**
+ * Every worktree of a repository, as git lists them, joined with what Nook
+ * recorded (port, creation time). Git is the source of truth, like worktrunk:
+ * worktrees made by other tools show up too, without a port. The main
+ * checkout comes first with `main: true`; workspaces Nook recorded whose
+ * folder is gone come last.
+ */
+export function repoWorkspaces(repoName, repo) {
+  let trees = [];
+  try {
+    trees = listWorktrees(repo.path);
+  } catch {
+    /* Not a usable repository; nk doctor reports it. */
+  }
+  const items = [];
+  const recorded = new Set();
+  const taken = new Set(Object.keys(repo.workspaces));
+  trees.forEach((tree, index) => {
+    if (tree.bare) return;
+    const found = Object.entries(repo.workspaces).find(([, ws]) => samePath(ws.path, tree.path));
+    if (found) {
+      recorded.add(found[0]);
+      items.push({ repoName, repo, name: found[0], ws: { ...found[1], locked: tree.locked }, main: false, managed: true });
+      return;
+    }
+    let name = normalizeName(tree.branch ?? basename(tree.path));
+    if (index > 0 && (!name || taken.has(name))) name = normalizeName(basename(tree.path));
+    taken.add(name);
+    const ws = { path: tree.path, branch: tree.branch, locked: tree.locked };
+    items.push({ repoName, repo, name, ws, main: index === 0, managed: false });
+  });
+  for (const [name, ws] of Object.entries(repo.workspaces))
+    if (!recorded.has(name)) items.push({ repoName, repo, name, ws, main: false, managed: true });
+  return items;
+}
+
+/** An existing workspace by name: its branch or folder name, converted the same way. */
 export function resolveWorkspace(ctx, name, flag) {
   const candidates = [];
   const preferred = flag ?? repoFromCwd(ctx);
   for (const [repoName, repo] of Object.entries(ctx.config.repos)) {
     if (flag && repoName !== flag) continue;
-    const ws = repo.workspaces[name];
-    if (ws) candidates.push({ repoName, repo, name, ws });
+    const items = repoWorkspaces(repoName, repo);
+    const hit = items.find((item) => item.name === name) ?? items.find((item) => normalizeName(basename(item.ws.path)) === name);
+    if (hit) candidates.push(hit);
   }
   if (flag) requireRepo(ctx, flag);
   const pick = candidates.find((c) => c.repoName === preferred) ?? (candidates.length === 1 ? candidates[0] : null);
+  if (pick?.main) throw new NookError(`${pick.ws.path} is the main checkout of ${pick.repoName}; nk leaves it alone`);
   if (pick) return pick;
   if (!candidates.length) throw new NookError(`No workspace named "${name}". Create it with: nk -b ${name}`);
   throw new NookError(`"${name}" exists in ${candidates.map((c) => c.repoName).join(", ")}; pass --repo`);
@@ -89,7 +128,7 @@ export function resolveWorkspace(ctx, name, flag) {
 
 /** The git branch of a workspace: its name, unless the branch had characters a name cannot use. */
 export function branchOf(name, ws) {
-  return ws.branch ?? name;
+  return "branch" in ws ? ws.branch : name;
 }
 
 /** Variables hooks and agents see. */
