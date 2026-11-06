@@ -238,6 +238,7 @@ test("worktrees made by other tools are listed and removable; the main checkout 
   assert.equal(data.find((item) => item.main).path, repo);
   assert.equal(data.find((item) => item.path === locked).locked, true);
 
+  assert.equal(run(["main"]).out.trim(), repo, "nk main opens the main checkout");
   let r = run(["rm", "main", "-y"]);
   assert.equal(r.status, 1);
   assert.match(r.err, /main checkout/);

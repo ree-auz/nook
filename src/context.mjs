@@ -120,7 +120,6 @@ export function resolveWorkspace(ctx, name, flag) {
   }
   if (flag) requireRepo(ctx, flag);
   const pick = candidates.find((c) => c.repoName === preferred) ?? (candidates.length === 1 ? candidates[0] : null);
-  if (pick?.main) throw new NookError(`${pick.ws.path} is the main checkout of ${pick.repoName}; nk leaves it alone`);
   if (pick) return pick;
   if (!candidates.length) throw new NookError(`No workspace named "${name}". Create it with: nk -b ${name}`);
   throw new NookError(`"${name}" exists in ${candidates.map((c) => c.repoName).join(", ")}; pass --repo`);

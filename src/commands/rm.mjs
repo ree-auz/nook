@@ -63,6 +63,7 @@ export async function removeWorkspace(ctx, { name: input, repo: repoFlag, dryRun
   const name = toName(input);
   const target = resolveWorkspace(ctx, name, repoFlag);
   const { repo, ws } = target;
+  if (target.main) throw new NookError(`${ws.path} is the main checkout of ${target.repoName}; git cannot remove it`);
   if (ws.locked) throw new NookError(`${ws.path} is locked. Unlock it first: git worktree unlock ${ws.path}`);
   if (exists(ws.path) && isInside(ctx.cwd, ws.path))
     throw new NookError(`You are inside ${ws.path}. Change to another folder first, e.g. cd ${repo.path}`);

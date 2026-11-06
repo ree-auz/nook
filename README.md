@@ -134,7 +134,8 @@ the same conversion as `nk -b` (`ree-auz/REE-228` becomes `ree-auz-ree-228`).
 The first column marks the main checkout `^`, the worktree you are in `@`, and
 the others `+`. `nk rm`, `nk <name>` and `nk clean` work on all of them; a name
 matches the branch or the folder. The main checkout and worktrees locked with
-`git worktree lock` are never removed.
+`git worktree lock` are never removed, but `nk main [agent]` opens the main
+checkout like any workspace.
 
 `nk clean` removes workspaces whose work is merged, like worktrunk's
 `wt step prune` and gh-poi. It first fetches the default branch, then counts a
