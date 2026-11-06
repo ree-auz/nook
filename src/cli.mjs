@@ -11,9 +11,7 @@ import { createWorkspace, openWorkspace } from "./commands/workspace.mjs";
 const HELP = `nk - one home for your git worktrees
 
 Usage:
-  nk init [--yes] [--name <short-name>] [--env <file>]
-                                          register this repository (once per repository);
-                                          --env copies <file> as the shared .env
+  nk init [--yes] [--name <short-name>]   register this repository (once per repository)
   nk -b <name> [agent] [-p <prompt>]      create a workspace; start the agent if given
   nk <name> [agent] [-p <prompt>]         open a workspace; start the agent if given
   nk ls                                   list workspaces and whether they have changes
@@ -58,7 +56,7 @@ export async function run(argv, io = {}) {
 
   switch (first) {
     case "init": {
-      const { values } = parse(args.slice(1), { yes: { type: "boolean", short: "y" }, name: { type: "string" }, env: { type: "string" } });
+      const { values } = parse(args.slice(1), { yes: { type: "boolean", short: "y" }, name: { type: "string" } });
       return init(ctx, values);
     }
     case "ls": {
