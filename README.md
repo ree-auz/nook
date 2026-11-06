@@ -18,7 +18,7 @@ repository's setup hooks, and can start a command-line agent inside it.
 | `nk rm <name>... [-n] [-y]` | Back up and remove one or more workspaces, asking once (`-n` shows what would happen, `-y` skips the question) |
 | `nk clean [-n] [-y]` | Remove every workspace whose work is merged |
 | `nk hooks` | The repository's `.nook` hooks: allowed, and tested since they last changed |
-| `nk hooks write [agent]` | Write the hooks from the repository's CI; with an agent, in a workspace of its own where the agent finishes what CI could not tell |
+| `nk hooks write [agent]` | Write the hooks from the repository's CI; with an agent, also starts it in the same folder to finish what CI could not tell |
 | `nk hooks test` | Run the hooks of the folder you are in, in a temporary workspace; fails if remove leaves anything behind |
 | `nk doctor` | Check nk's tools (node, git, gh, docker, agents) without changing anything |
 
@@ -150,9 +150,11 @@ database and other workspaces. So nk copies less than CI does, never more:
 
 What it cannot translate (a CI expression such as `${{ secrets.X }}`, a step
 that runs only under a condition, an action it does not know) is listed too,
-not guessed. `nk hooks write <agent>` does the same in a workspace of its own,
-`nook-hooks`, and starts the agent to finish those parts; the agent then runs
-`nk hooks test` until it passes and commits. Generated hooks start with a
+not guessed. `nk hooks write <agent>` does the same, then starts the agent in
+the same folder (usually the main checkout) to finish those parts; the agent
+runs `nk hooks test` until it passes and leaves the changes for you to review.
+To keep the agent out of the main checkout, run it inside a workspace instead
+(`nk -b hooks`, then `nk hooks write <agent>` there). Generated hooks start with a
 line saying so; `nk hooks write` replaces only those, never hooks written by
 hand.
 

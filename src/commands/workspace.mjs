@@ -100,10 +100,9 @@ async function pickName(ctx, input, prompter) {
 }
 
 /** nk -b <name> [agent] */
-export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent, prompt, extra = [], prompter = createPrompter(), prepare, untested = false }) {
+export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent, prompt, extra = [], prompter = createPrompter(), untested = false }) {
   const { name: repoName, repo } = resolveRepo(ctx, repoFlag);
-  // Writing hooks is how changed hooks get fixed, so that workspace is never stopped.
-  if (!prepare) checkSetup(ctx, repo, { stop: true, untested });
+  checkSetup(ctx, repo, { stop: true, untested });
   if (remoteUrl(repo.path)) {
     const fetched = gitTry(["fetch", "--quiet", "origin", repo.default_branch], { cwd: repo.path });
     if (!fetched.ok) ctx.warn(`Could not fetch origin/${repo.default_branch}; using what is local`);
@@ -138,8 +137,6 @@ export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent,
     if (error instanceof NookError) error.message += `\nThe workspace is kept at ${path}; remove it with: nk rm ${name}`;
     throw error;
   }
-  // A caller can fill the new workspace before the agent starts, and give the agent its prompt then.
-  if (prepare) prompt = (await prepare(target)) ?? prompt;
   return finish(ctx, target, { agent, prompt, extra });
 }
 

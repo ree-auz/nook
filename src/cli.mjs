@@ -28,8 +28,8 @@ Usage:
   nk clean [-n] [-y]                      remove workspaces whose work is merged
   nk hooks                                the repository's .nook hooks: allowed? tested?
   nk hooks write [agent]                  write the hooks from the repository's CI (GitHub Actions);
-                                         with an agent: in a workspace of its own, the agent
-                                         finishes what CI could not tell
+                                         with an agent: then starts it in the same folder to
+                                         finish what CI could not tell
   nk hooks test                           run this folder's hooks in a temporary workspace;
                                          fails if remove leaves anything behind
   nk doctor                               check nk's tools: node, git, gh, docker, agents
@@ -92,7 +92,7 @@ export async function run(argv, io = {}) {
       const { values, positionals } = parse(args.slice(1), { repo: { type: "string" }, yes: { type: "boolean", short: "y" } });
       const [action, agent, ...rest] = positionals;
       if (!action && !agent) return listHooks(ctx, values);
-      if (action === "write" && !rest.length) return writeHooks(ctx, { repo: values.repo, agent, extra, prompter: createPrompter({ yes: values.yes }) });
+      if (action === "write" && !rest.length) return writeHooks(ctx, { repo: values.repo, agent, extra });
       if (action === "test" && !agent) return testHooks(ctx, { repo: values.repo });
       throw new NookError("Usage: nk hooks | nk hooks write [agent] | nk hooks test");
     }

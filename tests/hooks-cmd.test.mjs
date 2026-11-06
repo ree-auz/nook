@@ -158,3 +158,15 @@ test("hooks write never replaces hooks written by hand", (t) => {
   assert.equal(r.status, 1);
   assert.match(r.err, /already has hooks written by hand: create\.mjs/);
 });
+
+test("hooks write <agent> writes the hooks and starts the agent in the folder it runs in", (t) => {
+  const { home, repo, run } = setup(t, { ".github/workflows/ci.yml": ciWorkflow, ".gitignore": "agent.json\n" });
+  const agent = "require('fs').writeFileSync('agent.json', JSON.stringify({ prompt: process.argv.at(-1), hooks: require('fs').existsSync('.nook/create.mjs') }))";
+  const r = run(["hooks", "write", "node", "--", "-e", agent]);
+  assert.equal(r.status, 0, r.all);
+  const seen = JSON.parse(readFileSync(join(repo, "agent.json"), "utf8"));
+  assert.ok(seen.hooks, "the agent starts after the hooks are written");
+  assert.match(seen.prompt, /nk already wrote \.nook\/create\.mjs/);
+  assert.match(seen.prompt, /API_TOKEN comes from a CI expression/);
+  assert.ok(!existsSync(join(home, "workspaces", "demo", "nook-hooks")), "no workspace is created");
+});

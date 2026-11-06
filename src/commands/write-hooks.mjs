@@ -9,7 +9,7 @@ import { NookError } from "../errors.mjs";
 import { planFromCi } from "../ci.mjs";
 import { GENERATED_MARK, hookFiles } from "../generate-hooks.mjs";
 import { listFiles } from "../shared.mjs";
-import { createWorkspace } from "./workspace.mjs";
+import { agentCommand, launch } from "../agents.mjs";
 
 /** Files that say how a project is installed, run or served. */
 const MARKERS = new Set([
@@ -19,7 +19,6 @@ const MARKERS = new Set([
   "compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml", "Dockerfile", "devcontainer.json",
   "Makefile", "justfile", "Taskfile.yml", "Procfile", "mise.toml", ".tool-versions", ".nvmrc", ".python-version",
 ]);
-const SETUP_NAME = "nook-hooks";
 const DOC = "https://github.com/ree-auz/nook/blob/main/docs/setup-hooks.md";
 
 /** CI configuration: it already lists, step by step, how a clean machine gets the project running. */
@@ -114,17 +113,17 @@ export function setupPrompt(ctx, { repoName, repo, dir = repo.path, generated = 
     ? `nk already wrote ${generated.written.map((f) => `.nook/${f}`).join(", ")} from ${generated.plan.source} (job ${generated.plan.job}), without AI. What it could not translate:
 ${list(generated.plan.untranslated.map((i) => `${i.step}: ${i.why}`), "nothing")}
 
-Your task, in this workspace:
+Your task, in this folder:
 1. Read the generated hooks and the CI file. Add what was not translated, adapted to a workspace (its own ports from NOOK_PORT, its own container and project names, started again by open, cleaned up by remove). Keep the rest as generated. Once you edit a hook, remove its first line, so nk hooks write will not replace your work.`
-    : `Your task, in this workspace:
+    : `Your task, in this folder:
 1. Start from the CI configuration: take its setup steps (runtime versions, dependency install, services such as databases, environment variables, migrations or seed data) and leave out what only CI needs (tests, lint, builds, releases, caches, uploads). Then adapt it to a workspace, which differs from a CI machine in three ways: several workspaces run at once, so ports and container or Compose project names must be this workspace's own; a workspace is kept and reopened, so services must start again; and nothing is thrown away afterwards, so remove has to clean up. Without CI, use the files below and the README.
    Write .nook/create.mjs and .nook/remove.mjs as a pair, and .nook/open.mjs if services must start again when the workspace is reopened (it runs every time, so it must be safe to repeat).`;
   return `Set up Nook hooks for the repository ${repoName}. Nook (nk) gives each task its own git worktree (a workspace) and runs scripts from .nook/ in it: create once, open on every open, remove before deletion. Rules and examples: ${DOC}
 
 ${start}
 2. Never use the main checkout's .env or services, never print secrets, and never run docker compose config.
-3. Run nk hooks test in this workspace. It runs create, open twice and remove in a temporary workspace and lists whatever remove left behind. Fix the hooks until it passes.
-4. Commit the hooks on this branch and tell me what each one runs and what I must fill in once in the shared files. Do not push.
+3. Run nk hooks test here. It runs create, open twice and remove in a temporary workspace and lists whatever remove left behind. Fix the hooks until it passes.
+4. Do not commit or push. Tell me what each hook runs and what I must fill in once in the shared files.
 
 What nk knows about this repository:
 
@@ -144,27 +143,25 @@ What nk does itself: it copies the shared files and gives the workspace ten free
 }
 
 /**
- * nk hooks write [agent]. Without an agent, nk translates the repository's CI
- * into hooks in the folder you are in. With one, it does the same in a new
- * workspace and starts the agent there to finish what was not translated.
+ * nk hooks write [agent]. nk translates the repository's CI into hooks in the
+ * folder you are in (usually the main checkout). With an agent, it then starts
+ * the agent in the same folder to finish what was not translated.
  */
-export async function writeHooks(ctx, { repo: repoFlag, agent, extra = [], prompter }) {
+export async function writeHooks(ctx, { repo: repoFlag, agent, extra = [] }) {
   const target = resolveRepo(ctx, repoFlag);
+  const top = gitTry(["rev-parse", "--show-toplevel"], { cwd: ctx.cwd });
+  const dir = top.ok ? top.out : target.repo.path;
+  const result = generateHooks(dir);
   if (!agent) {
-    const top = gitTry(["rev-parse", "--show-toplevel"], { cwd: ctx.cwd });
-    const dir = top.ok ? top.out : target.repo.path;
-    const result = generateHooks(dir);
     if (!result.written)
       throw new NookError(`Cannot write hooks from CI: ${result.reason}\nTo have an agent write them instead: nk hooks write <agent>`);
     report(ctx, result);
     ctx.info(`Next: nk hooks test${result.plan.untranslated.length ? `, or nk hooks write <agent> to have an agent finish them` : ""}`);
     return 0;
   }
-  const prepare = (ws) => {
-    const result = generateHooks(ws.ws.path);
-    if (result.written) report(ctx, result);
-    else ctx.info(`The agent writes the hooks itself (${result.reason})`);
-    return setupPrompt(ctx, { repoName: target.name, repo: target.repo, dir: ws.ws.path, generated: result });
-  };
-  return createWorkspace(ctx, { name: SETUP_NAME, repo: repoFlag ?? target.name, agent, extra, prompter, prepare });
+  if (result.written) report(ctx, result);
+  else ctx.info(`The agent writes the hooks itself (${result.reason})`);
+  const prompt = setupPrompt(ctx, { repoName: target.name, repo: target.repo, dir, generated: result });
+  ctx.info(`Starting ${agent} in ${dir}`);
+  return launch(agentCommand(ctx.config, agent, { prompt, extra }, ctx.env), { cwd: dir, env: ctx.env });
 }

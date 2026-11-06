@@ -42,9 +42,9 @@ When asked to set up Nook hooks: if you were started by `nk hooks write
 <agent>`, nk has already generated hooks from CI; finish what its prompt lists
 as not translated. Otherwise run `nk hooks write` first. Follow
 [docs/setup-hooks.md](https://github.com/ree-auz/nook/blob/main/docs/setup-hooks.md),
-run `nk hooks test` in your workspace and fix the hooks until it passes.
-Delete the first line of a generated hook you edit. Commit; do not push
-unless asked.
+run `nk hooks test` in the folder you work in and fix the hooks until it
+passes. Delete the first line of a generated hook you edit. Do not commit or
+push unless asked.
 
 ## Commands
 
