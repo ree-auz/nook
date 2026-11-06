@@ -272,4 +272,8 @@ test("a changed remove hook is approved before any program is stopped", async (t
   assert.doesNotMatch(r.err, /Stopped/);
   assert.equal(child.exitCode, null, "the program is still running");
   assert.ok(existsSync(ws));
+  // Stop it before the temp folder is deleted: Windows cannot delete a folder a process runs in.
+  const exited = new Promise((done) => child.once("exit", done));
+  child.kill();
+  await exited;
 });
