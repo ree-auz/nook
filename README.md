@@ -19,6 +19,11 @@ repository's setup hooks, and can start a command-line agent inside it.
 | `nk clean [-n] [-y]` | Remove every workspace whose work is merged |
 | `nk doctor` | Check the setup without changing anything |
 
+Like git, every command acts on the repository you are in: its main
+checkout or one of its workspaces. Outside a repository, `nk -b`, opening,
+`nk rm` and `nk clean` refuse to guess; pass `--repo <short-name>` to name
+one. `nk ls` only reads, so outside a repository it lists all of them.
+
 Without an agent, `nk -b` and `nk <name>` print the workspace path, so
 `cd "$(nk my-branch)"` works. Arguments after `--` go to the agent.
 

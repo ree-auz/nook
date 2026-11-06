@@ -277,3 +277,23 @@ test("a changed remove hook is approved before any program is stopped", async (t
   child.kill();
   await exited;
 });
+
+test("outside a repository nothing is created or removed unless --repo names one", (t) => {
+  const { root, home, repo } = setup(t);
+  const other = makeRepo(join(root, "other"));
+  const elsewhere = join(root, "elsewhere");
+  write(elsewhere, { "note.txt": "not a repository\n" });
+  assert.equal(nk(["init", "--yes"], { cwd: repo, home }).status, 0);
+
+  let r = nk(["-b", "smoke"], { cwd: elsewhere, home });
+  assert.equal(r.status, 1, "even with only one repository registered");
+  assert.match(r.err, /Not inside a registered repository/);
+  assert.equal(nk(["-b", "smoke"], { cwd: other, home }).status, 1, "a repository nk does not know");
+  assert.equal(nk(["-b", "smoke", "--repo", "demo"], { cwd: elsewhere, home }).status, 0);
+
+  assert.equal(nk(["rm", "smoke", "-y"], { cwd: elsewhere, home }).status, 1);
+  assert.equal(nk(["clean", "-n"], { cwd: elsewhere, home }).status, 1);
+  assert.match(nk(["ls"], { cwd: elsewhere, home }).out, /smoke/, "ls only reads, so it lists every repository");
+  r = nk(["rm", "smoke", "-y"], { cwd: repo, home });
+  assert.equal(r.status, 0, r.all);
+});

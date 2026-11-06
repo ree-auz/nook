@@ -22,7 +22,7 @@ Usage:
   nk doctor                               check the setup, change nothing
 
 Options:
-  --repo <short-name>   pick the repository when it is not clear from the folder
+  --repo <short-name>   act on another registered repository (otherwise: the one you are in)
   -- <args...>          extra arguments for the agent
 Home folder: ~/nook (set NOOK_HOME to move it)`;
 

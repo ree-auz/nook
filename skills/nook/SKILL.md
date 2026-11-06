@@ -42,7 +42,7 @@ you are in one when your working directory is inside that path.
 | --- | --- |
 | `nk -b <name> [agent] [-p <prompt>]` | Create a workspace from the default branch (or an existing branch of that name) |
 | `nk <name>` | Print a workspace's path; with an agent, start it there |
-| `nk ls --json` | Every workspace: `name`, `repo`, `path`, `port`, `changes`, `ahead`, `behind`, `pr` (`number`, `state`, `ci`) |
+| `nk ls --json` | Every workspace of this repository: `name`, `repo`, `path`, `port`, `changes`, `ahead`, `behind`, `pr` (`number`, `state`, `ci`) |
 | `nk rm <name> -n` | Show what removing would back up and delete, change nothing |
 | `nk clean -n` | Show which workspaces are merged and would be removed |
 | `nk doctor` | Check the setup; exit 1 when something is broken |

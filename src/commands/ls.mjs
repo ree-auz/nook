@@ -1,8 +1,9 @@
+import { NookError } from "../errors.mjs";
 import { baseRef, remoteUrl } from "../git.mjs";
 import { githubPrs } from "../forge.mjs";
 import { aheadBehind, changeCount } from "../status.mjs";
 import { useColor } from "../ui.mjs";
-import { branchOf, repoWorkspaces } from "../context.mjs";
+import { branchOf, repoFromCwd, repoWorkspaces } from "../context.mjs";
 import { isInside } from "../home.mjs";
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -14,7 +15,9 @@ function table(rows) {
 
 /** Every workspace with its local state and, when gh can tell, its PR. */
 export async function collect(ctx, { repo: repoFlag, prs: lookup = githubPrs } = {}) {
-  const repos = Object.entries(ctx.config.repos).filter(([name]) => !repoFlag || name === repoFlag);
+  const only = repoFlag ?? repoFromCwd(ctx);
+  if (only && !ctx.config.repos[only]) throw new NookError(`Unknown repository "${only}"`);
+  const repos = Object.entries(ctx.config.repos).filter(([name]) => !only || name === only);
   const fetched = await Promise.all(repos.map(([, repo]) => (remoteUrl(repo.path) ? lookup(repo.path, ctx.env) : { prs: null })));
   const items = [];
   const problems = new Set();
