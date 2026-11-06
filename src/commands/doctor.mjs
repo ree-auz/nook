@@ -10,9 +10,13 @@ import { gitVersion, toolStatus } from "../tools.mjs";
 /** nk doctor: checks only, changes nothing. Exit 1 when something is broken. */
 export function doctor(ctx) {
   let broken = 0;
+  let warnings = 0;
   const color = useColor(ctx.out, ctx.env);
   const ok = (text) => ctx.print(`  ${line("ok", text, color)}`);
-  const warn = (text) => ctx.print(`  ${line("warn", text, color)}`);
+  const warn = (text) => {
+    warnings++;
+    ctx.print(`  ${line("warn", text, color)}`);
+  };
   const bad = (text) => {
     broken++;
     ctx.print(`  ${line("fail", text, color)}`);
@@ -63,9 +67,19 @@ export function doctor(ctx) {
     }
     const dir = join(ctx.paths.workspaces, repoName);
     if (exists(dir))
-      for (const entry of readdirSync(dir)) if (!repo.workspaces[entry]) warn(`${join(dir, entry)} is not a known workspace`);
+      for (const entry of readdirSync(dir)) {
+        if (repo.workspaces[entry]) continue;
+        const path = join(dir, entry);
+        // A git worktree nk did not create, or a folder left behind when a removal failed halfway.
+        warn(
+          worktrees.some((w) => samePath(w.path, path))
+            ? `${path} is a git worktree nk did not create (remove it with: git worktree remove)`
+            : `${path} is not a workspace, only a leftover folder (safe to delete)`,
+        );
+      }
   }
 
-  ctx.print(broken ? `${broken} problem(s) found` : "No problems found");
+  const notes = warnings ? `, ${warnings} warning(s)` : "";
+  ctx.print(broken ? `${broken} problem(s) found${notes}` : `No problems found${notes}`);
   return broken ? 1 : 0;
 }

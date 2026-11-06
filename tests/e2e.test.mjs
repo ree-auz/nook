@@ -202,6 +202,11 @@ test("an old branch without .nook still gets the hooks; a branch with / keeps it
   assert.equal(parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces["feat-login"].branch, "feat/Login");
   assert.equal(JSON.parse(run(["ls", "--json"]).out).find((item) => !item.main).branch, "feat/Login");
   assert.equal(run(["doctor"]).status, 0);
+  write(join(home, "workspaces", "demo", "half-removed"), { "left.txt": "x\n" });
+  const checked = run(["doctor"]);
+  assert.equal(checked.status, 0, "a leftover folder is a warning, not a problem");
+  assert.match(checked.out, /half-removed is not a workspace, only a leftover folder/);
+  assert.match(checked.out, /No problems found, \d+ warning/);
 
   const removed = run(["rm", "feat-login", "-y"]);
   assert.equal(removed.status, 0, removed.all);
