@@ -48,6 +48,12 @@ uppercase becomes lowercase, and `/`, spaces, non-ASCII and other characters
 become `-`. For example `REE-12-修复登录/Login` becomes `ree-12-login`. This
 way any tool that calls `nk` can pass its own branch name as it is.
 
+When a branch with exactly the text you passed already exists (locally or on
+`origin`), `nk -b` checks out that branch and only the workspace and folder use
+the converted name: `nk -b feat/Login` makes workspace `feat-login` on branch
+`feat/Login`, the same way worktrunk sanitizes `/` in folder names. `nk ls`,
+`nk rm` and `nk clean` then use that branch for git and pull requests.
+
 When `nk -b` runs in a terminal and had to change the name, it shows the
 converted name ready to edit; press Enter to keep it. Without a terminal it uses
 the converted name.
@@ -66,11 +72,16 @@ New worktrees do not contain ignored files such as `.env`. `nk init` prepares
   `.dev.vars.example`, `config/database.yml.dist`. The same file in the main
   checkout is not copied then, since it may be production.
 - Other ignored files in the main checkout are copied only if you say yes.
+- Running `nk init` again never replaces a shared file that is already there;
+  it only adds new ones. Edit the files in `~/nook/shared/<repo>/` directly.
 
 ## Hooks
 
-Put scripts in `.nook/` in the repository and commit them. The file name is the
-moment it runs:
+Put scripts in `.nook/` in the repository and commit them. Nook reads them from
+the main checkout and runs them inside the workspace, so a workspace on an old
+branch that predates the hooks still gets them (worktrunk likewise reads its
+project config from where the command runs). The file name is the moment it
+runs:
 
 | File | Runs | On failure |
 |---|---|---|
@@ -116,6 +127,16 @@ behind (↓) the default branch, and its pull request with the CI result
 why. Merged rows are dimmed. `nk ls --json` prints the same data for scripts
 and agents.
 
+Git is the source of truth, as in worktrunk: `nk ls` shows every worktree of
+the repository, including ones made by other tools (Orca, Conductor, plain
+`git worktree add`). Those have no port, and are named by their branch with
+the same conversion as `nk -b` (`ree-auz/REE-228` becomes `ree-auz-ree-228`).
+The first column marks the main checkout `^`, the worktree you are in `@`, and
+the others `+`. `nk rm`, `nk <name>` and `nk clean` work on all of them; a name
+matches the branch or the folder. The main checkout and worktrees locked with
+`git worktree lock` are never removed, but `nk main [agent]` opens the main
+checkout like any workspace.
+
 `nk clean` removes workspaces whose work is merged, like worktrunk's
 `wt step prune` and gh-poi. It first fetches the default branch, then counts a
 workspace as merged when:
@@ -125,10 +146,11 @@ workspace as merged when:
 - it has no pull request, its branch is already in the default branch, and it
   is at least a day old (so a workspace you just created is kept).
 
-It keeps workspaces with uncommitted changes, with programs running in them,
-with commits made after the PR was merged, and the one you are inside. It lists
-what it would remove and what it keeps, asks once, then removes each one the
-way `nk rm` does (backup, `remove` hook, folder and branch). `-n` only shows
+It keeps locked worktrees, workspaces with uncommitted changes, with commits made after the PR
+was merged, and the one you are inside. It lists what it would remove, what it
+keeps, and the programs running in the ones it removes, asks once, then stops
+those programs and removes each workspace the way `nk rm` does (backup,
+`remove` hook, folder and branch). `-n` only shows
 the list; `-y` removes without asking.
 
 ## For agents

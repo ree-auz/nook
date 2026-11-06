@@ -27,11 +27,12 @@ export function listWorktrees(repo) {
   let current = null;
   for (const line of out.split(/\r?\n/)) {
     if (line.startsWith("worktree ")) {
-      current = { path: resolve(line.slice(9)), branch: null, head: null, bare: false };
+      current = { path: resolve(line.slice(9)), branch: null, head: null, bare: false, locked: false };
       items.push(current);
     } else if (current && line.startsWith("HEAD ")) current.head = line.slice(5);
     else if (current && line.startsWith("branch ")) current.branch = line.slice(7).replace(/^refs\/heads\//, "");
     else if (current && line === "bare") current.bare = true;
+    else if (current && (line === "locked" || line.startsWith("locked "))) current.locked = true;
   }
   return items;
 }

@@ -58,7 +58,7 @@ export function doctor(ctx) {
       const known = worktrees.find((w) => samePath(w.path, ws.path));
       if (!exists(ws.path)) bad(`workspace ${name}: ${ws.path} is missing (nk rm ${name} cleans up)`);
       else if (!known) bad(`workspace ${name}: ${ws.path} is not a git worktree`);
-      else if (known.branch !== name) warn(`workspace ${name}: checked out ${known.branch ?? "detached HEAD"}`);
+      else if (known.branch !== (ws.branch ?? name)) warn(`workspace ${name}: checked out ${known.branch ?? "detached HEAD"}`);
       else ok(`workspace ${name}`);
     }
     const dir = join(ctx.paths.workspaces, repoName);

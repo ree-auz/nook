@@ -180,3 +180,75 @@ test("init adopts nothing by default and keeps settings on a second run", (t) =>
   assert.deepEqual(Object.keys(config.repos), ["demo"]);
   assert.equal(Object.keys(config.repos.demo.workspaces).length, 0);
 });
+
+test("an old branch without .nook still gets the hooks; a branch with / keeps its name", (t) => {
+  const { home, repo } = setup(t);
+  const run = (args) => nk(args, { cwd: repo, home });
+  const git = (args) => sh("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", ...args], repo);
+  git(["checkout", "-q", "-b", "feat/Login"]);
+  git(["rm", "-rq", ".nook"]);
+  git(["commit", "-qm", "before hooks existed"]);
+  git(["checkout", "-q", "main"]);
+  assert.equal(run(["init", "--yes"]).status, 0);
+
+  const r = run(["-b", "feat/Login"]);
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.err, /Using the name feat-login for branch feat\/Login/);
+  const ws = r.out.trim();
+  assert.equal(ws, join(home, "workspaces", "demo", "feat-login"));
+  assert.equal(sh("git", ["branch", "--show-current"], ws), "feat/Login");
+  assert.ok(!existsSync(join(ws, ".nook")), "the branch has no hooks of its own");
+  assert.ok(existsSync(join(ws, "hook-create.txt")), "the repository's hooks ran");
+  assert.equal(parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces["feat-login"].branch, "feat/Login");
+  assert.equal(JSON.parse(run(["ls", "--json"]).out).find((item) => !item.main).branch, "feat/Login");
+  assert.equal(run(["doctor"]).status, 0);
+
+  const removed = run(["rm", "feat-login", "-y"]);
+  assert.equal(removed.status, 0, removed.all);
+  assert.match(removed.all, /remove hook for feat-login/);
+  assert.equal(sh("git", ["branch", "--list", "feat/Login"], repo), "");
+});
+
+test("init again keeps the shared files you filled in", (t) => {
+  const { home, repo } = setup(t);
+  assert.equal(nk(["init", "--yes"], { cwd: repo, home }).status, 0);
+  const shared = join(home, "shared", "demo", ".env");
+  write(join(home, "shared", "demo"), { ".env": "API_KEY=filled\n" });
+  const r = nk(["init", "--yes"], { cwd: repo, home });
+  assert.equal(r.status, 0, r.all);
+  assert.equal(readFileSync(shared, "utf8"), "API_KEY=filled\n");
+  assert.match(r.err, /Kept shared files: \.env/);
+});
+
+test("worktrees made by other tools are listed and removable; the main checkout is not", (t) => {
+  const { root, home, repo } = setup(t);
+  const run = (args) => nk(args, { cwd: repo, home });
+  assert.equal(run(["init", "--yes"]).status, 0);
+  const other = join(root, "orca", "REE-228");
+  sh("git", ["worktree", "add", "-q", "-b", "ree-auz/REE-228", other, "main"], repo);
+  const locked = join(root, "orca", "kept");
+  sh("git", ["worktree", "add", "-q", "-b", "kept", locked, "main"], repo);
+  sh("git", ["worktree", "lock", locked], repo);
+
+  const data = JSON.parse(run(["ls", "--json"]).out);
+  const outside = data.find((item) => item.path === other);
+  assert.equal(outside.name, "ree-auz-ree-228");
+  assert.equal(outside.branch, "ree-auz/REE-228");
+  assert.equal(outside.managed, false);
+  assert.equal(data.find((item) => item.main).path, repo);
+  assert.equal(data.find((item) => item.path === locked).locked, true);
+
+  assert.equal(run(["main"]).out.trim(), repo, "nk main opens the main checkout");
+  let r = run(["rm", "main", "-y"]);
+  assert.equal(r.status, 1);
+  assert.match(r.err, /main checkout/);
+  r = run(["rm", "kept", "-y"]);
+  assert.equal(r.status, 1);
+  assert.match(r.err, /locked/);
+  r = run(["rm", "ree-228", "-y"]);
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.all, /remove hook for ree-auz-ree-228/);
+  assert.ok(!existsSync(other));
+  assert.equal(sh("git", ["branch", "--list", "ree-auz/REE-228"], repo), "");
+  sh("git", ["worktree", "unlock", locked], repo);
+});
