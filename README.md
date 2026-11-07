@@ -5,7 +5,32 @@ It creates a workspace for a branch, copies the ignored files the project needs
 (such as `.env`), gives each workspace its own block of ports, runs the
 repository's setup hooks, and can start a command-line agent inside it.
 
-> Early work in progress. Commands and config may still change.
+> Version 0.1: an early release. Commands and config may still change.
+
+## Install
+
+```
+npm install -g @ree-auz/nook
+nk doctor
+```
+
+Needs Node.js 20 or later and git. Docker is used when a repository's hooks
+start services, and the [GitHub CLI](https://cli.github.com/) (`gh`) for pull
+requests and CI in `nk ls` and `nk clean`; both are optional. `nk doctor`
+checks them and changes nothing.
+
+## Quick start
+
+```
+cd ~/code/my-app            any git repository
+nk init                     register it (once)
+nk hooks write              setup hooks from its CI and Compose file
+nk hooks test               try them in a temporary workspace
+nk -b fix-login codex       new workspace on branch fix-login, with an agent
+cd "$(nk fix-login)"        or just go there
+nk ls                       every workspace, with its PR and CI
+nk rm fix-login             back up and remove it when you are done
+```
 
 ## Commands
 
@@ -140,6 +165,7 @@ step by step, as if their steps were in the job. What it takes from that job:
 | `corepack enable` | also a tool check: Node 25 and later no longer include corepack (`npm install -g corepack`) |
 | `run:` steps before the first test, lint or build step | create runs them in the workspace, and stops with a plain message when a step's program is not installed; an install CI skips on a cache hit (`if: steps.cache.outputs.cache-hit != 'true'`) runs, since a new workspace has no cache |
 | a job that `needs:` another and downloads its artifact | the other job's installs come first |
+| a setup action nk cannot read (`pnpm/setup`, a project's own) followed by `pnpm exec ...` or `npx ...` | create runs the install first (`pnpm install --frozen-lockfile`, `npm ci`...), since the action most likely did it |
 | `services:` (a database, say) | create starts one container per workspace on the workspace's own ports; open starts it again; remove deletes it with its volumes |
 | `env:` | added to the workspace's `.env`, with `localhost:<CI port>` changed to the workspace's port |
 | `run:` steps with `if: always()` (cleanup) | remove runs them |
@@ -148,7 +174,9 @@ step by step, as if their steps were in the job. What it takes from that job:
 When the repository has a Compose file (`compose.yaml`, `docker-compose.yml`...),
 nk also reads it, together with its override file (`compose.override.yaml`...)
 as `docker compose` does, since many projects start their database there rather than
-in CI:
+in CI. A base file that cannot run on its own (a service with neither an image
+nor a build) is read with its development file instead
+(`docker-compose.yml` + `docker-compose.dev.yml`), as such projects document:
 
 | In the Compose file | In the hooks |
 |---|---|
@@ -158,6 +186,8 @@ in CI:
 | a service built from the repository, the project's own image (the app), or one under a profile | not started; start it yourself when you need it |
 | more services than the workspace's ten ports hold | the last ones are not started, and listed |
 | a fixed host port, `5432:5432` | moved to one of the workspace's ports (`127.0.0.1:<port>:5432`) by a small Compose file nk writes into the worktree's git folder; `COMPOSE_FILE` in `.env` lists it, so a `docker compose` you run there uses it too |
+| a fixed `container_name`, or a network or volume with a fixed `name` | given the workspace's own name in that same file, so two workspaces never share a container, network or data; `external` ones are shared on purpose and stay |
+| `network_mode: host` | the service runs on the workspace's own network instead, its ports moved to the workspace's, since on the host network it would take the main checkout's ports |
 
 When the chosen CI job has services of its own, nk starts those and none from
 Compose, so the same database is not started twice.
@@ -167,7 +197,9 @@ workspace's project, replacing whatever the copied file said, so a
 `docker compose` you run there never reaches the main checkout's project.
 Values in the copied `.env` that point at a moved port are pointed at the
 workspace's port: `DATABASE_URL=postgres://...@localhost:5432/app` becomes
-`localhost:<workspace port>`, and so does `DB_PORT=5432`.
+`localhost:<workspace port>`, and so does `DB_PORT=5432`. A service's own
+port counts too: when CI publishes MySQL's 3306 on 32768, `DB_PORT=3306` in the
+copied `.env` is moved as well.
 Other env files at the root that many projects load after `.env`, such as
 `.env.development` or `.env.test`, are pointed at the workspace's ports the
 same way; templates (`.env.example`, `.env.sample`) are left alone. When the
@@ -204,7 +236,9 @@ hand.
 `nk hooks test` runs the hooks of the folder you are in (the agent's branch,
 before it is merged) in a temporary workspace: create, open twice, then
 remove. It fails when a hook fails, when open cannot run twice, when the
-hooks change files git would commit, or when remove leaves a Docker
+hooks change files git would commit (files a fresh checkout already shows as
+changed, such as line endings `.gitattributes` would change, are the
+repository's and do not count), or when remove leaves a Docker
 container, volume, network or built image behind.
 
 A passing test records the hooks, the CI files and the Compose file. If any of them changes, `nk -b`
@@ -327,6 +361,11 @@ npm test
 
 CI runs the tests on Linux, macOS and Windows.
 
+To release, set the new `version` in `package.json` on main, then publish a
+GitHub Release tagged `v<version>`. `.github/workflows/release.yml` checks the
+tag against `package.json`, runs the tests and publishes to npm with trusted
+publishing (no npm token is stored).
+
 `npm run corpus` checks what `nk hooks write` makes of real repositories
 (`tests/corpus/repos.json`, each at a pinned commit; only their CI, Compose and
 env template files are fetched, and nothing in them is run) against the
@@ -356,6 +395,7 @@ and have its own services answering. Then:
 - `nk rm try1` leaves `try2` answering with its data, and the main checkout's
   container and volume untouched;
 - after `nk rm try2`, no container, volume, network or folder is left.
+
 The run's summary is one table: each repository, the step it failed at, and
 that step's last lines. New repositories that failed are added to
 `tests/corpus/repos.json` once fixed, so the fixed list keeps growing.

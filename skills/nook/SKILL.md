@@ -5,7 +5,7 @@ description: Use when working in a git worktree managed by nk (Nook), when asked
 
 # Working with Nook (`nk`)
 
-Nook keeps one git worktree per task under `~/nook/workspaces/<repo>/<name>`.
+Nook keeps one git worktree per task under `~/nook/workspace/<repo>/<name>`.
 The workspace name is also the branch name and the folder name.
 
 ## Am I in a workspace?
