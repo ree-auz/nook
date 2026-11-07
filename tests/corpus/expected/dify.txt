@@ -1,0 +1,8 @@
+source: .github/workflows/knowledge-fs-ci.yml › vector-backends
+tools: uv, python@3.13
+create: uv sync --project api --locked --dev --group vdb-qdrant --group vdb-elasticsearch --group vdb-weaviate
+ci service: qdrant qdrant/qdrant:v1.8.3 6333:6333
+ci service: elasticsearch docker.elastic.co/elasticsearch/elasticsearch:8.14.3 9200:9200
+ci service: weaviate cr.weaviate.io/semitechnologies/weaviate:1.39.2 8080:8080 50051:50051
+env: CI=true
+left out: Wait for Weaviate readiness: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

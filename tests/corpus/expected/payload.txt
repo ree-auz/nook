@@ -1,0 +1,14 @@
+source: .github/workflows/main.yml › tests-content-api
+tools: node, pnpm
+create: -
+ci service: postgres postgres:15 5432:5432
+ci service: localstack localstack/localstack:4.10.0 4566:4566
+ci service: valkey valkey/valkey:8 6379:6379
+env: DO_NOT_TRACK=1
+env: NEXT_TELEMETRY_DISABLED=1
+env: NODE_OPTIONS=--max-old-space-size=4096
+env: NODE_HEAP_HIGH=--max-old-space-size=8192
+left out: tune linux network: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Run pnpm install: runs only when ${{ inputs.pnpm-run-install == 'true' && inputs.restore-build != 'true' }}
+left out: Configure AWS credentials: uses the action aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
+left out: Login to Amazon ECR: uses the action aws-actions/amazon-ecr-login@fa648b43de3d4d023bcb3f89ed6940096949c419

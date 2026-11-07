@@ -1,6 +1,6 @@
 source: .github/workflows/test-ruby.yml › test + docker-compose.yml
-tools: ruby
-create: -
+tools: ruby, node
+create: npm i -g corepack
 ci service: postgres postgres:14-alpine 5432:5432
 ci service: redis redis:7-alpine 6379:6379
 env: BUNDLE_CLEAN=true

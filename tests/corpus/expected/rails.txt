@@ -1,0 +1,5 @@
+source: .github/workflows/rail_inspector.yml › rail_inspector
+tools: ruby@ruby
+create: -
+left out: Remove Gemfile.lock: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: cd tools/rail_inspector && bundle exec rake: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

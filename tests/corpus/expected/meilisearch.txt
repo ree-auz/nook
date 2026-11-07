@@ -1,0 +1,7 @@
+source: .github/workflows/test-suite.yml › test-linux
+tools: -
+create: -
+env: CARGO_TERM_COLOR=always
+env: RUST_BACKTRACE=1
+env: RUSTFLAGS=-D warnings
+left out: Cache dependencies: uses the action Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4

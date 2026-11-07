@@ -194,11 +194,14 @@ export function planJob(file, jobName, job, workflowEnv = {}, knownPorts = []) {
     target.push({ name, run: String(step.run).trim(), ...(step["working-directory"] && { cwd: step["working-directory"] }), ...(step.env && { env: safeEnv(plainEnv(step.env, untranslated, name), name) }) });
   });
 
+  // CI machines have corepack; Node 25 and later no longer include it, so check for it before anything starts.
+  if (create.some((step) => /^corepack\b/.test(step.run)) && !tools.some((tool) => tool.name === "corepack")) tools.push({ name: "corepack" });
+
   return { source: file, job: jobName, tools, env, services, create, remove, skipped, untranslated, checks, tests };
 }
 
 /** Jobs that publish, release or maintain rather than set up and test the project. */
-const NOT_SETUP = /release|publish|deploy|bump|\bdocs?\b|nightly|cron|mutation|bench|label|stale|codeql|security|dependabot|backport|sync|cleanup|lighthouse|breaking|changelog|translation|i18n|token|artifact|cache|schema|lint|format|\btypes?\b|audit|triage|preview|licen[sc]e|deprecation|docker|smoke|helm|mobile|\bios\b|android|windows|macos|submit|detect|merge|report|size|openapi/i;
+const NOT_SETUP = /release|publish|deploy|bump|\bdocs?\b|nightly|cron|mutation|bench|label|stale|codeql|security|dependabot|backport|sync|cleanup|lighthouse|breaking|changelog|translation|i18n|token|artifact|cache|schema|lint|format|\btypes?\b|audit|triage|preview|licen[sc]e|deprecation|docker|smoke|helm|mobile|\bios\b|android|windows|macos|submit|detect|merge|report|size|openapi|shellcheck|hlint|link|depsreview|dependency|guard|semantic|goreleaser|configuration|validat|devcontainer|image|enterprise|\bwin\b|feature-branch/i;
 /** A check step that runs the tests, which is what a workspace is set up for. */
 const TEST_STEP = /\b(test|tests|unittest|pytest|vitest|jest|e2e|rspec|phpunit|tox|nox)\b/i;
 
@@ -240,7 +243,40 @@ function expandLocalActions(repoPath, steps, depth = 0) {
 /** Whether a workflow runs on pull requests or pushes, as the main CI does. */
 function onChanges(on) {
   const events = typeof on === "string" ? [on] : Array.isArray(on) ? on : Object.keys(on ?? {});
-  return events.some((event) => event === "pull_request" || event === "push" || event === "pull_request_target" || event === "merge_group");
+  return events.some((event) => event === "pull_request" || event === "push" || event === "pull_request_target" || event === "merge_group" || event === "workflow_call");
+}
+
+/** Workflows that only answer repository events (issues, releases, comments) and never touch the code. */
+function onlyRepositoryEvents(on) {
+  const events = typeof on === "string" ? [on] : Array.isArray(on) ? on : Object.keys(on ?? {});
+  return events.length > 0 && events.every((event) => /^(issues|issue_comment|discussion|discussion_comment|release|label|milestone|project|project_card|project_column|fork|watch|create|delete|status|check_run|check_suite|registry_package|page_build|deployment|deployment_status|gollum|public|pull_request_review|pull_request_review_comment)$/.test(event));
+}
+
+/**
+ * A job that needs others often starts from what they installed, such as a
+ * downloaded artifact; when it downloads one, their installs and tools are its own.
+ */
+function planWithNeeds(repoPath, file, workflow, jobName, job, knownPorts) {
+  const plan = planJob(file, jobName, job, workflow.env, knownPorts);
+  if (!job.steps.some((step) => /^actions\/download-artifact@/.test(step.uses ?? ""))) return plan;
+  const seen = new Set([jobName]);
+  const queue = [job.needs ?? []].flat();
+  const before = [];
+  while (queue.length) {
+    const name = queue.shift();
+    if (seen.has(name) || !workflow.jobs[name]?.steps) continue;
+    seen.add(name);
+    const needed = workflow.jobs[name];
+    before.unshift(planJob(file, name, { ...needed, steps: expandLocalActions(repoPath, needed.steps) }, workflow.env, knownPorts));
+    queue.push(...[needed.needs ?? []].flat());
+  }
+  for (const other of before.reverse()) {
+    const runs = new Set(plan.create.map((step) => step.run));
+    plan.create.unshift(...other.create.filter((step) => !runs.has(step.run)));
+    const tools = new Set(plan.tools.map((tool) => tool.name));
+    plan.tools.push(...other.tools.filter((tool) => !tools.has(tool.name)));
+  }
+  return plan;
 }
 
 /**
@@ -263,8 +299,8 @@ export function planFromCi(repoPath, knownPorts = []) {
     for (let [jobName, job] of Object.entries(workflow?.jobs ?? {})) {
       if (!job?.steps) continue;
       job = { ...job, steps: expandLocalActions(repoPath, job.steps) };
-      const plan = planJob(file, jobName, job, workflow.env);
-      sources.set(plan, { file, jobName, job, env: workflow.env, onChanges: onChanges(workflow.on) });
+      const plan = planWithNeeds(repoPath, file, workflow, jobName, job);
+      sources.set(plan, { file, jobName, job, workflow, onChanges: onChanges(workflow.on) });
       plans.push(plan);
     }
   }
@@ -273,11 +309,13 @@ export function planFromCi(repoPath, knownPorts = []) {
     return plan.create.length + plan.tools.length + 3 * plan.services.length + (plan.checks ? 4 : 0) + (plan.tests ? 3 : 0) + (main ? 3 : -5) - (NOT_SETUP.test(`${plan.source} ${plan.job}`) ? 10 : 0);
   };
   const ranked = plans.filter((plan) => !plan.error).sort((a, b) => score(b) - score(a));
-  let best = ranked[0] ?? null;
+  // A job that scores below zero, or neither runs on code changes nor tests the code, only maintains the repository (issues, releases, licences).
+  const useful = (plan) => score(plan) >= 0 && (sources.get(plan).onChanges || (plan.tests > 0 && !onlyRepositoryEvents(sources.get(plan).workflow.on)));
+  let best = ranked[0] && useful(ranked[0]) ? ranked[0] : null;
   // Without services of its own, the job's addresses may point at the Compose services nk starts.
   if (best && !best.services.length && knownPorts.length) {
-    const { file, jobName, job, env } = sources.get(best);
-    best = planJob(file, jobName, job, env, knownPorts);
+    const { file, jobName, job, workflow } = sources.get(best);
+    best = planWithNeeds(repoPath, file, workflow, jobName, job, knownPorts);
   }
   return { files, best, others: ranked.slice(1).map((plan) => `${plan.source} › ${plan.job}`), errors: plans.filter((plan) => plan.error) };
 }

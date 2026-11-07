@@ -1,0 +1,5 @@
+source: .github/workflows/release.yaml › goreleaser
+tools: node@>=25.2.1, go@>=1.27.3
+create: -
+env: flags=
+left out: Run GoReleaser: uses the action goreleaser/goreleaser-action@v6

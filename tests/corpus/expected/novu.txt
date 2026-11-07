@@ -1,0 +1,13 @@
+source: .github/workflows/on-pr.yml › test_unit_services
+tools: pnpm@11.28.2
+create: pnpm i -g wait-on
+left out: workflow env: NX_CLOUD_ACCESS_TOKEN comes from a CI expression (${{ secrets.NX_CLOUD_ACCESS_TOKEN }})
+left out: echo ${{ matrix.projectName }}: uses a CI expression (${{ … }})
+left out: ⚙️ Setup Node Version: uses the action useblacksmith/setup-node@65c6ca86fdeb0ab3d85e78f57e4f6a7e4780b391
+left out: 💵 Start Redis: uses the action supercharge/redis-github-action@f63fe516254d0af5df91755a4488274c2e71e38c
+left out: 📚 Start MongoDB: uses the action supercharge/mongodb-github-action@5a87bd81f88e2a8b195f8b7b656f5cda1350815a
+left out: 🔍 Start ClickHouse: uses the action praneeth527/clickhouse-server-action@f09502165f8075d2a11c4fbc9e93ccea9b2a821b
+left out: 🛟 Install dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Link enterprise packages into .source: runs only when ${{ startsWith(matrix.projectName, '@novu/ee-') }}
+left out: vishnudxb/redis-cluster@b8d87ca4b6704ea41731a583f980ad4366a741ff: uses the action vishnudxb/redis-cluster@b8d87ca4b6704ea41731a583f980ad4366a741ff
+left out: Lint and build and test: uses the action mansagroup/nrwl-nx-action@a531870269e0c1eeb7af6247c4a206c31cae82cc

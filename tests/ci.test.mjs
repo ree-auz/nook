@@ -39,6 +39,23 @@ test("a generated hook refuses to run outside nk", () => {
   assert.match(result.stderr, /Run by nk only/);
 });
 
+test("a setup step whose program is missing says so plainly; corepack is checked first", (t) => {
+  const ws = tempDir(t);
+  const env = { PATH: process.env.PATH, NOOK_PATH: ws, NOOK_WORKSPACE: "w", NOOK_PORT: "40000", NOOK_REPO: ws };
+  const run = (plan) => spawnSync(process.execPath, ["--input-type=module", "-e", createHook(plan)], { cwd: ws, encoding: "utf8", env });
+
+  const base = planJob("ci.yml", "test", { steps: [] });
+  let result = run({ ...base, create: [{ name: "Install", run: "nook-no-such-program install" }] });
+  assert.equal(result.status, 127, result.stderr);
+  assert.match(result.stderr, /nook-no-such-program is not installed or not on PATH\. Needed by: nook-no-such-program install/);
+
+  const plan = planJob("ci.yml", "test", { steps: [{ run: "corepack enable" }, { run: "yarn install --immutable" }] });
+  assert.deepEqual(plan.tools.map((tool) => tool.name), ["corepack"]);
+  result = run({ ...plan, tools: [{ name: "nook-no-such-program" }] });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /nook-no-such-program is not installed/);
+});
+
 test("reads which Compose services a workspace starts and which ports it chooses", (t) => {
   const dir = tempDir(t);
   write(dir, {

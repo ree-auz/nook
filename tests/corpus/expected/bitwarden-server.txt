@@ -1,0 +1,9 @@
+source: .github/workflows/test.yml › testing
+tools: cargo
+create: -
+env: _AZ_REGISTRY=bitwardenprod.azurecr.io
+left out: job testing env: NUGET_PACKAGES comes from a CI expression (${{ github.workspace }}/.nuget/packages)
+left out: Set up .NET: uses the action actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1
+left out: Cache cargo registry: uses the action Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
+left out: Print environment: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Report test results: uses the action dorny/test-reporter@d1b5dff021aa968b288b02285a8bf47471c5928a

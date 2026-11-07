@@ -1,0 +1,4 @@
+source: .github/workflows/playwright.yml › test
+tools: node@lts/*
+create: npm ci ; npx playwright install --with-deps chromium
+left out: actions/setup-dotnet@v4: uses the action actions/setup-dotnet@v4

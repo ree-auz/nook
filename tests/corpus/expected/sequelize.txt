@@ -1,0 +1,3 @@
+source: .github/workflows/ci.yml › unit-test
+tools: node
+create: yarn install --immutable

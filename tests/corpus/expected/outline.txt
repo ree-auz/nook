@@ -1,5 +1,5 @@
 source: .github/workflows/ci.yml › test + docker-compose.yml
-tools: node
+tools: node, corepack
 create: corepack enable ; yarn install --immutable
 env: NODE_ENV=test
 env: DATABASE_URL=postgres://postgres:password@localhost:5432/outline_test

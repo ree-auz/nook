@@ -1,7 +1,9 @@
-source: .github/workflows/python-package.yml › Unit
+source: .github/workflows/integration-tests.yml › testing-with
 tools: python
 create: -
-left out: Install apt packages: runs only when startsWith(matrix.os, 'blacksmith-4vcpu-ubuntu')
+ci service: redis redis 6379:6379
+ci service: rabbitmq rabbitmq:management 5672:5672 15672:15672
+left out: Install apt packages: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
 left out: Install tox: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
-left out: Run tox for "${{ matrix.python-version }}-unit"
-: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Run tox for "${{ matrix.python-version }}-integration-${{ matrix.toxenv }}-${{ inputs.test_path }}"
+: uses the action nick-fields/retry@v4

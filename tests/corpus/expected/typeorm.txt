@@ -1,20 +1,20 @@
-source: .github/workflows/tests.yml › tests-codemod + docker-compose.yml
-tools: pnpm, node@24
+source: .github/workflows/tests-linux.yml › mysql_mariadb + docker-compose.yml
+tools: pnpm, node
 create: -
-compose start: mysql-5, mysql-9, mariadb-10, mariadb-12, postgres-14, postgres-17, mssql, cockroachdb, spanner
-compose moves: mysql-5 3306
-compose moves: mysql-9 3306
-compose moves: mariadb-10 3307
-compose moves: mariadb-12 3307
-compose moves: postgres-14 5432
-compose moves: postgres-17 5432
-compose moves: mssql 1433
-compose moves: cockroachdb 26257
-compose moves: spanner 9010 9020
+ci service: mysql mysql:5.7.44 3306:3306
+ci service: mariadb mariadb:10.11.16 3307:3306
+compose start: -
+compose not started: mysql-5 (CI starts its own services)
+compose not started: mysql-9 (CI starts its own services)
+compose not started: mariadb-10 (CI starts its own services)
+compose not started: mariadb-12 (CI starts its own services)
+compose not started: postgres-14 (CI starts its own services)
+compose not started: postgres-17 (CI starts its own services)
+compose not started: mssql (CI starts its own services)
+compose not started: cockroachdb (CI starts its own services)
 compose not started: oracle (container-registry.oracle.com/database/free:23.7.0.0-lite is not a database or similar service)
+compose not started: spanner (CI starts its own services)
 compose not started: hanaexpress (saplabs/hanaexpress:2.00.088.00.20251110.1 is not a database or similar service)
-compose not started: mongodb (no port left of the workspace's ten)
-template addresses: mysql-5:3306 -> 127.0.0.1:3306, mysql-9:3306 -> 127.0.0.1:3306, mariadb-10:3306 -> 127.0.0.1:3307, mariadb-12:3306 -> 127.0.0.1:3307, postgres-14:5432 -> 127.0.0.1:5432, postgres-17:5432 -> 127.0.0.1:5432, mssql:1433 -> 127.0.0.1:1433, cockroachdb:26257 -> 127.0.0.1:26257, spanner:9010 -> 127.0.0.1:9010, spanner:9020 -> 127.0.0.1:9020
+compose not started: mongodb (CI starts its own services)
 left out: pnpm install --frozen-lockfile ${{ inputs.ignore-workspace == 'true' && '--ignore-workspace' || '' }}: uses a CI expression (${{ … }})
-left out: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9: uses the action SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9
-left out: docker-compose.yml › mongodb: not started: the workspace's ten ports are taken by the other services
+left out: jq 'map(select(.type | IN($ARGS.positional[])))' \: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

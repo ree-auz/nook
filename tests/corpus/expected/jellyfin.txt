@@ -1,0 +1,6 @@
+source: .github/workflows/ci-tests.yml › run-tests
+tools: -
+create: -
+env: SDK_VERSION=10.0.x
+left out: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68: uses the action actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+left out: Merge code coverage results: uses the action danielpalme/ReportGenerator-GitHub-Action@861674232075b2c6bd1405a04c4bb9b150653e81

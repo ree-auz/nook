@@ -1,0 +1,16 @@
+source: .github/workflows/run_foss_spec.yml › backend-tests + docker-compose.yaml
+tools: pnpm, ruby, node
+create: pnpm i
+ci service: postgres pgvector/pgvector:pg16 5432:5432
+ci service: redis redis:alpine 6379:6379
+compose start: -
+compose not started: base (built from this repository)
+compose not started: rails (built from this repository)
+compose not started: sidekiq (chatwoot-rails:development is not a database or similar service)
+compose not started: vite (built from this repository)
+compose not started: postgres (CI starts its own services)
+compose not started: redis (CI starts its own services)
+compose not started: mailhog (CI starts its own services)
+left out: Strip enterprise code: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Create database: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Seed database: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

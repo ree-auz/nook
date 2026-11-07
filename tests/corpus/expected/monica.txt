@@ -1,0 +1,9 @@
+source: (no CI) + docker-compose.yml
+tools: -
+create: -
+compose start: mariadb, redis, memcached, meilisearch, mailpit
+compose port vars: APP_PORT, VITE_PORT, FORWARD_DB_PORT, FORWARD_REDIS_PORT, FORWARD_MEMCACHED_PORT, FORWARD_MEILISEARCH_PORT, FORWARD_MAILPIT_PORT, FORWARD_MAILPIT_DASHBOARD_PORT
+compose not started: laravel.test (built from this repository)
+compose not started: laravel.queue (no image)
+compose not started: laravel.cron (no image)
+template addresses: mariadb:3306 -> 127.0.0.1:3306, redis:6379 -> 127.0.0.1:6379, memcached:11211 -> 127.0.0.1:11211, meilisearch:7700 -> 127.0.0.1:7700, mailpit:1025 -> 127.0.0.1:1025, mailpit:8025 -> 127.0.0.1:8025

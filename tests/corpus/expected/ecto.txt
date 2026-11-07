@@ -1,0 +1,7 @@
+source: .github/workflows/ci.yml › unit-test
+tools: elixir
+create: -
+env: FORCE_COLOR=1
+env: MIX_ENV=test
+left out: Install dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Compile deps: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

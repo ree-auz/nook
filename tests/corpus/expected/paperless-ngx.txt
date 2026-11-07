@@ -1,0 +1,8 @@
+source: .github/workflows/ci-frontend.yml › e2e-tests
+tools: pnpm, node@24.x, python@3.12, uv@0.13.x, python@${{ steps.setup-python.outputs.python-version }}
+create: -
+env: PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+env: PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+left out: Install dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Install backend system dependencies: uses the action $/.github/actions/apt-install
+left out: Install backend dependencies: uses a CI expression (${{ … }})

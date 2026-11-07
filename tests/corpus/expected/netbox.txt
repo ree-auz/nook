@@ -1,0 +1,8 @@
+source: .github/workflows/ci.yml › test
+tools: python
+create: -
+ci service: redis redis:8 6379:6379
+ci service: postgres postgres:18 5432:5432
+env: NETBOX_CONFIGURATION=netbox.configuration_testing
+left out: job test env: RELEASE_PR comes from a CI expression (${{ needs.changes.outputs.release_pr }})
+left out: Install dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

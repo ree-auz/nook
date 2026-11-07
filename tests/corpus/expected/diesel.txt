@@ -1,0 +1,14 @@
+source: .github/workflows/ci.yml › check_and_test + docker-compose.yml
+tools: -
+create: -
+env: CARGO_NET_RETRY=10
+env: RUSTUP_MAX_RETRIES=10
+env: CARGO_HTTP_MULTIPLEXING=false
+compose start: mysql, postgres, mariadb
+compose moves: mysql 3306
+compose moves: postgres 5432
+compose moves: mariadb 3307
+template addresses: mysql:3306 -> 127.0.0.1:3306, postgres:5432 -> 127.0.0.1:5432, mariadb:3306 -> 127.0.0.1:3307
+left out: Cache cargo registry: uses the action Swatinem/rust-cache@f51f967e158417aafa338a1e46ab22095f07aa01
+left out: Install sqlite (Windows): runs only when runner.os == 'Windows' && matrix.backend == 'sqlite'
+left out: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab: uses the action taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab

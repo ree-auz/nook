@@ -1,0 +1,21 @@
+source: .github/workflows/test_migrations.yml › pgsql-migrations + docker-compose.yml
+tools: uv, python@3.14
+create: uv sync --frozen
+ci service: postgres postgres:17 5432:5432
+env: DJANGO_SETTINGS_MODULE=core.settings.label_studio
+env: COVERAGE_PROCESS_START=label_studio/.coveragerc
+env: LOG_DIR=pytest_logs
+env: COLLECT_ANALYTICS=true
+env: DEBUG_CONTEXTLOG=true
+env: LABEL_STUDIO_TEST_ENVIRONMENT=false
+env: SENTRY_RATE=0
+env: JSON_LOG=0
+env: SENTRY_ENVIRONMENT=tests-ubuntu-pgsql
+env: DJANGO_DB=default
+env: CI=true
+compose start: -
+compose not started: nginx (built from this repository)
+compose not started: app (built from this repository)
+compose not started: db (pgautoupgrade/pgautoupgrade:17-alpine is not a database or similar service)
+left out: hmarr/debug-action@v3.0.0: uses the action hmarr/debug-action@v3.0.0
+left out: Install OS dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

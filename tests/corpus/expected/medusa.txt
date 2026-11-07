@@ -1,0 +1,14 @@
+source: .github/workflows/test-cli-with-database.yml › test-cli-with-database
+tools: node@22, pnpm@10.11.1
+create: yarn install --immutable --inline-builds
+ci service: redis redis 6379:6379
+ci service: postgres postgres:15-alpine 5432:5432
+env: NODE_ENV=CI
+env: REDIS_URL=redis://localhost:6379
+env: NPM_CONFIG_LOGLEVEL=error
+env: NPM_CONFIG_AUDIT=false
+env: NPM_CONFIG_FUND=false
+env: NPM_CONFIG_UPDATE_NOTIFIER=false
+left out: job test-cli-with-database env: TURBO_TOKEN comes from a CI expression (${{ secrets.TURBO_TOKEN }})
+left out: job test-cli-with-database env: TURBO_TEAM comes from a CI expression (${{ secrets.TURBO_TEAM }})
+left out: env: DATABASE_URL is a service address outside the workspace

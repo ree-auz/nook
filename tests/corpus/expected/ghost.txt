@@ -1,0 +1,13 @@
+source: .github/workflows/ci.yml › job_acceptance-tests
+tools: pnpm, node
+create: -
+ci service: mysql mysql:8.0 3306:3306
+ci service: redis redis:7.4 6379:6379
+env: FORCE_COLOR=1
+env: NODE_VERSION=22.23.4
+env: DISABLE_V8_COMPILE_CACHE=1
+env: NX_NATIVE_COMMAND_RUNNER=false
+left out: workflow env: HEAD_COMMIT comes from a CI expression (${{ github.sha }})
+left out: job job_acceptance-tests env: COVERAGE_ENABLED comes from a CI expression (${{ needs.job_setup.outputs.coverage_enabled == 'true' && matrix.node == needs.job_setup.outputs.node_version }})
+left out: Set timezone (non-UTC): uses the action szenius/set-timezone@1f9716b0f7120e344f0c62bb7b1ee98819aefd42
+left out: tryghost/actions/actions/slack-build@bcd9d3edaa1250608a4394ebb5863e8db37c87d9: uses the action tryghost/actions/actions/slack-build@bcd9d3edaa1250608a4394ebb5863e8db37c87d9

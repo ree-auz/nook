@@ -1,0 +1,11 @@
+source: .github/workflows/ci.yml › test
+tools: ruby@.ruby-version
+create: -
+ci service: postgres postgres 5432:5432
+ci service: redis redis 6379:6379
+env: PLAID_CLIENT_ID=foo
+env: PLAID_SECRET=bar
+env: DATABASE_URL=postgres://postgres:postgres@localhost:5432
+env: REDIS_URL=redis://localhost:6379
+env: RAILS_ENV=test
+left out: Install packages: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

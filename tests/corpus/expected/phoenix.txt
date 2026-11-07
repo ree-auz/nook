@@ -1,0 +1,3 @@
+source: .github/workflows/ci.yml › npm_test
+tools: node@24.x
+create: npm ci --no-audit --no-fund

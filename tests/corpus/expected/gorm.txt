@@ -1,0 +1,4 @@
+source: .github/workflows/tests.yml › sqlserver
+tools: go
+create: -
+ci service: mssql mcr.microsoft.com/mssql/server:2022-latest 9930:1433

@@ -1,0 +1,7 @@
+source: .github/workflows/www-e2e.yml › e2e
+tools: node, pnpm, node
+create: pnpm install --frozen-lockfile --filter=e2e-www...
+env: CI=true
+left out: Detect changed paths: uses the action dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36
+left out: Skip Playwright (no in-scope pages): runs only when steps.scope.outputs.skip == 'true'
+left out: Wait for Vercel www preview: uses a CI expression (${{ … }})

@@ -1,0 +1,9 @@
+source: .github/workflows/ci-test-custom-script.yml › ci-test
+tools: node
+create: -
+ci service: redis redis 6379:6379
+ci service: mongo mongo 27017:27017
+left out: Set up Depot CLI: uses the action depot/setup-action@v1
+left out: Dump steps context: uses a CI expression (${{ … }})
+left out: echo "Starting full run" && exit 0: runs only when steps.run_result.outputs.run_result != 'success' && steps.run_result.outputs.run_result != 'failedtest'
+left out: Collect docker log as file: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

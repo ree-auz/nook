@@ -1,0 +1,17 @@
+source: .github/workflows/check.yml › unit + docker-compose.yml
+tools: node, pnpm
+create: npm install -g npm@11.5.1 ; pnpm install
+env: NODE_OPTIONS=--max_old_space_size=6144
+compose start: postgres, mysql, maria, mssql, cockroachdb, redis, azure, maildev
+compose moves: postgres 5100
+compose moves: mysql 5101
+compose moves: maria 5102
+compose moves: mssql 5103
+compose moves: cockroachdb 5113
+compose moves: redis 5105
+compose moves: azure 5107
+compose moves: maildev 1025 1080
+compose not started: oracle (gvenzl/oracle-free:23-slim is not a database or similar service)
+compose not started: rustfs (rustfs/rustfs:1.0.0-rc.6 is not a database or similar service)
+compose not started: keycloak (quay.io/keycloak/keycloak is not a database or similar service)
+template addresses: postgres:5432 -> 127.0.0.1:5100, mysql:3306 -> 127.0.0.1:5101, maria:3306 -> 127.0.0.1:5102, mssql:1433 -> 127.0.0.1:5103, cockroachdb:26257 -> 127.0.0.1:5113, redis:6379 -> 127.0.0.1:5105, azure:10000 -> 127.0.0.1:5107, maildev:1025 -> 127.0.0.1:1025, maildev:1080 -> 127.0.0.1:1080

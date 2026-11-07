@@ -1,0 +1,55 @@
+source: .github/workflows/e2e-app-store.yml › e2e-app-store + docker-compose.yml
+tools: node@v22.x, node@v22.x
+create: -
+ci service: postgres postgres:18 5432:5432
+ci service: mailhog mailhog/mailhog:v1.0.1 8025:8025 1025:1025
+env: NODE_OPTIONS=--max-old-space-size=4096
+compose start: -
+compose port vars: REDIS_PORT, API_PORT
+compose not started: database (CI starts its own services)
+compose not started: redis (CI starts its own services)
+compose not started: calcom (built from this repository)
+compose not started: calcom-api (built from this repository)
+compose not started: studio (calcom.docker.scarf.sh/calcom/cal.diy is not a database or similar service)
+left out: workflow env: ALLOWED_HOSTNAMES comes from a CI expression (${{ vars.CI_ALLOWED_HOSTNAMES }})
+left out: workflow env: CALENDSO_ENCRYPTION_KEY comes from a CI expression (${{ secrets.CI_CALENDSO_ENCRYPTION_KEY }})
+left out: workflow env: DAILY_API_KEY comes from a CI expression (${{ secrets.CI_DAILY_API_KEY }})
+left out: workflow env: DATABASE_URL comes from a CI expression (${{ secrets.CI_DATABASE_URL }})
+left out: workflow env: DATABASE_DIRECT_URL comes from a CI expression (${{ secrets.CI_DATABASE_URL }})
+left out: workflow env: DEPLOYSENTINEL_API_KEY comes from a CI expression (${{ secrets.DEPLOYSENTINEL_API_KEY }})
+left out: workflow env: E2E_TEST_APPLE_CALENDAR_EMAIL comes from a CI expression (${{ secrets.E2E_TEST_APPLE_CALENDAR_EMAIL }})
+left out: workflow env: E2E_TEST_APPLE_CALENDAR_PASSWORD comes from a CI expression (${{ secrets.E2E_TEST_APPLE_CALENDAR_PASSWORD }})
+left out: workflow env: E2E_TEST_MAILHOG_ENABLED comes from a CI expression (${{ vars.E2E_TEST_MAILHOG_ENABLED }})
+left out: workflow env: GOOGLE_API_CREDENTIALS comes from a CI expression (${{ secrets.CI_GOOGLE_API_CREDENTIALS }})
+left out: workflow env: EMAIL_SERVER_HOST comes from a CI expression (${{ secrets.CI_EMAIL_SERVER_HOST }})
+left out: workflow env: EMAIL_SERVER_PORT comes from a CI expression (${{ secrets.CI_EMAIL_SERVER_PORT }})
+left out: workflow env: EMAIL_SERVER_USER comes from a CI expression (${{ secrets.CI_EMAIL_SERVER_USER }})
+left out: workflow env: EMAIL_SERVER_PASSWORD comes from a CI expression (${{ secrets.CI_EMAIL_SERVER_PASSWORD}})
+left out: workflow env: GOOGLE_LOGIN_ENABLED comes from a CI expression (${{ vars.CI_GOOGLE_LOGIN_ENABLED }})
+left out: workflow env: NEXTAUTH_SECRET comes from a CI expression (${{ secrets.CI_NEXTAUTH_SECRET }})
+left out: workflow env: NEXTAUTH_URL comes from a CI expression (${{ secrets.CI_NEXTAUTH_URL }})
+left out: workflow env: NEXT_PUBLIC_API_V2_URL comes from a CI expression (${{ secrets.CI_NEXT_PUBLIC_API_V2_URL }})
+left out: workflow env: NEXT_PUBLIC_API_V2_ROOT_URL comes from a CI expression (${{ secrets.CI_NEXT_PUBLIC_API_V2_ROOT_URL }})
+left out: workflow env: NEXT_PUBLIC_IS_E2E comes from a CI expression (${{ vars.CI_NEXT_PUBLIC_IS_E2E }})
+left out: workflow env: NEXT_PUBLIC_ORG_SELF_SERVE_ENABLED comes from a CI expression (${{ vars.CI_NEXT_PUBLIC_ORG_SELF_SERVE_ENABLED }})
+left out: workflow env: NEXT_PUBLIC_STRIPE_PUBLIC_KEY comes from a CI expression (${{ secrets.CI_NEXT_PUBLIC_STRIPE_PUBLIC_KEY }})
+left out: workflow env: NEXT_PUBLIC_WEBAPP_URL comes from a CI expression (${{ vars.CI_NEXT_PUBLIC_WEBAPP_URL }})
+left out: workflow env: NEXT_PUBLIC_WEBSITE_URL comes from a CI expression (${{ vars.CI_NEXT_PUBLIC_WEBSITE_URL }})
+left out: workflow env: PAYMENT_FEE_FIXED comes from a CI expression (${{ vars.CI_PAYMENT_FEE_FIXED }})
+left out: workflow env: PAYMENT_FEE_PERCENTAGE comes from a CI expression (${{ vars.CI_PAYMENT_FEE_PERCENTAGE }})
+left out: workflow env: SAML_ADMINS comes from a CI expression (${{ secrets.CI_SAML_ADMINS }})
+left out: workflow env: SAML_DATABASE_URL comes from a CI expression (${{ secrets.CI_SAML_DATABASE_URL }})
+left out: workflow env: STRIPE_PRIVATE_KEY comes from a CI expression (${{ secrets.CI_STRIPE_PRIVATE_KEY }})
+left out: workflow env: STRIPE_CLIENT_ID comes from a CI expression (${{ secrets.CI_STRIPE_CLIENT_ID }})
+left out: workflow env: STRIPE_WEBHOOK_SECRET comes from a CI expression (${{ secrets.CI_STRIPE_WEBHOOK_SECRET }})
+left out: workflow env: SENDGRID_API_KEY comes from a CI expression (${{ secrets.CI_SENDGRID_API_KEY }})
+left out: workflow env: SENDGRID_EMAIL comes from a CI expression (${{ secrets.CI_SENDGRID_EMAIL }})
+left out: workflow env: TURBO_TOKEN comes from a CI expression (${{ secrets.TURBO_TOKEN }})
+left out: workflow env: TURBO_TEAM comes from a CI expression (${{ secrets.TURBO_TEAM }})
+left out: Install dependencies: runs only when ${{ inputs.skip-install-if-cache-hit != 'true' || steps.all-caches-check.outputs.all-hit != 'true' }}
+left out: Install dependencies: runs only when ${{ inputs.skip-install-if-cache-hit != 'true' || steps.all-caches-check.outputs.all-hit != 'true' }}
+left out: Yarn playwright install: runs only when ${{ (inputs.skip-install-if-cache-hit != 'true' && steps.playwright-cache.outputs.cache-hit != 'true') || (inputs.skip-install-if-cache-hit == 'true' && steps.playwright-cache-check.outputs.cache-hit != 'true') }}
+left out: yarn prisma generate: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: yarn db-seed: runs only when steps.cache-db.outputs.cache-hit != 'true'
+left out: Postgres Dump Backup: uses a CI expression (${{ … }})
+left out: Postgres Backup Restore: uses a CI expression (${{ … }})

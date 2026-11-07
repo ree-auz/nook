@@ -1,0 +1,5 @@
+source: .github/workflows/go.yml › postgres
+tools: go
+create: -
+ci service: postgres postgres:9.6 5432:5432
+env: GOPROXY=https://proxy.golang.org

@@ -1,0 +1,8 @@
+source: (no CI) + docker-compose.yml
+tools: -
+create: -
+compose start: db, mailhog
+compose port vars: DEV_PORT, DEV_MAIL_PORT
+compose not started: app (built from this repository)
+compose not started: node (node:22-alpine is not a database or similar service)
+template addresses: mailhog:8025 -> 127.0.0.1:8025
