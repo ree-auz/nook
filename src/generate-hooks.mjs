@@ -108,9 +108,11 @@ function startCompose() {
   if (start.length) compose(["up", "--detach", "--wait", "--quiet-pull", ...start]);
 }
 
-/** localhost:5432 in a CI value becomes localhost:<this workspace's port>. */
-function withPorts(value, ports) {
-  return String(value).replace(/\b(localhost|127\.0\.0\.1):(\d+)\b/g, (all, host, port) => (ports[port] ? host + ":" + ports[port] : all));
+/** localhost:5432 in a value becomes localhost:<this workspace's port>; so does a bare 5432 in a *_PORT key. */
+function withPorts(value, ports, key = "") {
+  const next = String(value).replace(/\b(localhost|127\.0\.0\.1):(\d+)\b/g, (all, host, port) => (ports[port] ? host + ":" + ports[port] : all));
+  const bare = /^(["']?)(\d+)\1$/.exec(next.trim());
+  return bare && /PORT$/i.test(key) && ports[bare[2]] ? next.replace(bare[2], String(ports[bare[2]])) : next;
 }
 
 // Shell built-ins (sh and cmd.exe) are not programs on PATH.
@@ -241,9 +243,7 @@ const repoint = (line) => {
   if (!match) return line;
   const [, head, key, value] = match;
   // localhost:5432 and 127.0.0.1:5432 in a URL; a bare 5432 only in a *_PORT key.
-  let next = withPorts(value, moved);
-  const bare = /^(["']?)(\\d+)\\1$/.exec(next.trim());
-  if (bare && /PORT$/i.test(key) && moved[bare[2]]) next = next.replace(bare[2], String(moved[bare[2]]));
+  const next = withPorts(value, moved, key);
   if (next === value) return line;
   repointed.push(key);
   return head + next;
@@ -264,7 +264,7 @@ let text = original
 if (repointed.length) console.log("Pointed .env at this workspace's ports: " + repointed.splice(0).join(", "));
 const missing = Object.entries(plan.env).filter(([key]) => !text.split("\\n").some((line) => assignment(key).test(line)));
 if (Object.keys(own).length) text += (text ? "\\n\\n" : "") + "# This workspace's Compose project and ports (nk hooks write)\\n" + Object.entries(own).map(([key, value]) => key + "=" + value).join("\\n");
-if (missing.length) text += (text ? "\\n\\n" : "") + "# From CI (nk hooks write)\\n" + missing.map(([key, value]) => key + "=" + withPorts(value, moved)).join("\\n");
+if (missing.length) text += (text ? "\\n\\n" : "") + "# From CI (nk hooks write)\\n" + missing.map(([key, value]) => key + "=" + withPorts(value, moved, key)).join("\\n");
 // A file the repository commits now holds this workspace's ports: keep that change out of git status and commits.
 // A new file the repository does not ignore goes in git's local exclude list (never committed).
 const hideFromGit = (name) => {
@@ -299,10 +299,10 @@ for (const name of readdirSync(ws).filter((file) => /^\.env\..+/.test(file) && !
 }
 startCompose();
 
-const env = Object.fromEntries(Object.entries(plan.env).map(([key, value]) => [key, withPorts(value, moved)]));
+const env = Object.fromEntries(Object.entries(plan.env).map(([key, value]) => [key, withPorts(value, moved, key)]));
 for (const step of plan.create) {
   console.log("> " + step.name);
-  const stepEnv = Object.fromEntries(Object.entries(step.env ?? {}).map(([key, value]) => [key, withPorts(value, moved)]));
+  const stepEnv = Object.fromEntries(Object.entries(step.env ?? {}).map(([key, value]) => [key, withPorts(value, moved, key)]));
   sh(step.run, { cwd: step.cwd ? join(ws, step.cwd) : ws, env: { ...env, ...stepEnv } });
 }
 `;
@@ -322,7 +322,7 @@ ${planText(plan)}
 for (const step of plan.remove) {
   console.log("> " + step.name);
   const moved = movedPorts(portMap());
-  const env = Object.fromEntries(Object.entries({ ...plan.env, ...step.env }).map(([key, value]) => [key, withPorts(value, moved)]));
+  const env = Object.fromEntries(Object.entries({ ...plan.env, ...step.env }).map(([key, value]) => [key, withPorts(value, moved, key)]));
   sh(step.run, { cwd: step.cwd ? join(ws, step.cwd) : ws, env, check: false });
 }
 for (const service of plan.services) {

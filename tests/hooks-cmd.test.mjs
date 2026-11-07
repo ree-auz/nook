@@ -113,6 +113,7 @@ jobs:
         ports: ["5432:5432"]
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/app
+      DB_PORT: 5432
       API_TOKEN: \${{ secrets.TOKEN }}
     steps:
       - uses: actions/checkout@v4
@@ -162,6 +163,7 @@ test("hooks write turns CI into hooks that pass hooks test; a CI change then sto
     const env = readFileSync(join(ws, ".env"), "utf8");
     assert.match(env, new RegExp(`^DATABASE_URL=postgres://postgres:postgres@localhost:${port}/app$`, "m"), "CI's user and password, this workspace's port");
     assert.doesNotMatch(env, /user:pass/);
+    assert.match(env, new RegExp(`^DB_PORT=${port}$`, "m"), "a bare port CI sets moves too (invoiceninja's DB_PORT)");
     assert.ok(state().containers[0].args.join(" ").includes(`-p 127.0.0.1:${port}:5432`));
   }
 
