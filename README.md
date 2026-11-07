@@ -20,6 +20,7 @@ repository's setup hooks, and can start a command-line agent inside it.
 | `nk hooks` | The repository's `.nook` hooks: allowed, and tested since they last changed |
 | `nk hooks write [agent]` | Write the hooks from the repository's CI; with an agent, also starts it in the same folder to finish what CI could not tell |
 | `nk hooks test` | Run the hooks of the folder you are in, in a temporary workspace; fails if remove leaves anything behind |
+| `nk forget [<short-name>]` | Stop knowing a repository: remove its registration and shared files; its folder and backups stay |
 | `nk doctor` | Check nk's tools (node, git, gh, docker, agents) without changing anything |
 
 Like git, every command acts on the repository you are in: its main
@@ -49,7 +50,7 @@ arguments to one agent, set `args` under `[agents.<name>]` in `config.toml`.
 
 A workspace name is also its branch name and folder name. It uses lowercase
 letters, digits, `-` and `.` only, and cannot be a command name (`init`, `ls`,
-`rm`, `clean`, `doctor`, `help`, `version`).
+`rm`, `clean`, `hooks`, `forget`, `doctor`, `help`, `version`).
 
 You can pass any branch text; `nk` turns it into a valid name and says so:
 uppercase becomes lowercase, and `/`, spaces, non-ASCII and other characters
@@ -104,7 +105,7 @@ works everywhere.
 Hooks see `NOOK_WORKSPACE`, `NOOK_PATH`, `NOOK_REPO`, `NOOK_SHARED` and
 `NOOK_PORT` (the first of 10 ports reserved for the workspace).
 
-### Writing the hooks from CI
+### Writing the hooks from CI and Compose
 
 CI already says, step by step, how a clean machine gets the project running,
 and it is kept working because it runs on every change. Nook turns it into
@@ -114,23 +115,51 @@ The whole cycle:
 
 ```
 nk init                     once per repository
-nk hooks write              hooks from CI (GitHub Actions)
+nk hooks write              hooks from CI (GitHub Actions) and the Compose file
 nk hooks test               run them in a temporary workspace; nothing may be left behind
 nk -b <name> codex          new workspace; nk <name> codex reopens one
 nk ls                       PR and CI of every workspace; merge or close on GitHub
 nk clean | nk rm <name>     remove merged or chosen workspaces
 ```
 
-What `nk hooks write` takes from the CI job with the most setup in it:
+nk picks the CI job most like "set up and test the project": it runs on pull
+requests or pushes, runs tests, and has the most setup steps and services. Jobs
+that release, deploy, lint or only build are passed over; the report lists the
+others. Local composite actions (`uses: ./.github/actions/setup`) are read
+step by step, as if their steps were in the job. What it takes from that job:
 
 | In CI | In the hooks |
 |---|---|
 | `actions/setup-node`, `setup-python`, `pnpm/action-setup`, `astral-sh/setup-uv`... | create checks the tool is installed and warns about another version |
-| `run:` steps before the first test, lint or build step | create runs them in the workspace |
+| `run:` steps before the first test, lint or build step | create runs them in the workspace; an install CI skips on a cache hit (`if: steps.cache.outputs.cache-hit != 'true'`) runs, since a new workspace has no cache |
 | `services:` (a database, say) | create starts one container per workspace on the workspace's own ports; open starts it again; remove deletes it with its volumes |
 | `env:` | added to the workspace's `.env`, with `localhost:<CI port>` changed to the workspace's port |
 | `run:` steps with `if: always()` (cleanup) | remove runs them |
 | checkout, caches, uploads, tests, lint, builds | left out |
+
+When the repository has a Compose file (`compose.yaml`, `docker-compose.yml`...),
+nk also reads it, together with its override file (`compose.override.yaml`...)
+as `docker compose` does, since many projects start their database there rather than
+in CI:
+
+| In the Compose file | In the hooks |
+|---|---|
+| a database or similar service used as it is (`postgres`, `redis`, `rabbitmq`, `minio`, `mailpit`...) | create starts it in the workspace's own Compose project, `nook-<repo>-<workspace>`; open starts it again; remove runs `docker compose down --volumes` for that project |
+| a host port written as a variable, `${API_PORT:-3001}:3001` | the variable gets one of the workspace's ports in its `.env`, so you can run that service too without a clash |
+| a value it needs, `${POSTGRES_PASSWORD:?...}` | create stops and names it when `.env` does not have it; set it once in the shared `.env` |
+| a service built from the repository, the project's own image (the app), or one under a profile | not started; start it yourself when you need it |
+| more services than the workspace's ten ports hold | the last ones are not started, and listed |
+| a fixed host port, `5432:5432` | moved to one of the workspace's ports (`127.0.0.1:<port>:5432`) by a small Compose file nk writes into the worktree's git folder; `COMPOSE_FILE` in `.env` lists it, so a `docker compose` you run there uses it too |
+
+When the chosen CI job has services of its own, nk starts those and none from
+Compose, so the same database is not started twice.
+
+The workspace's `.env` also gets `COMPOSE_PROJECT_NAME` set to the
+workspace's project, replacing whatever the copied file said, so a
+`docker compose` you run there never reaches the main checkout's project.
+Values in the copied `.env` that point at a moved port are pointed at the
+workspace's port: `DATABASE_URL=postgres://...@localhost:5432/app` becomes
+`localhost:<workspace port>`, and so does `DB_PORT=5432`.
 
 CI runs on a throwaway machine; a developer machine also has the real
 database and other workspaces. So nk copies less than CI does, never more:
@@ -163,10 +192,10 @@ before it is merged) in a temporary workspace: create, open twice, then
 remove. It fails when a hook fails, when open cannot run twice, or when
 remove leaves a Docker container, volume, network or built image behind.
 
-A passing test records the hooks and the CI files. If either changes, `nk -b`
+A passing test records the hooks, the CI files and the Compose file. If any of them changes, `nk -b`
 stops before creating a workspace (pass `--untested` to start anyway), and
 `nk <name>`, `nk hooks`, `nk doctor` and `nk rm` say so: run `nk hooks write`
-again for a CI change, then `nk hooks test`.
+again for a CI or Compose change, then `nk hooks test`.
 
 [docs/setup-hooks.md](docs/setup-hooks.md) has the rules and examples for
 pnpm and npm, uv, and a Docker Compose project per workspace.
@@ -246,6 +275,21 @@ remove a worktree and still leave ignored folders such as `node_modules` or
 more; `nk clean` deletes it, with any Compose project started in it, unless a
 program is still running there. `nk rm` itself now deletes whatever git leaves
 and stops with the reason when Windows keeps a file open.
+
+## Forgetting a repository
+
+`nk forget` (in the repository, or `nk forget <short-name>` from anywhere)
+undoes `nk init`: it removes the repository's registration and its shared
+files in `~/nook/shared/<short-name>/`, after one confirmation. The repository
+folder and the backups `nk rm` made stay.
+
+It refuses while the repository has workspaces, so their work is backed up by
+`nk rm` first. If the repository folder is already deleted, git can no longer
+remove its workspaces; then `nk forget` lists what is left in
+`~/nook/workspaces/<short-name>/` and deletes it too, with the containers,
+volumes, networks and built images started there (Compose projects, and the
+service containers generated hooks start). Their remove hooks cannot run, since
+they were in the deleted folder.
 
 ## Linear
 

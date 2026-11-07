@@ -1,9 +1,9 @@
 # Writing hooks
 
-`nk hooks write` turns the repository's CI into hooks without AI; the README
-shows what it takes from CI and what it leaves out. This page is for the
-parts it cannot translate, and for repositories without CI: what a person or
-an agent writing hooks by hand has to follow.
+`nk hooks write` turns the repository's CI and Compose file into hooks
+without AI; the README shows what it takes from each and what it leaves out.
+This page is for the parts it cannot translate, and for repositories without
+either: what a person or an agent writing hooks by hand has to follow.
 
 `nk hooks write <agent>` writes the hooks the same way, then starts the agent
 in the folder you ran it in (usually the main checkout) with a

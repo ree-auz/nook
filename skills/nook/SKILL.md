@@ -39,7 +39,7 @@ you are in one when your working directory is inside that path.
 ## Setting up hooks
 
 When asked to set up Nook hooks: if you were started by `nk hooks write
-<agent>`, nk has already generated hooks from CI; finish what its prompt lists
+<agent>`, nk has already generated hooks from CI and the Compose file; finish what its prompt lists
 as not translated. Otherwise run `nk hooks write` first. Follow
 [docs/setup-hooks.md](https://github.com/ree-auz/nook/blob/main/docs/setup-hooks.md),
 run `nk hooks test` in the folder you work in and fix the hooks until it

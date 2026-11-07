@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { gitTry } from "./git.mjs";
+import { composeFile, overrideFile } from "./compose-plan.mjs";
 
 /**
  * Reads a repository's GitHub Actions workflows and turns the setup part of
@@ -28,6 +29,8 @@ const TOOL_ACTIONS = [
   { match: /^denoland\/setup-deno@/, tool: "deno", version: (w) => w["deno-version"] },
   { match: /^dtolnay\/rust-toolchain@|^actions-rs\/toolchain@/, tool: "cargo" },
   { match: /^ruby\/setup-ruby@/, tool: "ruby", version: (w) => w["ruby-version"] },
+  { match: /^erlef\/setup-beam@/, tool: "elixir", version: (w) => w["elixir-version"] },
+  { match: /^shivammathur\/setup-php@/, tool: "php", version: (w) => w["php-version"] },
 ];
 
 const EXPRESSION = /\$\{\{/;
@@ -38,7 +41,7 @@ const EXPRESSION = /\$\{\{/;
  * install dependencies into the workspace folder are copied; any other step
  * (a script, docker, a migration) is listed for a person or agent to review.
  */
-const INSTALL = /^(npm (ci|install|i)|pnpm (install|i|fetch)|yarn( install)?|bun install|corepack enable|uv sync|uv pip install|pip install|python3? -m pip install|poetry install|pipenv (install|sync)|bundle install|go mod download|cargo fetch|composer install|deno (cache|install)|(npx|pnpm exec|yarn) playwright install)(\s+[\w@./:=,+-]+)*$/;
+const INSTALL = /^(yarn( install)?(\s+--?[\w-]+(=\S+)?)*$|npm (ci|install|i)|pnpm (install|i|fetch)|bun (install|ci)|corepack enable|uv sync|uv pip install|pip install|python3? -m pip install|poetry install|pipenv (install|sync)|bundle install|go mod download|cargo fetch|composer install|deno (cache|install)|(npx|pnpm exec|yarn) playwright install)(\s+[\w@./:=,+-]+)*$/;
 const SHELL_SYNTAX = /[;|&`$<>()\\]|\n/;
 
 export function isInstallCommand(command) {
@@ -56,19 +59,24 @@ export function workflowFiles(repoPath) {
   return listed.ok ? listed.out.split(/\r?\n/).filter((file) => WORKFLOW.test(file)) : [];
 }
 
-/** A fingerprint of the CI files, so nk can tell when CI changed after the hooks were tested. */
+/** A fingerprint of the CI files (workflows and local actions) and the Compose files, so nk can tell when they changed after the hooks were tested. */
 export function ciHash(repoPath) {
-  const files = workflowFiles(repoPath);
+  const compose = composeFile(repoPath);
+  const listed = gitTry(["ls-files", ".github/actions"], { cwd: repoPath });
+  const actions = listed.ok ? listed.out.split(/\r?\n/).filter((file) => /\/action\.ya?ml$/.test(file)) : [];
+  const files = [...workflowFiles(repoPath), ...actions, ...[compose, overrideFile(repoPath, compose)].filter(Boolean)];
   if (!files.length) return null;
   const hash = createHash("sha256");
   for (const file of files) hash.update(`${file}\n`).update(readFileSync(join(repoPath, file), "utf8").replace(/\r\n/g, "\n"));
   return hash.digest("hex");
 }
 
-/** "5432:5432", "5432", 5432 → the port inside the container. */
-function containerPort(spec) {
+/** "5433:5432" → { host: 5433, container: 5432 }; "5432" or 5432 → both 5432. */
+function servicePort(spec) {
   const parts = String(spec).split(":");
-  return Number(parts.at(-1).split("/")[0]);
+  const container = Number(parts.at(-1).split("/")[0]);
+  const host = parts.length > 1 ? Number(parts.at(-2)) : container;
+  return Number.isInteger(container) && Number.isInteger(host) ? { host, container } : null;
 }
 
 function plainEnv(env, untranslated, where) {
@@ -80,8 +88,18 @@ function plainEnv(env, untranslated, where) {
   return out;
 }
 
+/** A condition that reads only earlier steps' outputs (cache hits, changed files), not the OS or the event. */
+function onlyStepOutputs(condition) {
+  const rest = condition
+    .replace(/\$\{\{|\}\}/g, " ")
+    .replace(/steps\.[\w-]+\.outputs\.[\w-]+/g, " ")
+    .replace(/'[^']*'/g, " ")
+    .replace(/==|!=|&&|\|\||!|\(|\)|\btrue\b|\bfalse\b/g, " ");
+  return /steps\./.test(condition) && !rest.trim();
+}
+
 /** The plan for one job: tools, environment, services, setup commands, cleanup commands. */
-export function planJob(file, jobName, job, workflowEnv = {}) {
+export function planJob(file, jobName, job, workflowEnv = {}, knownPorts = []) {
   const untranslated = [];
   const skipped = [];
   const tools = [];
@@ -99,12 +117,16 @@ export function planJob(file, jobName, job, workflowEnv = {}) {
       name,
       image: service.image,
       env: plainEnv(service.env, untranslated, `service ${name}`),
-      ports: (service.ports ?? []).map(containerPort).filter(Number.isInteger),
+      ports: (service.ports ?? []).map(servicePort).filter(Boolean),
       options: service.options && !EXPRESSION.test(service.options) ? String(service.options).trim().replace(/\s+/g, " ") : "",
     });
   }
 
-  const servicePorts = new Set(services.flatMap((service) => service.ports));
+  if (job.container && services.some((service) => !service.ports.length))
+    untranslated.push({ step: "job container", why: "CI runs this job inside a container and reaches its services by name; here they need host ports, which the CI file does not list" });
+
+  // Ports the workspace has its own of: CI's services, and the Compose services nk starts.
+  const servicePorts = new Set([...services.flatMap((service) => service.ports.map((port) => port.host)), ...knownPorts.map(Number)]);
   /** Drops values that could reach something outside the workspace's own services. */
   const safeEnv = (values, where) => {
     const kept = {};
@@ -112,7 +134,7 @@ export function planJob(file, jobName, job, workflowEnv = {}) {
       const ports = [...value.matchAll(LOCAL_PORT)].map((match) => Number(match[2]));
       const strayPort = ports.find((port) => !servicePorts.has(port));
       if (strayPort !== undefined)
-        untranslated.push({ step: where, why: `${key} points at local port ${strayPort}, which is not a CI service; on this machine it may be a real database` });
+        untranslated.push({ step: where, why: `${key} points at local port ${strayPort}, which is not a service nk starts; on this machine it may be a real database` });
       else if (SERVICE_URL.test(value) && !ports.length)
         untranslated.push({ step: where, why: `${key} is a service address outside the workspace` });
       else kept[key] = value;
@@ -122,6 +144,8 @@ export function planJob(file, jobName, job, workflowEnv = {}) {
   const env = safeEnv(rawEnv, "env");
 
   let checking = false;
+  let checks = 0;
+  let tests = 0;
   (job.steps ?? []).forEach((step, index) => {
     const name = label(step, index);
     const condition = step.if === undefined ? "" : String(step.if);
@@ -145,11 +169,18 @@ export function planJob(file, jobName, job, workflowEnv = {}) {
     // Flags such as --no-audit say nothing about what a step is for.
     if (!cleanup && (checking || CHECK_STEP.test(`${step.name ?? ""} ${step.run}`.replace(/(^|\s)--?[\w-]+(=\S*)?/g, " ")))) {
       checking = true;
+      checks++;
+      if (TEST_STEP.test(`${step.name ?? ""} ${step.run}`)) tests++;
       skipped.push({ step: name, why: "checks the code (tests, lint, build); not setup" });
       return;
     }
     if (EXPRESSION.test(step.run) || EXPRESSION.test(JSON.stringify(step.env ?? {}))) {
       untranslated.push({ step: name, why: "uses a CI expression (${{ … }})" });
+      return;
+    }
+    // An install that CI skips on a cache hit or when no files changed: a new workspace has neither.
+    if (condition && !cleanup && onlyStepOutputs(condition) && isInstallCommand(step.run)) {
+      create.push({ name, run: String(step.run).trim(), ...(step["working-directory"] && { cwd: step["working-directory"] }) });
       return;
     }
     if (condition && !cleanup) {
@@ -163,13 +194,64 @@ export function planJob(file, jobName, job, workflowEnv = {}) {
     target.push({ name, run: String(step.run).trim(), ...(step["working-directory"] && { cwd: step["working-directory"] }), ...(step.env && { env: safeEnv(plainEnv(step.env, untranslated, name), name) }) });
   });
 
-  return { source: file, job: jobName, tools, env, services, create, remove, skipped, untranslated };
+  return { source: file, job: jobName, tools, env, services, create, remove, skipped, untranslated, checks, tests };
 }
 
-/** The job most like "set up and test the project": the most setup steps and services. */
-export function planFromCi(repoPath) {
+/** Jobs that publish, release or maintain rather than set up and test the project. */
+const NOT_SETUP = /release|publish|deploy|bump|\bdocs?\b|nightly|cron|mutation|bench|label|stale|codeql|security|dependabot|backport|sync|cleanup|lighthouse|breaking|changelog|translation|i18n|token|artifact|cache|schema|lint|format|\btypes?\b|audit|triage|preview|licen[sc]e|deprecation|docker|smoke|helm|mobile|\bios\b|android|windows|macos|submit|detect|merge|report|size|openapi/i;
+/** A check step that runs the tests, which is what a workspace is set up for. */
+const TEST_STEP = /\b(test|tests|unittest|pytest|vitest|jest|e2e|rspec|phpunit|tox|nox)\b/i;
+
+/**
+ * Steps of a local composite action (uses: ./.github/actions/setup) put in
+ * place of the step that uses it, so its installs are read like any other.
+ * Its inputs are filled from the step's with: or the input's default.
+ */
+function expandLocalActions(repoPath, steps, depth = 0) {
+  return steps.flatMap((step) => {
+    if (depth > 3 || typeof step?.uses !== "string" || !step.uses.startsWith("./")) return [step];
+    const dir = join(repoPath, step.uses);
+    let action;
+    try {
+      const file = ["action.yml", "action.yaml"].map((name) => join(dir, name)).find((path) => existsSync(path));
+      action = file && parse(readFileSync(file, "utf8"));
+    } catch {
+      return [step];
+    }
+    if (action?.runs?.using !== "composite" || !Array.isArray(action.runs.steps)) return [step];
+    const inputs = {};
+    for (const [name, input] of Object.entries(action.inputs ?? {})) if (input?.default !== undefined) inputs[name] = String(input.default);
+    for (const [name, value] of Object.entries(step.with ?? {})) inputs[name] = String(value);
+    const fill = (value) =>
+      typeof value === "string"
+        ? value.replace(/\$\{\{\s*inputs\.([\w-]+)\s*\}\}/g, (whole, name) => (inputs[name] !== undefined && !EXPRESSION.test(inputs[name]) ? inputs[name] : whole))
+        : value && typeof value === "object"
+          ? Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, fill(inner)]))
+          : value;
+    const inner = action.runs.steps.map((child) => {
+      const filled = fill(child);
+      // A step's condition holds for every step of the action.
+      return step.if !== undefined && filled.if === undefined ? { ...filled, if: step.if } : filled;
+    });
+    return expandLocalActions(repoPath, inner, depth + 1);
+  });
+}
+
+/** Whether a workflow runs on pull requests or pushes, as the main CI does. */
+function onChanges(on) {
+  const events = typeof on === "string" ? [on] : Array.isArray(on) ? on : Object.keys(on ?? {});
+  return events.some((event) => event === "pull_request" || event === "push" || event === "pull_request_target" || event === "merge_group");
+}
+
+/**
+ * The job most like "set up and test the project": it runs on pull requests,
+ * runs tests, and has the most setup steps and services. knownPorts are the
+ * host ports of Compose services nk starts, for when the job has none of its own.
+ */
+export function planFromCi(repoPath, knownPorts = []) {
   const files = workflowFiles(repoPath);
   const plans = [];
+  const sources = new Map();
   for (const file of files) {
     let workflow;
     try {
@@ -178,12 +260,24 @@ export function planFromCi(repoPath) {
       plans.push({ source: file, error: error.message });
       continue;
     }
-    for (const [jobName, job] of Object.entries(workflow?.jobs ?? {})) {
+    for (let [jobName, job] of Object.entries(workflow?.jobs ?? {})) {
       if (!job?.steps) continue;
-      plans.push(planJob(file, jobName, job, workflow.env));
+      job = { ...job, steps: expandLocalActions(repoPath, job.steps) };
+      const plan = planJob(file, jobName, job, workflow.env);
+      sources.set(plan, { file, jobName, job, env: workflow.env, onChanges: onChanges(workflow.on) });
+      plans.push(plan);
     }
   }
-  const score = (plan) => (plan.error ? -1 : plan.create.length + plan.tools.length + 3 * plan.services.length);
+  const score = (plan) => {
+    const { onChanges: main } = sources.get(plan);
+    return plan.create.length + plan.tools.length + 3 * plan.services.length + (plan.checks ? 4 : 0) + (plan.tests ? 3 : 0) + (main ? 3 : -5) - (NOT_SETUP.test(`${plan.source} ${plan.job}`) ? 10 : 0);
+  };
   const ranked = plans.filter((plan) => !plan.error).sort((a, b) => score(b) - score(a));
-  return { files, best: ranked[0] ?? null, others: ranked.slice(1).map((plan) => `${plan.source} › ${plan.job}`), errors: plans.filter((plan) => plan.error) };
+  let best = ranked[0] ?? null;
+  // Without services of its own, the job's addresses may point at the Compose services nk starts.
+  if (best && !best.services.length && knownPorts.length) {
+    const { file, jobName, job, env } = sources.get(best);
+    best = planJob(file, jobName, job, env, knownPorts);
+  }
+  return { files, best, others: ranked.slice(1).map((plan) => `${plan.source} › ${plan.job}`), errors: plans.filter((plan) => plan.error) };
 }

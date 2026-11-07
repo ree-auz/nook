@@ -24,6 +24,16 @@ else if (kind === "run") {
 else if (kind === "inspect") has(args.at(-1)) ? console.log("healthy") : (process.exitCode = 1);
 else if (kind === "rm") state.containers = state.containers.filter((c) => c.name !== args.at(-1));
 else if (kind === "container" && verb === "ls" && !args.some((a) => a.includes("working_dir"))) print(state.containers.map((c) => c.name + "\\t" + c.name));
+else if (kind === "compose") {
+  const project = args[args.indexOf("--project-name") + 1];
+  const rest = args.slice(args.indexOf("--project-name") + 2);
+  if (rest[0] === "up") {
+    for (const service of rest.filter((a) => !a.startsWith("-")).slice(1)) {
+      const name = project + "-" + service + "-1";
+      if (!has(name)) state.containers.push({ name, args, env: { API_PORT: process.env.API_PORT } });
+    }
+  } else if (rest[0] === "down") state.containers = state.containers.filter((c) => !c.name.startsWith(project + "-"));
+}
 writeFileSync(file, JSON.stringify(state));
 `;
 
@@ -169,4 +179,67 @@ test("hooks write <agent> writes the hooks and starts the agent in the folder it
   assert.match(seen.prompt, /nk already wrote \.nook\/create\.mjs/);
   assert.match(seen.prompt, /API_TOKEN comes from a CI expression/);
   assert.ok(!existsSync(join(home, "workspaces", "demo", "nook-hooks")), "no workspace is created");
+});
+
+const composeFile = `services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:?set it in .env}
+  cache:
+    image: redis:7
+    ports: ["6379:6379"]
+  api:
+    build: .
+    ports: ["127.0.0.1:\${API_PORT:-3001}:3001"]
+`;
+
+test("hooks write starts the repository's Compose services in each workspace's own project, on its own ports", { skip: !services && "generated hooks call docker without a shell" }, (t) => {
+  const { home, repo, run, state } = setup(t, { "docker-compose.yml": composeFile, ".gitignore": ".env\n" });
+  // The shared .env every workspace gets, here with the main checkout's own project name in it.
+  // It also points the app at the main checkout's cache, on the port the Compose file publishes.
+  write(join(home, "shared", "demo"), { ".env": "POSTGRES_PASSWORD=dev\nCOMPOSE_PROJECT_NAME=demo\nCACHE_URL=redis://localhost:6379/0\nCACHE_PORT=6379\nINSIDE=redis://cache:6379\n" });
+  let r = run(["hooks", "write"]);
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.err, /Wrote \.nook\/create\.mjs, \.nook\/open\.mjs, \.nook\/remove\.mjs from docker-compose\.yml/);
+  assert.match(r.err, /Starts from docker-compose\.yml in each workspace's own Compose project: db/);
+  assert.match(r.err, /own ports in \.env: API_PORT/);
+  assert.match(r.err, /api \(built from this repository\)/);
+  assert.match(r.err, /Moves fixed host ports to each workspace's own: cache 6379/);
+
+  r = run(["hooks", "test"]);
+  assert.equal(r.status, 0, r.all);
+  assert.deepEqual(state().containers, [], "remove took the Compose project down");
+
+  assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
+  r = run(["-b", "feat"]);
+  assert.equal(r.status, 0, r.all);
+  const ws = join(home, "workspaces", "demo", "feat");
+  const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;
+  const env = readFileSync(join(ws, ".env"), "utf8");
+  assert.match(env, /^COMPOSE_PROJECT_NAME=nook-demo-feat$/m, "never the main checkout's project");
+  assert.doesNotMatch(env, /COMPOSE_PROJECT_NAME=demo/);
+  assert.match(env, new RegExp(`^CACHE_URL=redis://localhost:${port + 1}/0$`, "m"), "the app reaches this workspace's cache, not the main checkout's");
+  assert.match(env, new RegExp(`^CACHE_PORT=${port + 1}$`, "m"));
+  assert.match(env, /^INSIDE=redis:\/\/cache:6379$/m, "an address inside Docker stays");
+  assert.match(env, new RegExp(`^API_PORT=${port}$`, "m"));
+  assert.deepEqual(state().containers.map((c) => c.name), ["nook-demo-feat-db-1", "nook-demo-feat-cache-1"]);
+  // cache's fixed 6379 moves to this workspace's port, in a file outside the working tree.
+  const moved = join(repo, ".git", "worktrees", "feat", "nook-compose.yaml");
+  assert.match(readFileSync(moved, "utf8"), new RegExp(`"cache":\\n    ports: !override\\n      - "127\\.0\\.0\\.1:${port + 1}:6379"`));
+  assert.ok(env.includes(`COMPOSE_FILE=${join(ws, "docker-compose.yml")}${delimiter}${moved}`), "docker compose run by hand there uses it too");
+  assert.equal(sh("git", ["status", "--porcelain"], ws), "", "nothing new in the working tree");
+
+  r = run(["rm", "feat", "-y"]);
+  assert.equal(r.status, 0, r.all);
+  assert.deepEqual(state().containers, []);
+});
+
+test("a generated create stops when the Compose file needs a value .env does not have", { skip: !services && "generated hooks call docker without a shell" }, (t) => {
+  const { run, state } = setup(t, { "docker-compose.yml": composeFile });
+  assert.equal(run(["hooks", "write"]).status, 0);
+  const r = run(["hooks", "test"]);
+  assert.equal(r.status, 1, r.all);
+  assert.match(r.all, /needs POSTGRES_PASSWORD in \.env/);
+  assert.deepEqual(state().containers ?? [], []);
 });
