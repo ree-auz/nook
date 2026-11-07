@@ -42,6 +42,12 @@ test("service options keep quoted values whole, as docker run reads them", () =>
   assert.deepEqual(plan.services[0].options, ["--health-cmd=mysqladmin ping", "--health-interval", "10s", "-e", "TZ=UTC"]);
 });
 
+test("service options read backslash escapes as the shell does (gorm's sqlserver health check)", () => {
+  const options = String.raw`--health-cmd="sqlcmd -P \${PASS} -Q \"SELECT 1\" || exit 1" --health-retries 10 -e A=b\ c`;
+  const plan = planJob("ci.yml", "test", { services: { db: { image: "mssql", options } }, steps: [{ run: "go mod download" }] });
+  assert.deepEqual(plan.services[0].options, ['--health-cmd=sqlcmd -P ${PASS} -Q "SELECT 1" || exit 1', "--health-retries", "10", "-e", "A=b c"]);
+});
+
 test("a generated hook refuses to run outside nk", () => {
   const plan = planJob("ci.yml", "test", { steps: [{ run: "npm ci" }] });
   const result = spawnSync(process.execPath, ["--input-type=module", "-e", createHook(plan)], { encoding: "utf8", env: { PATH: process.env.PATH } });

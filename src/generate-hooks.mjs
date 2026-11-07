@@ -202,7 +202,8 @@ for (const tool of plan.tools) {
   const result = process.platform === "win32" ? spawnSync(tool.name + " " + flag, { encoding: "utf8", shell: true }) : spawnSync(tool.name, [flag], { encoding: "utf8" });
   if (result.status !== 0) {
     if (!result.error && missingProgram(tool.name) === null) {
-      console.error(tool.name + " " + flag + " failed: " + (result.stderr || result.stdout).trim().split("\\n")[0]);
+      // The last line says why; the first is often progress, such as corepack downloading.
+      console.error(tool.name + " " + flag + " failed: " + (result.stderr || result.stdout).trim().split("\\n").pop());
       process.exit(1);
     }
     console.error(tool.name + " is not installed" + (tool.version ? " (CI uses " + tool.version + ")" : "") + (HINTS[tool.name] ? "; " + HINTS[tool.name] : ""));

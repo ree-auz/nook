@@ -4,15 +4,44 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { gitTry } from "./git.mjs";
 import { composeFile, overrideFile } from "./compose-plan.mjs";
-import { splitArgs } from "./prompt.mjs";
 
-/** docker run flags from a CI service's options, keeping quoted values whole (--health-cmd "mysqladmin ping"). */
+/**
+ * docker run flags from a CI service's options, split as the runner's shell does: quotes keep
+ * values whole (--health-cmd "mysqladmin ping") and a backslash escapes the next character
+ * (\" inside double quotes). Unbalanced quotes give no options.
+ */
 function dockerOptions(text) {
-  try {
-    return splitArgs(text.trim());
-  } catch {
-    return [];
+  const out = [];
+  let current = "";
+  let quote = null;
+  let started = false;
+  const chars = [...text.trim()];
+  for (let i = 0; i < chars.length; i++) {
+    const char = chars[i];
+    if (char === "\\" && quote !== "'" && i + 1 < chars.length) {
+      const next = chars[++i];
+      // Inside double quotes only these are escapes; elsewhere the backslash stays.
+      if (quote === '"' && !'"\\$`'.includes(next)) current += char;
+      current += next;
+      started = true;
+    } else if (quote) {
+      if (char === quote) quote = null;
+      else current += char;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+      started = true;
+    } else if (/\s/.test(char)) {
+      if (started) out.push(current);
+      current = "";
+      started = false;
+    } else {
+      current += char;
+      started = true;
+    }
   }
+  if (quote) return [];
+  if (started) out.push(current);
+  return out;
 }
 
 /**
