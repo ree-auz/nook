@@ -18,7 +18,16 @@ try {
   engines = JSON.parse(read("package.json") || "{}").engines?.node ?? "";
 } catch {}
 
-const node = (read(".nvmrc") || read(".node-version") || toolVersion("nodejs") || engines || "22").replace(/^v/, "").split(/\s+/)[0];
+/** A version setup-node can install from an engines range: the newest LTS for ">=X", else the highest major it names. */
+function fromRange(range) {
+  if (!range) return "";
+  if (/^\s*>=?\s*v?\d+(\.\d+)*\s*$/.test(range)) return "lts/*";
+  // "<23" allows 22 at most.
+  const majors = [...range.matchAll(/(<=?|>=?|[\^~=]|^|\s|\|)\s*v?(\d+)(?=[.\sx*|]|$)/g)].map((m) => (m[1] === "<" ? Number(m[2]) - 1 : Number(m[2])));
+  return majors.length ? String(Math.max(...majors)) : "";
+}
+const pinned = (read(".nvmrc") || read(".node-version") || toolVersion("nodejs")).replace(/^v/, "").split(/\s+/)[0];
+const node = pinned || fromRange(engines) || "22";
 const python = (read(".python-version") || toolVersion("python") || "3.13").split(/\s+/)[0];
 console.log(`node=${node}`);
 console.log(`python=${python}`);
