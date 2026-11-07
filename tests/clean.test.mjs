@@ -135,3 +135,15 @@ test("clean deletes folders a removal left behind, and nothing else", async (t) 
   assert.ok(existsSync(ws("keep")), "a workspace is not a leftover");
   assert.match(run(["doctor"]).out, /No problems found/);
 });
+
+test("clean keeps a merged workspace whose ignored files would be lost", async (t) => {
+  const { run, lines, ctx, ws } = setup(t);
+  assert.equal(run(["-b", "data"]).status, 0);
+  write(ws("data"), { ".gitignore": "*.log\nlocal.db\n", "local.db": "rows\n", "debug.log": "x\n" });
+  sh("git", ["add", ".gitignore"], ws("data"));
+  commit(ws("data"), "ignore the database");
+  const prs = new Map([["data", { number: 5, state: "merged", head: sh("git", ["rev-parse", "HEAD"], ws("data")), ci: null }]]);
+  assert.equal(await cleanWorkspaces(ctx(), { yes: true, prs: async () => ({ prs }) }), 0);
+  assert.match(lines.join(""), /data \(demo\): files git ignores would be lost: local\.db \(nk rm data to remove anyway\)/);
+  assert.ok(existsSync(ws("data")));
+});

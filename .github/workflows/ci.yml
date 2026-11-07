@@ -20,7 +20,8 @@ jobs:
         node: [22]
         include:
           - os: ubuntu-latest
-            node: 20
+            # The oldest Node.js package.json allows (util.parseEnv came in 20.12).
+            node: 20.12.0
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5

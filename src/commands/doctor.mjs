@@ -25,8 +25,9 @@ export function doctor(ctx, { docker = dockerCli } = {}) {
   };
 
   ctx.print("Basics");
-  const major = Number(process.versions.node.split(".")[0]);
-  (major >= 20 ? ok : bad)(`node ${process.versions.node}${major >= 20 ? "" : " (need 20 or newer)"}`);
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  const recent = major > 20 || (major === 20 && minor >= 12);
+  (recent ? ok : bad)(`node ${process.versions.node}${recent ? "" : " (need 20.12 or newer)"}`);
   const gv = gitVersion();
   if (!gv) bad("git not found");
   else (gv.major > 2 || (gv.major === 2 && gv.minor >= 20) ? ok : bad)(gv.text);

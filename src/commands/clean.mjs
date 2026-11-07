@@ -10,7 +10,7 @@ import { createPrompter } from "../prompt.mjs";
 import { branchTip, contains } from "../status.mjs";
 import { resolveRepo } from "../context.mjs";
 import { collect } from "./ls.mjs";
-import { deleteFolder, deleteWorkspace } from "./rm.mjs";
+import { deleteFolder, deleteWorkspace, ignoredData } from "./rm.mjs";
 import { dockerCli, findComposeProjects, removeComposeProject } from "../compose.mjs";
 import { approveHooks } from "./workspace.mjs";
 import { findHook } from "../hooks.mjs";
@@ -75,6 +75,7 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
 
   const remove = [];
   const skipped = [];
+  let lost;
   for (const item of items) {
     if (item.main || !item.branch) continue;
     const reason = mergedReason(item, now);
@@ -84,6 +85,9 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
     else if (reason.skip) skipped.push(`${label}: ${reason.skip}`);
     else if (isInside(ctx.cwd, item.ws.path)) skipped.push(`${label}: you are inside it`);
     else if (item.changes) skipped.push(`${label}: ${plural(item.changes, "uncommitted change")}`);
+    // Files git ignores (a local database, say) are not backed up, so clean leaves them to nk rm, which lists them.
+    else if ((lost = item.changes === null ? [] : ignoredData(item.ws.path, join(ctx.paths.shared, item.repoName))).length)
+      skipped.push(`${label}: files git ignores would be lost: ${lost.slice(0, 3).join(", ")}${lost.length > 3 ? ` and ${lost.length - 3} more` : ""} (nk rm ${item.name} to remove anyway)`);
     else remove.push({ item, label, reason: reason.ok, running: item.changes === null ? [] : scan(item.ws.path).processes });
   }
 
