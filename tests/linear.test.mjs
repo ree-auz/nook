@@ -74,9 +74,9 @@ test("for Orca, nk creates the workspace and Orca starts the agent in it", (t) =
   const log = join(root, "orca.log");
   const program = `#!/usr/bin/env node\nrequire("fs").appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");\n`;
   writeFileSync(join(root, "orca.cjs"), program);
-  // On Windows an npm-style .cmd shim, which the launcher runs without cmd.exe.
+  // On Windows an npm-style .cmd shim; with a multi-line prompt the launcher skips cmd.exe.
   const orca = join(root, process.platform === "win32" ? "orca.cmd" : "orca");
-  writeFileSync(orca, process.platform === "win32" ? '@"%~dp0\\orca.cjs" %*\r\n' : program, { mode: 0o755 });
+  writeFileSync(orca, process.platform === "win32" ? '@node "%~dp0\\orca.cjs" %*\r\n' : program, { mode: 0o755 });
   const env = {
     ...process.env,
     NOOK_HOME: home,
