@@ -108,6 +108,21 @@ test("reads which Compose services a workspace starts and which ports it chooses
   assert.deepEqual(plan.untranslated, []);
 });
 
+test("a service on the host's network moves to the workspace's own network and ports (forem)", (t) => {
+  const dir = tempDir(t);
+  write(dir, {
+    "docker-compose.yml": `services:
+  postgres: { image: "pgvector/pgvector:pg13", network_mode: host, ports: ["5432"] }
+  redis: { image: "redis:7", network_mode: host }
+`,
+  });
+  const plan = planCompose(dir);
+  assert.deepEqual(plan.start, ["postgres"]);
+  assert.deepEqual(plan.ownNetwork, ["postgres"]);
+  assert.deepEqual(plan.remap, { postgres: [{ host: "5432", target: "5432" }] }, "it listened on the host's 5432, the main checkout's");
+  assert.match(plan.notStarted.find((s) => s.name === "redis").why, /host's network and names no ports/);
+});
+
 test("reads the Compose override file the way docker compose does", (t) => {
   const dir = tempDir(t);
   write(dir, {

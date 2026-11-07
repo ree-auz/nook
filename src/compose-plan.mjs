@@ -118,13 +118,18 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
   const required = new Set();
   const mounts = {};
   const named = [];
+  const ownNetwork = [];
   for (const [name, service] of Object.entries(services)) {
     if (!service || typeof service !== "object") continue;
     // A fixed container_name (plane-redis) would clash between workspaces, even for a service you start yourself: each gets its own.
     if (service.container_name) named.push(name);
     const fixed = [];
+    // On the host's network a service listens on the host's own ports, the main checkout's too (forem's
+    // postgres and redis): a workspace runs it on its project network instead, its ports moved to its own.
+    const hostNetwork = service.network_mode === "host";
     for (const entry of service.ports ?? []) {
       const { host, target } = portEntry(entry);
+      if (hostNetwork && (host === null || host === "")) fixed.push({ host: target.split("/")[0], target });
       if (host === null || host === "") continue;
       const variable = portVariable(host);
       if (variable) ports[variable.name] ??= variable.fallback;
@@ -135,6 +140,7 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
     else if (!service.image) notStarted.push({ name, why: "no image" });
     else if (!BACKING.test(service.image)) notStarted.push({ name, why: `${service.image} is not a database or similar service` });
     else if (!startAny) notStarted.push({ name, why: "CI starts its own services" });
+    else if (hostNetwork && !fixed.length) notStarted.push({ name, why: "uses the host's network and names no ports, so it would share the main checkout's" });
     else {
       start.push(name);
       for (const variable of requiredVariables(service)) required.add(variable);
@@ -143,6 +149,7 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
       // A fixed host port (5432:5432) would be the same for every workspace, and the main checkout may hold
       // it: each workspace moves it to one of its own ports.
       if (fixed.length) remap[name] = fixed;
+      if (hostNetwork) ownNetwork.push(name);
     }
   }
   // A workspace has ten ports: services that do not fit are left out, last first.
@@ -150,10 +157,11 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
   while (start.length && used() > PORTS - reserved) {
     const name = start.pop();
     delete remap[name];
+    if (ownNetwork.includes(name)) ownNetwork.splice(ownNetwork.indexOf(name), 1);
     notStarted.push({ name, why: "no port left of the workspace's ten" });
     untranslated.push({ step: `${where} › ${name}`, why: "not started: the workspace's ten ports are taken by the other services" });
   }
-  return { file: where, files: [file, override].filter(Boolean), start, ports, remap, required: [...required], mounts, named, notStarted, untranslated };
+  return { file: where, files: [file, override].filter(Boolean), start, ports, remap, required: [...required], mounts, named, ownNetwork, notStarted, untranslated };
 }
 
 /**

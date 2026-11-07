@@ -101,6 +101,7 @@ function report(ctx, result) {
     if (Object.keys(ports).length) ctx.info(`Gives each workspace its own ports in .env: ${Object.keys(ports).join(", ")}`);
     const moved = Object.entries(plan.compose.remap).map(([name, entries]) => `${name} ${entries.map((e) => e.host).join(", ")}`);
     if (moved.length) ctx.info(`Moves fixed host ports to each workspace's own: ${moved.join("; ")}`);
+    if (plan.compose.ownNetwork?.length) ctx.info(`Runs on each workspace's own network instead of the host's: ${plan.compose.ownNetwork.join(", ")}`);
     if (notStarted.length) ctx.info(`Not started (start them yourself when needed): ${notStarted.map((s) => `${s.name} (${s.why})`).join(", ")}`);
   }
   if (Object.keys(plan.env).length) ctx.info(`Adds to .env: ${Object.keys(plan.env).join(", ")}`);
