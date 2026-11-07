@@ -127,9 +127,50 @@ function envOwnPorts(dir) {
   return { ok: !bad.length, output: bad.join("\n") || "every service address uses this workspace's own ports" };
 }
 
+/** Named volumes a container mounts: { destination, name }. */
+function volumesOf(container) {
+  const inspect = run("docker", ["inspect", "--format", "{{json .Mounts}}", container]);
+  if (!inspect.ok) return [];
+  try {
+    return JSON.parse(inspect.stdout).filter((m) => m.Type === "volume").map((m) => ({ destination: m.Destination, name: m.Name }));
+  } catch {
+    return [];
+  }
+}
+const MARK = ".nook-isolation-check";
+/** Runs sh in a container as root; null when the image has no shell. */
+const inContainer = (container, script) => {
+  const result = run("docker", ["exec", "-u", "0", container, "sh", "-c", script]);
+  return /executable file not found|no such file or directory: unknown/i.test(result.output) ? null : result;
+};
+/** Writes "<ws>" into each volume the workspace's containers mount; returns what was marked. */
+function markData(ws) {
+  const marked = [];
+  for (const { name: container } of containersOf(ws) ?? [])
+    for (const { destination } of volumesOf(container)) {
+      const result = inContainer(container, `echo ${ws} > '${destination}/${MARK}'`);
+      if (result?.ok) marked.push({ container, destination });
+    }
+  return marked;
+}
+/** What each marked volume holds now: the workspace name, or "" when the mark is gone. */
+const readMark = (container, destination) => inContainer(container, `cat '${destination}/${MARK}' 2>/dev/null || true`)?.stdout.trim() ?? null;
+
+// Stands in for the main checkout's own database: a container and a volume nk must never touch.
+const MAIN = "nook-real-main-checkout";
+const mainUp = run("docker", ["run", "-d", "--name", MAIN, "-v", `${MAIN}-data:/data`, "busybox:1.37", "sh", "-c", "echo main > /data/mark; sleep 86400"]).ok;
+const mainIntact = () => {
+  if (!mainUp) return { ok: true, output: "docker is not available; nothing to check" };
+  const state = run("docker", ["inspect", "--format", "{{.State.Running}}", MAIN]).stdout.trim();
+  const mark = run("docker", ["exec", MAIN, "cat", "/data/mark"]).stdout.trim();
+  return { ok: state === "true" && mark === "main", output: `main checkout's container running: ${state || "gone"}, its data: ${mark || "gone"}` };
+};
+
 const before = dockerSnapshot();
 const workspaces = {};
 let holder = null;
+const marks = {};
+const gone = new Set();
 
 /** nk -b <ws>, then its checks: clean in git, its own .env ports, its services answer. */
 const makeWorkspace = (ws) =>
@@ -145,6 +186,12 @@ const makeWorkspace = (ws) =>
   }) &&
   step(`${ws} .env uses its own ports`, () => envOwnPorts(workspaces[ws])) &&
   step(`${ws} services answer`, () => servicesAnswer(ws));
+
+/** Every mark the workspace wrote is still there. */
+const marksKept = (ws) => {
+  const lost = (marks[ws] ?? []).filter(({ container, destination }) => readMark(container, destination) !== ws);
+  return { ok: !lost.length, output: lost.map((m) => `${m.container}:${m.destination} lost its data`).join("\n") || `${(marks[ws] ?? []).length} volumes keep their data` };
+};
 
 const passed =
   step("clone", () => {
@@ -177,31 +224,72 @@ const passed =
   step("try1 and try2 share nothing", () => {
     const one = containersOf("try1") ?? [];
     const two = containersOf("try2") ?? [];
-    const shared = one.flatMap((c) => c.ports).filter((port) => two.some((d) => d.ports.includes(port)));
-    const sameName = one.filter((c) => two.some((d) => d.name === c.name)).map((c) => c.name);
-    const lines = [...shared.map((port) => `both publish port ${port}`), ...sameName.map((name) => `both use container ${name}`)];
+    const volumes = (list) => list.flatMap((c) => volumesOf(c.name).map((v) => v.name));
+    const lines = [
+      ...one.flatMap((c) => c.ports).filter((port) => two.some((d) => d.ports.includes(port))).map((port) => `both publish port ${port}`),
+      ...one.filter((c) => two.some((d) => d.name === c.name)).map((c) => `both use container ${c.name}`),
+      ...volumes(one).filter((name) => volumes(two).includes(name)).map((name) => `both use volume ${name}`),
+      ...[...volumes(one), ...volumes(two)].filter((name) => name === `${MAIN}-data`).map(() => "a workspace uses the main checkout's volume"),
+    ];
     // try1 still answers now that try2 runs beside it.
     const still = servicesAnswer("try1");
     if (!still.ok) lines.push(`try1 stopped answering after try2 started:\n${still.output}`);
-    return { ok: !lines.length, output: lines.join("\n") || `${one.length} and ${two.length} containers, no port or name in common` };
+    return { ok: !lines.length, output: lines.join("\n") || `${one.length} and ${two.length} containers, no port, name or volume in common` };
+  }) &&
+  step("data written in try1 stays in try1", () => {
+    marks.try1 = markData("try1");
+    marks.try2 = markData("try2");
+    const leaks = (marks.try2 ?? []).filter(({ container, destination }) => readMark(container, destination) !== "try2");
+    const kept = marksKept("try1");
+    const ok = !leaks.length && kept.ok;
+    return { ok, output: [...leaks.map((m) => `${m.container}:${m.destination} shows try1's data`), kept.output, `${marks.try1.length + marks.try2.length} volumes marked`].join("\n") };
+  }) &&
+  step("try1 comes back after its services stop", () => {
+    const portsBefore = (containersOf("try1") ?? []).flatMap((c) => c.ports).sort().join(",");
+    for (const { name } of containersOf("try1") ?? []) run("docker", ["stop", name]);
+    const opened = nk("try1", "-y");
+    const portsAfter = (containersOf("try1") ?? []).flatMap((c) => c.ports).sort().join(",");
+    const answer = servicesAnswer("try1");
+    const kept = marksKept("try1");
+    const same = portsBefore === portsAfter;
+    return {
+      ok: opened.ok && answer.ok && kept.ok && same,
+      output: [opened.ok ? "nk try1 reopened it" : opened.output, answer.output, kept.output, same ? `same ports: ${portsAfter || "none"}` : `ports moved: ${portsBefore} -> ${portsAfter}`].join("\n"),
+    };
+  }) &&
+  step("removing try1 leaves try2 and the main checkout alone", () => {
+    const result = nk("rm", "try1", "-y");
+    if (result.ok) gone.add("try1");
+    const answer = servicesAnswer("try2");
+    const kept = marksKept("try2");
+    const main = mainIntact();
+    return { ok: result.ok && answer.ok && kept.ok && main.ok, output: [result.ok ? "removed try1" : result.output, answer.output, kept.output, main.output].join("\n") };
   });
 
 // Removal runs whatever happened above, so the runner is checked for leftovers too.
 holder?.kill();
 let removed = true;
-for (const ws of ["try1", "try2"])
+for (const ws of ["try1", "try2"].filter((name) => !gone.has(name)))
   removed =
     step(`nk rm ${ws}`, () => {
       const result = nk("rm", ws, "-y");
       // nk -b failing before it made the workspace leaves nothing to remove.
       return !workspaces[ws] && /No workspace named/.test(result.output) ? { ok: true, output: "no workspace was made" } : result;
     }) && removed;
-const clean = step("nothing left behind", () => {
+const clean = step("nothing left behind, main checkout intact", () => {
   const after = dockerSnapshot();
   const left = before && after ? snapshotDiff(before, after) : [];
   const folders = Object.values(workspaces).filter((path) => existsSync(path));
-  return { ok: !left.length && !folders.length, output: [...left.map((item) => `Docker ${item.kind}: ${item.name}`), ...folders.map((path) => `folder ${path}`)].join("\n") };
+  const main = mainIntact();
+  return {
+    ok: !left.length && !folders.length && main.ok,
+    output: [...left.map((item) => `Docker ${item.kind}: ${item.name}`), ...folders.map((path) => `folder ${path}`), main.output].join("\n"),
+  };
 });
+if (mainUp) {
+  run("docker", ["rm", "-f", MAIN]);
+  run("docker", ["volume", "rm", `${MAIN}-data`]);
+}
 
 const ok = passed && removed && clean;
 const result = { name: entry.name, repo: entry.repo, commit: entry.commit, new: listed?.repo !== entry.repo, ok, failedAt: steps.find((s) => !s.ok)?.step ?? null, steps };

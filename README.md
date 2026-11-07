@@ -342,11 +342,19 @@ Run workflow, optionally for some repositories only). On a fresh GitHub runner
 with the tool versions its CI uses, `scripts/real-run.mjs` runs `nk init`,
 `nk hooks write` and `nk hooks test`. Then, with the ports a main checkout's
 services usually take (5432, 3306, 6379 and others) held as if they were
-running, it creates two workspaces, `try1` and `try2`. Each must be clean in
+running, and a stand-in for the main checkout's own database container and
+volume, it creates two workspaces, `try1` and `try2`. Each must be clean in
 git, have no address or port in its `.env` files that points at those ports,
-and have its own services answering; the two must share no port or container,
-and `try1` must still answer once `try2` runs. Then `nk rm` removes both, and
-no container, volume, network or folder may be left.
+and have its own services answering. Then:
+
+- the two share no port, container or volume, and `try1` still answers once
+  `try2` runs;
+- a mark written into each workspace's volumes stays in that workspace;
+- with its services stopped (as after a restart), `nk try1` brings them back
+  on the same ports with their data;
+- `nk rm try1` leaves `try2` answering with its data, and the main checkout's
+  container and volume untouched;
+- after `nk rm try2`, no container, volume, network or folder is left.
 The run's summary is one table: each repository, the step it failed at, and
 that step's last lines. New repositories that failed are added to
 `tests/corpus/repos.json` once fixed, so the fixed list keeps growing.
