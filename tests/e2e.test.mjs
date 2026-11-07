@@ -344,8 +344,12 @@ test("rm removes several workspaces after one check of all of them", (t) => {
   assert.match(r.err, /No workspace named "missing"/);
   assert.ok(existsSync(join(home, "workspace", "demo", "one")), "nothing removed before every name checked out");
 
+  // agent.txt stands in for a local database: git ignores it, so no backup holds it.
+  write(join(home, "workspace", "demo", "one"), { "agent.txt": "notes", "node_modules/x/index.js": "" });
   r = run(["rm", "one", "two", "-y"]);
   assert.equal(r.status, 0, r.all);
+  assert.match(r.err, /Not backed up, since git ignores them: [^\n]*agent\.txt/);
+  assert.doesNotMatch(r.err, /ignores them: [^\n]*(\.env|node_modules)/, "a shared copy and a rebuilt folder are not worth a warning");
   assert.ok(!existsSync(join(home, "workspace", "demo", "one")));
   assert.ok(!existsSync(join(home, "workspace", "demo", "two")));
   assert.ok(existsSync(join(home, "workspace", "demo", "three")));
