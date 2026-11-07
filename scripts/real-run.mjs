@@ -121,7 +121,11 @@ const passed =
   });
 
 // Removal runs whatever happened above, so the runner is checked for leftovers too.
-const removed = step("nk rm try1", () => (workspace || existsSync(join(env.NOOK_HOME, "workspace")) ? nk("rm", "try1", "-y") : { ok: true, output: "no workspace was made" }));
+const removed = step("nk rm try1", () => {
+  const result = nk("rm", "try1", "-y");
+  // nk -b failing before it made the workspace leaves nothing to remove.
+  return !workspace && /No workspace named/.test(result.output) ? { ok: true, output: "no workspace was made" } : result;
+});
 const clean = step("nothing left behind", () => {
   const after = dockerSnapshot();
   const left = before && after ? snapshotDiff(before, after) : [];

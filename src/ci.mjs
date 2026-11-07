@@ -4,6 +4,16 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { gitTry } from "./git.mjs";
 import { composeFile, overrideFile } from "./compose-plan.mjs";
+import { splitArgs } from "./prompt.mjs";
+
+/** docker run flags from a CI service's options, keeping quoted values whole (--health-cmd "mysqladmin ping"). */
+function dockerOptions(text) {
+  try {
+    return splitArgs(text.trim());
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Reads a repository's GitHub Actions workflows and turns the setup part of
@@ -118,7 +128,7 @@ export function planJob(file, jobName, job, workflowEnv = {}, knownPorts = []) {
       image: service.image,
       env: plainEnv(service.env, untranslated, `service ${name}`),
       ports: (service.ports ?? []).map(servicePort).filter(Boolean),
-      options: service.options && !EXPRESSION.test(service.options) ? String(service.options).trim().replace(/\s+/g, " ") : "",
+      options: service.options && !EXPRESSION.test(service.options) ? dockerOptions(String(service.options)) : [],
     });
   }
 

@@ -167,7 +167,8 @@ function startServices({ ports, reuse }) {
         args.push("-p", "127.0.0.1:" + own + ":" + port.container);
       }
       for (const [key, value] of Object.entries(service.env)) args.push("-e", key + "=" + value);
-      if (service.options) args.push(...service.options.split(" "));
+      if (Array.isArray(service.options)) args.push(...service.options);
+      else if (service.options) args.push(...service.options.split(" "));
       args.push(service.image);
       if (!docker(args).ok) process.exit(1);
     }

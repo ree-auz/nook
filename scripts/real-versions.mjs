@@ -26,7 +26,7 @@ function fromRange(range) {
   const majors = [...range.matchAll(/(<=?|>=?|[\^~=]|^|\s|\|)\s*v?(\d+)(?=[.\sx*|]|$)/g)].map((m) => (m[1] === "<" ? Number(m[2]) - 1 : Number(m[2])));
   return majors.length ? String(Math.max(...majors)) : "";
 }
-const pinned = (read(".nvmrc") || read(".node-version") || toolVersion("nodejs")).replace(/^v/, "").split(/\s+/)[0];
+const pinned = (read(".nvmrc") || read(".node-version") || toolVersion("nodejs") || "").replace(/^v/, "").split(/\s+/)[0];
 const node = pinned || fromRange(engines) || "22";
 const python = (read(".python-version") || toolVersion("python") || "3.13").split(/\s+/)[0];
 console.log(`node=${node}`);

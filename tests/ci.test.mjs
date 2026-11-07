@@ -34,6 +34,14 @@ test("CI values that could reach a real database on this machine are left out", 
   assert.match(plan.untranslated.find((item) => item.step === "docker compose up -d").why, /not a dependency install/);
 });
 
+test("service options keep quoted values whole, as docker run reads them", () => {
+  const plan = planJob("ci.yml", "test", {
+    services: { mysql: { image: "mysql:8", ports: ["3306:3306"], options: `--health-cmd="mysqladmin ping" --health-interval 10s\n  -e TZ='UTC'` } },
+    steps: [{ run: "npm ci" }],
+  });
+  assert.deepEqual(plan.services[0].options, ["--health-cmd=mysqladmin ping", "--health-interval", "10s", "-e", "TZ=UTC"]);
+});
+
 test("a generated hook refuses to run outside nk", () => {
   const plan = planJob("ci.yml", "test", { steps: [{ run: "npm ci" }] });
   const result = spawnSync(process.execPath, ["--input-type=module", "-e", createHook(plan)], { encoding: "utf8", env: { PATH: process.env.PATH } });
