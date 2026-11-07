@@ -59,7 +59,8 @@ const out = {
   node,
   python,
   go: has("go.mod") ? "go.mod" : "",
-  ruby: has("Gemfile") ? first(read(".ruby-version").replace(/^ruby-/, ""), toolVersion("ruby"), "3.4") : "",
+  // Major.minor: newer runner images only have the latest patch of each Ruby series.
+  ruby: has("Gemfile") ? first(read(".ruby-version").replace(/^ruby-/, ""), toolVersion("ruby"), "3.4").split(".").slice(0, 2).join(".") : "",
   java: has("pom.xml", "build.gradle", "build.gradle.kts") ? first(read(".java-version"), toolVersion("java")?.replace(/^\D*/, "").split(".")[0], "21") : "",
   // "^8.1" or ">=8.1" allows a current 8.x; otherwise the newest version it names.
   php: has("composer.json") ? first(/(\^|>=\s*)8/.test(php) && "8.3", php.match(/(\d+\.\d+)/g)?.sort((a, b) => Number(b.split(".")[0]) - Number(a.split(".")[0]) || Number(b.split(".")[1]) - Number(a.split(".")[1]))[0], "8.3") : "",

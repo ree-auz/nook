@@ -120,7 +120,7 @@ jobs:
       - name: nk on ${{ matrix.name }}
         run: node nook/scripts/real-run.mjs "${{ matrix.name }}" --repo "${{ matrix.repo }}" --commit "${{ matrix.commit }}" --dir "repos/${{ matrix.name }}" --out "results/${{ matrix.name }}.json"
       - if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: result-${{ matrix.name }}
           path: results/
