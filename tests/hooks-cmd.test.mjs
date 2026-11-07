@@ -53,7 +53,7 @@ function setup(t, hooks) {
   const repo = makeRepo(join(root, "demo"), hooks);
   const env = { PATH: `${bin}${delimiter}${process.env.PATH}`, FAKE_DOCKER_STATE: join(root, "docker.json") };
   const run = (args) => nk(args, { cwd: repo, home, env });
-  assert.equal(run(["init", "--yes"]).status, 0);
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0);
   return { root, home, repo, run, state: () => JSON.parse(readFileSync(env.FAKE_DOCKER_STATE, "utf8")) };
 }
 
@@ -144,7 +144,7 @@ test("hooks write turns CI into hooks that pass hooks test; a CI change then sto
   assert.equal(r.status, 0, r.all);
   if (services) assert.deepEqual(state().containers, [], "remove deleted the service container");
 
-  assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0, "allow the new hooks");
   // A template's own database user would not match the container started from CI's service.
   write(join(home, "shared", "demo"), { ".env": "DATABASE_URL=postgres://user:pass@localhost:5432/app\nKEEP=1\n" });
   r = run(["-b", "feat"]);
@@ -244,7 +244,7 @@ test("hooks write starts the repository's Compose services in each workspace's o
   assert.equal(r.status, 0, r.all);
   assert.deepEqual(state().containers, [], "remove took the Compose project down");
 
-  assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0, "allow the new hooks");
   r = run(["-b", "feat"]);
   assert.equal(r.status, 0, r.all);
   const ws = join(home, "workspace", "demo", "feat");
@@ -292,7 +292,7 @@ test("env files the repository commits get the workspace's ports without showing
   assert.equal(r.status, 0, r.all);
   assert.match(r.all, /\.env is committed in this repository/);
 
-  assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0, "allow the new hooks");
   assert.equal(run(["-b", "feat"]).status, 0);
   const ws = join(home, "workspace", "demo", "feat");
   assert.match(readFileSync(join(ws, ".env"), "utf8"), /^COMPOSE_PROJECT_NAME=nook-demo-feat$/m);
@@ -310,7 +310,7 @@ test("a CI service on an odd host port still moves its usual port, which .env na
   const { home, run } = setup(t, { ".github/workflows/ci.yml": ci, ".gitignore": ".env\n" });
   write(join(home, "shared", "demo"), { ".env": "DB_PORT=3306\nDB_URL=mysql://root@127.0.0.1:3306/app\n" });
   assert.equal(run(["hooks", "write"]).status, 0);
-  assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0, "allow the new hooks");
   const r = run(["-b", "feat"]);
   assert.equal(r.status, 0, r.all);
   const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;

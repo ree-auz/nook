@@ -18,7 +18,7 @@ import { forgetRepo } from "./commands/forget.mjs";
 const HELP = `nk - one home for your git worktrees
 
 Usage:
-  nk init [--yes] [--name <short-name>]   register this repository (once per repository)
+  nk init [--yes] [--allow-hooks] [--name <short-name>]   register this repository (once per repository)
   nk -b <name> [agent] [-p <prompt>] [-y] create a workspace; start the agent if given
                                          (-y: keep the converted name without asking;
                                          --untested: start even if hooks or CI changed
@@ -75,8 +75,8 @@ export async function run(argv, io = {}) {
 
   switch (first) {
     case "init": {
-      const { values } = parse(args.slice(1), { yes: { type: "boolean", short: "y" }, name: { type: "string" } });
-      return init(ctx, values);
+      const { values } = parse(args.slice(1), { yes: { type: "boolean", short: "y" }, "allow-hooks": { type: "boolean" }, name: { type: "string" } });
+      return init(ctx, { yes: values.yes, allowHooks: values["allow-hooks"], name: values.name });
     }
     case "ls": {
       const { values } = parse(args.slice(1), { repo: { type: "string" }, json: { type: "boolean" } });

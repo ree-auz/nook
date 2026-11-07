@@ -218,11 +218,11 @@ const passed =
     ];
     return { ok: results.every((r) => r.ok), output: results.map((r) => r.output).join("") };
   }) &&
-  step("nk init", () => nk("init", "--yes")) &&
+  step("nk init", () => nk("init", "--yes", "--allow-hooks")) &&
   step("nk hooks write", () => nk("hooks", "write")) &&
   step("nk hooks test", () => nk("hooks", "test")) &&
   // A second init allows the hooks, as a person answering yes would.
-  step("allow hooks", () => nk("init", "--yes")) &&
+  step("allow hooks", () => nk("init", "--yes", "--allow-hooks")) &&
   step("hold the main checkout's ports", () => {
     holder = holdMainPorts();
     const held = MAIN_PORTS.filter((port) => reachable(port));

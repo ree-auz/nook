@@ -34,7 +34,8 @@ you are in one when your working directory is inside that path.
 - Do not run `nk rm` or `nk clean` on your own workspace: nk refuses while
   you are inside it. Leave removal to the person or the tool that started you.
 - Hooks in `.nook/` run with the person's approval. Do not edit them to get
-  past a failure; report the failure and the log path nk printed.
+  past a failure; report the failure and the log path nk printed. Never pass
+  `--allow-hooks` yourself: the person reads and allows the hooks.
 
 ## Setting up hooks
 
