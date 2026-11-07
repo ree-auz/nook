@@ -334,7 +334,9 @@ reviewed results in `tests/corpus/expected/`. CI runs it too. After a change to
 how hooks are written, review the lines it prints and accept them with
 `npm run corpus -- --update`.
 
-The repositories marked `"full": true` also get a real run every Monday
+The repositories marked `"full": true`, plus about ten popular ones nk has not
+seen (`scripts/real-explore.mjs` picks different ones each time, each with a
+root Compose file or CI services), also get a real run every Monday
 (`.github/workflows/real-repos.yml`; start it by hand from the Actions tab with
 Run workflow, optionally for some repositories only). On a fresh GitHub runner
 with the Node and Python versions each asks for, `scripts/real-run.mjs` runs
@@ -342,7 +344,8 @@ with the Node and Python versions each asks for, `scripts/real-run.mjs` runs
 sees no changes in the workspace and that its services answer, then runs
 `nk rm try1` and checks that no container, volume, network or folder is left.
 The run's summary is one table: each repository, the step it failed at, and
-that step's last lines.
+that step's last lines. New repositories that failed are added to
+`tests/corpus/repos.json` once fixed, so the fixed list keeps growing.
 
 ## License
 

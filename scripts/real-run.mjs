@@ -5,7 +5,7 @@
  * workspace and removes it. Meant for GitHub Actions (.github/workflows/real-repos.yml),
  * since it installs the repository's dependencies and starts its services.
  *
- *   node scripts/real-run.mjs <name> [--dir <checkout>] [--out results/<name>.json]
+ *   node scripts/real-run.mjs <name> [--repo <owner/name> --commit <sha>] [--dir <checkout>] [--out results/<name>.json]
  *
  * --dir uses a checkout of the pinned commit made beforehand (actions/checkout);
  * without it the script fetches the commit itself.
@@ -21,7 +21,9 @@ import { dockerSnapshot, snapshotDiff } from "../src/compose.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const [name] = process.argv.slice(2).filter((arg) => !arg.startsWith("-"));
-const entry = JSON.parse(readFileSync(join(root, "tests", "corpus", "repos.json"), "utf8")).find((repo) => repo.name === name);
+const listed = JSON.parse(readFileSync(join(root, "tests", "corpus", "repos.json"), "utf8")).find((repo) => repo.name === name);
+// A repository picked this week (scripts/real-explore.mjs) is not in the list; --repo and --commit name it.
+const entry = process.argv.includes("--repo") ? { name, repo: process.argv[process.argv.indexOf("--repo") + 1], commit: process.argv[process.argv.indexOf("--commit") + 1] } : listed;
 if (!entry) {
   console.error(`Unknown repository ${name}; see tests/corpus/repos.json`);
   process.exit(2);
@@ -128,7 +130,7 @@ const clean = step("nothing left behind", () => {
 });
 
 const ok = passed && removed && clean;
-const result = { name: entry.name, repo: entry.repo, ok, failedAt: steps.find((s) => !s.ok)?.step ?? null, steps };
+const result = { name: entry.name, repo: entry.repo, commit: entry.commit, new: listed?.repo !== entry.repo, ok, failedAt: steps.find((s) => !s.ok)?.step ?? null, steps };
 if (out) {
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, `${JSON.stringify(result, null, 2)}\n`);

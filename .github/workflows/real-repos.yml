@@ -1,8 +1,9 @@
 name: Real repositories
 
-# Runs nk for real on the repositories marked "full" in tests/corpus/repos.json:
-# init, hooks write, hooks test, nk -b, checks, nk rm. Weekly, or by hand from
-# the Actions tab (Run workflow), optionally for some repositories only.
+# Runs nk for real on the repositories marked "full" in tests/corpus/repos.json,
+# plus repositories it has not seen yet (scripts/real-explore.mjs picks new ones
+# each time): init, hooks write, hooks test, nk -b, checks, nk rm. Weekly, or by
+# hand from the Actions tab (Run workflow), optionally for some repositories only.
 on:
   schedule:
     - cron: "0 3 * * 1"
@@ -12,6 +13,10 @@ on:
         description: "Repository names, separated by spaces (empty: all marked full)"
         required: false
         default: ""
+      new:
+        description: "How many repositories nk has not seen to add (when no names are given)"
+        required: false
+        default: "10"
 
 permissions:
   contents: read
@@ -23,15 +28,21 @@ jobs:
       repos: ${{ steps.pick.outputs.repos }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - id: pick
         env:
           ONLY: ${{ inputs.only }}
+          NEW: ${{ inputs.new || '10' }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
+          if [ -z "$ONLY" ] && [ "$NEW" != "0" ]; then node scripts/real-explore.mjs "$NEW" > new.json; else echo "[]" > new.json; fi
           node -e '
             const only = (process.env.ONLY || "").split(/\s+/).filter(Boolean);
             const all = require("./tests/corpus/repos.json");
-            const picked = all.filter((r) => (only.length ? only.includes(r.name) : r.full));
-            console.log("repos=" + JSON.stringify(picked.map(({ name, repo, commit }) => ({ name, repo, commit }))));
+            const picked = all.filter((r) => (only.length ? only.includes(r.name) : r.full)).map(({ name, repo, commit }) => ({ name, repo, commit }));
+            console.log("repos=" + JSON.stringify([...picked, ...require("./new.json")]));
           ' >> "$GITHUB_OUTPUT"
 
   run:
@@ -75,7 +86,7 @@ jobs:
       - run: npm ci
         working-directory: nook
       - name: nk on ${{ matrix.name }}
-        run: node nook/scripts/real-run.mjs "${{ matrix.name }}" --dir "repos/${{ matrix.name }}" --out "results/${{ matrix.name }}.json"
+        run: node nook/scripts/real-run.mjs "${{ matrix.name }}" --repo "${{ matrix.repo }}" --commit "${{ matrix.commit }}" --dir "repos/${{ matrix.name }}" --out "results/${{ matrix.name }}.json"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
