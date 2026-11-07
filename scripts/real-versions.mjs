@@ -41,7 +41,8 @@ const ciVersion = (name) => {
   return /^v?\d+(\.[\dx]+)*$/.test(version) ? version.replace(/^v/, "").replace(/\.x$/, "") : "";
 };
 const node = pinned || ciVersion("node") || fromRange(engines) || "22";
-const python = (read(".python-version") || toolVersion("python") || "3.13").split(/\s+/)[0];
+// Major.minor, as for Ruby: a runner image may not have every patch release (firezone pins 3.11.14).
+const python = (read(".python-version") || toolVersion("python") || "3.13").split(/\s+/)[0].split(".").slice(0, 2).join(".");
 const has = (...files) => files.some((file) => existsSync(join(dir, file)));
 const first = (...values) => values.find(Boolean) ?? "";
 let php = "";
