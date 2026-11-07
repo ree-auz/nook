@@ -104,7 +104,7 @@ works everywhere.
 Hooks see `NOOK_WORKSPACE`, `NOOK_PATH`, `NOOK_REPO`, `NOOK_SHARED` and
 `NOOK_PORT` (the first of 10 ports reserved for the workspace).
 
-### Writing the hooks from CI
+### Writing the hooks from CI and Compose
 
 CI already says, step by step, how a clean machine gets the project running,
 and it is kept working because it runs on every change. Nook turns it into
@@ -114,7 +114,7 @@ The whole cycle:
 
 ```
 nk init                     once per repository
-nk hooks write              hooks from CI (GitHub Actions)
+nk hooks write              hooks from CI (GitHub Actions) and the Compose file
 nk hooks test               run them in a temporary workspace; nothing may be left behind
 nk -b <name> codex          new workspace; nk <name> codex reopens one
 nk ls                       PR and CI of every workspace; merge or close on GitHub
@@ -131,6 +131,22 @@ What `nk hooks write` takes from the CI job with the most setup in it:
 | `env:` | added to the workspace's `.env`, with `localhost:<CI port>` changed to the workspace's port |
 | `run:` steps with `if: always()` (cleanup) | remove runs them |
 | checkout, caches, uploads, tests, lint, builds | left out |
+
+When the repository has a Compose file (`compose.yaml`, `docker-compose.yml`...),
+nk also reads it, since many projects start their database there rather than
+in CI:
+
+| In the Compose file | In the hooks |
+|---|---|
+| a service that uses an image as it is (`postgres`, `redis`...) | create starts it in the workspace's own Compose project, `nook-<repo>-<workspace>`; open starts it again; remove runs `docker compose down --volumes` for that project |
+| a host port written as a variable, `${API_PORT:-3001}:3001` | the variable gets one of the workspace's ports in its `.env`, so you can run that service too without a clash |
+| a value it needs, `${POSTGRES_PASSWORD:?...}` | create stops and names it when `.env` does not have it; set it once in the shared `.env` |
+| a service built from the repository (the app), or under a profile | not started; start it yourself when you need it |
+| a fixed host port, `5432:5432` | not started and listed: every workspace would ask for the same port |
+
+The workspace's `.env` also gets `COMPOSE_PROJECT_NAME` set to the
+workspace's project, replacing whatever the copied file said, so a
+`docker compose` you run there never reaches the main checkout's project.
 
 CI runs on a throwaway machine; a developer machine also has the real
 database and other workspaces. So nk copies less than CI does, never more:
@@ -163,10 +179,10 @@ before it is merged) in a temporary workspace: create, open twice, then
 remove. It fails when a hook fails, when open cannot run twice, or when
 remove leaves a Docker container, volume, network or built image behind.
 
-A passing test records the hooks and the CI files. If either changes, `nk -b`
+A passing test records the hooks, the CI files and the Compose file. If any of them changes, `nk -b`
 stops before creating a workspace (pass `--untested` to start anyway), and
 `nk <name>`, `nk hooks`, `nk doctor` and `nk rm` say so: run `nk hooks write`
-again for a CI change, then `nk hooks test`.
+again for a CI or Compose change, then `nk hooks test`.
 
 [docs/setup-hooks.md](docs/setup-hooks.md) has the rules and examples for
 pnpm and npm, uv, and a Docker Compose project per workspace.

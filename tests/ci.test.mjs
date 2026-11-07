@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { isInstallCommand, planJob } from "../src/ci.mjs";
 import { createHook } from "../src/generate-hooks.mjs";
+import { planCompose } from "../src/compose-plan.mjs";
+import { tempDir, write } from "./helpers.mjs";
 
 test("only dependency installs are copied from CI", () => {
   for (const command of ["pnpm install --frozen-lockfile", "npm ci", "uv sync --locked --project apps/collector", "pip install -r requirements.txt", "pnpm exec playwright install chromium"])
@@ -35,4 +37,24 @@ test("a generated hook refuses to run outside nk", () => {
   const result = spawnSync(process.execPath, ["--input-type=module", "-e", createHook(plan)], { encoding: "utf8", env: { PATH: process.env.PATH } });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Run by nk only/);
+});
+
+test("reads which Compose services a workspace starts and which ports it chooses", (t) => {
+  const dir = tempDir(t);
+  write(dir, {
+    "compose.yaml": `services:
+  db: { image: "pgvector/pgvector:pg16", environment: { POSTGRES_PASSWORD: "\${PG_PASSWORD:?needed}" } }
+  queue: { image: rabbitmq, ports: ["5672"] }
+  web: { build: ., ports: [{ target: 80, published: "\${WEB_PORT:-8080}" }] }
+  admin: { image: adminer, profiles: [tools], ports: ["127.0.0.1:\${ADMIN_PORT}:8080"] }
+  mail: { image: mailpit, ports: ["1025:1025"] }
+`,
+  });
+  const plan = planCompose(dir);
+  assert.equal(plan.file, "compose.yaml");
+  assert.deepEqual(plan.start, ["db", "queue"]);
+  assert.deepEqual(plan.ports, { WEB_PORT: "8080", ADMIN_PORT: "" });
+  assert.deepEqual(plan.required, ["PG_PASSWORD"]);
+  assert.deepEqual(plan.notStarted.map((s) => s.name), ["web", "admin", "mail"]);
+  assert.match(plan.untranslated[0].why, /fixed host port 1025/);
 });

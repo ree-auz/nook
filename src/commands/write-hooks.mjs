@@ -7,7 +7,8 @@ import { gitTry } from "../git.mjs";
 import { HOOK_EVENTS, findHooks } from "../hooks.mjs";
 import { NookError } from "../errors.mjs";
 import { planFromCi } from "../ci.mjs";
-import { GENERATED_MARK, hookFiles } from "../generate-hooks.mjs";
+import { planCompose } from "../compose-plan.mjs";
+import { GENERATED_MARK, hookFiles, sources } from "../generate-hooks.mjs";
 import { listFiles } from "../shared.mjs";
 import { agentCommand, launch } from "../agents.mjs";
 
@@ -68,24 +69,33 @@ function existingHooks(dir) {
  */
 export function generateHooks(dir) {
   const ci = planFromCi(dir);
-  if (!ci.files.length) return { reason: "no GitHub Actions workflow (.github/workflows/*.yml)" };
-  if (!ci.best) return { reason: `could not read ${ci.errors.map((e) => `${e.source} (${e.error.split("\n")[0]})`).join(", ")}` };
+  const compose = planCompose(dir);
+  if (!ci.files.length && !compose) return { reason: "no GitHub Actions workflow (.github/workflows/*.yml) and no Compose file" };
+  if (!ci.best && !compose) return { reason: `could not read ${ci.errors.map((e) => `${e.source} (${e.error.split("\n")[0]})`).join(", ")}` };
+  const base = ci.best ?? { source: compose.file, job: null, tools: [], env: {}, services: [], create: [], remove: [], skipped: [], untranslated: [] };
+  const plan = compose ? { ...base, compose, untranslated: [...base.untranslated, ...compose.untranslated] } : base;
   const handWritten = existingHooks(dir).filter((hook) => !hook.generated);
-  if (handWritten.length) return { reason: `.nook already has hooks written by hand: ${handWritten.map((h) => h.file).join(", ")}`, plan: ci.best };
-  const files = hookFiles(ci.best);
+  if (handWritten.length) return { reason: `.nook already has hooks written by hand: ${handWritten.map((h) => h.file).join(", ")}`, plan };
+  const files = hookFiles(plan);
   const folder = join(dir, ".nook");
   mkdirSync(folder, { recursive: true });
   for (const hook of existingHooks(dir)) if (!files[hook.file]) rmSync(join(folder, hook.file));
   for (const [file, text] of Object.entries(files)) writeFileSync(join(folder, file), text);
-  return { plan: ci.best, written: Object.keys(files), others: ci.others };
+  return { plan, written: Object.keys(files), others: ci.others };
 }
 
 function report(ctx, result) {
   const { plan } = result;
-  ctx.ok(`Wrote ${result.written.map((file) => `.nook/${file}`).join(", ")} from ${plan.source} (job ${plan.job})`);
+  ctx.ok(`Wrote ${result.written.map((file) => `.nook/${file}`).join(", ")} from ${sources(plan)}`);
   if (result.others.length) ctx.info(`Other CI jobs not used: ${result.others.join(", ")}`);
   if (plan.tools.length) ctx.info(`Checks the tools CI installs: ${plan.tools.map((t) => (t.version ? `${t.name} ${t.version}` : t.name)).join(", ")}`);
   if (plan.services.length) ctx.info(`Starts for each workspace, on its own ports: ${plan.services.map((s) => `${s.name} (${s.image})`).join(", ")}`);
+  if (plan.compose) {
+    const { file, start, ports, notStarted } = plan.compose;
+    if (start.length) ctx.info(`Starts from ${file} in each workspace's own Compose project: ${start.join(", ")}`);
+    if (Object.keys(ports).length) ctx.info(`Gives each workspace its own ports in .env: ${Object.keys(ports).join(", ")}`);
+    if (notStarted.length) ctx.info(`Not started (start them yourself when needed): ${notStarted.map((s) => `${s.name} (${s.why})`).join(", ")}`);
+  }
   if (Object.keys(plan.env).length) ctx.info(`Adds to .env: ${Object.keys(plan.env).join(", ")}`);
   if (plan.create.length) {
     ctx.info("Setup steps (create):");
@@ -110,7 +120,7 @@ export function setupPrompt(ctx, { repoName, repo, dir = repo.path, generated = 
   const hooks = findHooks(dir).map((hook) => `.nook/${hook.name}`);
   const list = (items, none) => (items.length ? items.map((item) => `- ${item}`).join("\n") : `- ${none}`);
   const start = generated?.written
-    ? `nk already wrote ${generated.written.map((f) => `.nook/${f}`).join(", ")} from ${generated.plan.source} (job ${generated.plan.job}), without AI. What it could not translate:
+    ? `nk already wrote ${generated.written.map((f) => `.nook/${f}`).join(", ")} from ${sources(generated.plan)}, without AI. What it could not translate:
 ${list(generated.plan.untranslated.map((i) => `${i.step}: ${i.why}`), "nothing")}
 
 Your task, in this folder:

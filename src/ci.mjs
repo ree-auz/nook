@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { gitTry } from "./git.mjs";
+import { composeFile } from "./compose-plan.mjs";
 
 /**
  * Reads a repository's GitHub Actions workflows and turns the setup part of
@@ -56,9 +57,10 @@ export function workflowFiles(repoPath) {
   return listed.ok ? listed.out.split(/\r?\n/).filter((file) => WORKFLOW.test(file)) : [];
 }
 
-/** A fingerprint of the CI files, so nk can tell when CI changed after the hooks were tested. */
+/** A fingerprint of the CI files and the Compose file, so nk can tell when they changed after the hooks were tested. */
 export function ciHash(repoPath) {
-  const files = workflowFiles(repoPath);
+  const compose = composeFile(repoPath);
+  const files = [...workflowFiles(repoPath), ...(compose ? [compose] : [])];
   if (!files.length) return null;
   const hash = createHash("sha256");
   for (const file of files) hash.update(`${file}\n`).update(readFileSync(join(repoPath, file), "utf8").replace(/\r\n/g, "\n"));

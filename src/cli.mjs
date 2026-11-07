@@ -27,9 +27,9 @@ Usage:
   nk rm <name>... [-n] [-y]               back up and remove workspaces
   nk clean [-n] [-y]                      remove workspaces whose work is merged, and leftover folders
   nk hooks                                the repository's .nook hooks: allowed? tested?
-  nk hooks write [agent]                  write the hooks from the repository's CI (GitHub Actions);
-                                         with an agent: then starts it in the same folder to
-                                         finish what CI could not tell
+  nk hooks write [agent]                  write the hooks from the repository's CI (GitHub Actions)
+                                         and Compose file; with an agent: then starts it in the
+                                         same folder to finish what they could not tell
   nk hooks test                           run this folder's hooks in a temporary workspace;
                                          fails if remove leaves anything behind
   nk doctor                               check nk's tools: node, git, gh, docker, agents
