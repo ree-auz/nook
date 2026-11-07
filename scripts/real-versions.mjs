@@ -12,6 +12,7 @@
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { planFromCi } from "../src/ci.mjs";
 
 const dir = process.argv[2] ?? ".";
 const read = (file) => (existsSync(join(dir, file)) ? readFileSync(join(dir, file), "utf8").trim() : "");
@@ -30,7 +31,16 @@ function fromRange(range) {
   return majors.length ? String(Math.max(...majors)) : "";
 }
 const pinned = (read(".nvmrc") || read(".node-version") || toolVersion("nodejs") || "").replace(/^v/, "").split(/\s+/)[0];
-const node = pinned || fromRange(engines) || "22";
+// The versions the CI job nk picks installs: a person setting up the project follows CI.
+let ciTools = [];
+try {
+  ciTools = planFromCi(dir).best?.tools ?? [];
+} catch {}
+const ciVersion = (name) => {
+  const version = ciTools.find((tool) => tool.name === name)?.version ?? "";
+  return /^v?\d+(\.[\dx]+)*$/.test(version) ? version.replace(/^v/, "").replace(/\.x$/, "") : "";
+};
+const node = pinned || ciVersion("node") || fromRange(engines) || "22";
 const python = (read(".python-version") || toolVersion("python") || "3.13").split(/\s+/)[0];
 const has = (...files) => files.some((file) => existsSync(join(dir, file)));
 const first = (...values) => values.find(Boolean) ?? "";
@@ -68,5 +78,7 @@ const out = {
   otp: has("mix.exs") ? first(toolVersion("erlang")?.split(".")[0], "27") : "",
   dotnet: has("global.json") ? "global.json" : "",
   uv: uvVersion(),
+  // A pnpm CI installs by itself, as a person would with npm i -g pnpm@<version>.
+  pnpm: ciVersion("pnpm"),
 };
 for (const [key, value] of Object.entries(out)) console.log(`${key}=${value}`);

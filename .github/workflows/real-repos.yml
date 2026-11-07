@@ -70,6 +70,9 @@ jobs:
           ref: ${{ matrix.commit }}
           path: repos/${{ matrix.name }}
           persist-credentials: false
+      # nk's own packages first: real-versions reads the CI job with nk's code.
+      - run: npm ci
+        working-directory: nook
       # Install what a person working on the repository would: the versions it asks for.
       - id: want
         run: node nook/scripts/real-versions.mjs "repos/${{ matrix.name }}" >> "$GITHUB_OUTPUT"
@@ -115,8 +118,8 @@ jobs:
         run: |
           command -v corepack >/dev/null || npm install -g corepack
           corepack enable
-      - run: npm ci
-        working-directory: nook
+      - if: steps.want.outputs.pnpm
+        run: npm install -g --force "pnpm@${{ steps.want.outputs.pnpm }}"
       - name: nk on ${{ matrix.name }}
         run: node nook/scripts/real-run.mjs "${{ matrix.name }}" --repo "${{ matrix.repo }}" --commit "${{ matrix.commit }}" --dir "repos/${{ matrix.name }}" --out "results/${{ matrix.name }}.json"
       - if: always()
