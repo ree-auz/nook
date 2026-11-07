@@ -6,7 +6,7 @@ issue's branch (running the repository's hooks) and starts your agent in it
 with Linear's prompt, in the terminal Linear opens for the script. Nook
 itself knows nothing about Linear: this folder only connects the two.
 
-Tested on Windows. `--terminal` (Windows Terminal or Warp) is Windows only.
+Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only.
 
 ## Set up once
 
@@ -42,6 +42,15 @@ Tested on Windows. `--terminal` (Windows Terminal or Warp) is Windows only.
      Terminal; the terminal choice in Linear's settings is macOS only). To
      work in Warp instead, add `"--terminal", "warp"` to `args`: the script
      opens a tab in Warp and closes Linear's window.
+   - To keep agents in [Orca](https://www.onorca.dev) (its accounts and
+     sessions), add `"--terminal", "orca"`: Nook creates the workspace and
+     runs its hooks in Linear's window, then
+     `orca agent launch --agent <agent> --worktree path:<workspace> --prompt <Linear's prompt> --focus`
+     starts the agent in Orca. Orca shows worktrees it did not create, and
+     `nk rm` / `nk clean` still remove them with their containers and
+     volumes. Orca's command-line tool must be installed; if Linear cannot
+     find it on PATH, add `"--orca", "<full path to orca>"`. Linear's window
+     closes when Orca has the agent, and stays open with the error otherwise.
    - To let each issue pick its agent, label issues from one label group
      (say `Agent › Codex`, `Agent › Claude`) and add `"--agent-label", "Agent"`
      to `args`. Linear's prompt lists the issue's labels, and the script starts
@@ -59,7 +68,8 @@ the issue belongs to; nothing runs there.
 The terminal runs `nk -b <issue branch> <agent> -y -p <Linear's prompt>` in
 that folder (`-y` keeps the converted workspace name without asking).
 Choosing the same issue again reopens its workspace and starts the agent
-without the prompt.
+without the prompt (with `--terminal orca`, a new agent session in Orca;
+earlier sessions stay in Orca's list).
 
 Linear's GitHub integration moves the issue along as the branch and its pull
 request change, because the branch name holds the issue identifier. After the

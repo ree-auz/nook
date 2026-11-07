@@ -3,14 +3,16 @@
 // Linear runs this file through ~/.linear/coding-tools.json
 // (Work on issue -> Custom script). See README.md next to it.
 //
-//   node open-issue.mjs [agent]              started by Linear (no window)
+//   node open-issue.mjs [--agent a] [--terminal wt|warp|orca]   started by Linear
 //   node open-issue.mjs --run <file> ...     inside the new tab
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { agentCommand, windowsDirect } from "../../src/agents.mjs";
 import { normalizeName } from "../../src/names.mjs";
+import crossSpawn from "cross-spawn";
 
 const self = fileURLToPath(import.meta.url);
 const nk = fileURLToPath(new URL("../../bin/nk.mjs", import.meta.url));
@@ -30,10 +32,15 @@ function runNk(args, opts = {}) {
   return spawnSync(process.execPath, [nk, ...args], { stdio: "inherit", env: withNodeOnPath(), ...opts });
 }
 
+/** The issue's workspace from `nk ls --json`, if it exists. */
+function findWorkspace(branch) {
+  const listed = spawnSync(process.execPath, [nk, "ls", "--json"], { encoding: "utf8", env: withNodeOnPath() });
+  return listed.status === 0 ? JSON.parse(listed.stdout).find((ws) => !ws.main && (ws.branch === branch || ws.name === normalizeName(branch))) : null;
+}
+
 /** Creates the issue's workspace and starts the agent, or reopens it. */
 function startWork({ branch, agent, prompt }) {
-  const listed = spawnSync(process.execPath, [nk, "ls", "--json"], { encoding: "utf8", env: withNodeOnPath() });
-  const existing = listed.status === 0 ? JSON.parse(listed.stdout).find((ws) => !ws.main && (ws.branch === branch || ws.name === normalizeName(branch))) : null;
+  const existing = findWorkspace(branch);
   // Clicked again for the same issue: reopen the workspace without restarting the task.
   // -y: the branch name Linear suggests is converted without asking.
   const result = existing ? runNk([existing.name, agent]) : runNk(["-b", branch, agent, "-y", "-p", prompt]);
@@ -92,6 +99,38 @@ function which(command) {
 const TERMINALS = { wt: openInWindowsTerminal, warp: openInWarp };
 
 /**
+ * Orca: nk creates the workspace (hooks, ports, database), then Orca starts
+ * the agent in it, so Orca keeps its accounts and sessions. Orca shows
+ * worktrees it did not create. A new workspace gets Linear's prompt; one
+ * that exists only gets a new agent session.
+ */
+export function workInOrca({ branch, agent, prompt, orca = "orca", run = runOrca }) {
+  const existing = findWorkspace(branch);
+  if (!existing) {
+    const created = runNk(["-b", branch, "-y"]);
+    if (created.status !== 0) return created.status ?? 1;
+  }
+  const ws = existing ?? findWorkspace(branch);
+  if (!ws) throw new Error(`nk created no workspace for ${branch}`);
+  run(orca, ["open", "--json"]);
+  const args = ["agent", "launch", "--agent", agent, "--worktree", `path:${ws.path}`, "--focus", "--json"];
+  if (!existing && prompt) args.push("--prompt", prompt);
+  return run(orca, args);
+}
+
+/** Runs the Orca CLI, never through cmd.exe, which would cut the prompt. */
+function runOrca(orca, args) {
+  const env = withNodeOnPath();
+  const spec = windowsDirect({ command: agentCommand({}, orca, {}, env).command, args });
+  // cross-spawn: a .cmd shim still runs when the arguments have no line breaks.
+  const result = crossSpawn.sync(spec.command, spec.args, { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8", env });
+  if (result.error) throw new Error(`could not run ${orca}: ${result.error.message}. Is Orca's command-line tool installed? Pass its path with --orca`);
+  // Orca answers in JSON; show it only when something went wrong.
+  if (result.status !== 0) process.stdout.write(result.stdout ?? "");
+  return result.status ?? 1;
+}
+
+/**
  * Closes the terminal window Linear opened for this script, once the work
  * runs in another terminal: its shell is this process's parent.
  */
@@ -130,8 +169,15 @@ function fromLinear(argv) {
     process.chdir(dir);
     return startWork({ branch, agent, prompt });
   }
+  if (terminal === "orca") {
+    process.chdir(dir);
+    process.exitCode = workInOrca({ branch, agent, prompt, orca: option(argv, "--orca") ?? "orca" });
+    // Keep Linear's window open when something failed, so its output can be read.
+    if (process.exitCode === 0 && process.platform === "win32") closeLinearWindow();
+    return;
+  }
   const open = TERMINALS[terminal];
-  if (!open) throw new Error(`Unknown terminal "${terminal}"; use ${Object.keys(TERMINALS).join(" or ")}, or leave --terminal out`);
+  if (!open) throw new Error(`Unknown terminal "${terminal}"; use ${[...Object.keys(TERMINALS), "orca"].join(", ")}, or leave --terminal out`);
   if (process.platform !== "win32") throw new Error("--terminal only works on Windows so far");
   // The prompt is long Markdown with quotes and semicolons, so it travels in a file.
   const file = join(tmpdir(), `nk-linear-${id}-${process.pid}.md`);

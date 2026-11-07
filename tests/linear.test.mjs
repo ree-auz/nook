@@ -64,3 +64,41 @@ test("an issue label can pick the agent", async () => {
   assert.equal(agentFromLabels(prompt, "Agent"), null, "no label in that group");
   assert.equal(agentFromLabels(prompt, undefined), null, "only when asked for");
 });
+
+test("for Orca, nk creates the workspace and Orca starts the agent in it", (t) => {
+  const root = tempDir(t);
+  const home = join(root, "nook-home");
+  const repo = makeRepo(join(root, "demo"));
+  assert.equal(nk(["init", "--yes", "--allow-hooks"], { cwd: repo, home }).status, 0);
+  // A stand-in Orca CLI that records each call.
+  const log = join(root, "orca.log");
+  const program = `#!/usr/bin/env node\nrequire("fs").appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");\n`;
+  writeFileSync(join(root, "orca.cjs"), program);
+  // On Windows an npm-style .cmd shim, which the launcher runs without cmd.exe.
+  const orca = join(root, process.platform === "win32" ? "orca.cmd" : "orca");
+  writeFileSync(orca, process.platform === "win32" ? '@"%~dp0\\orca.cjs" %*\r\n' : program, { mode: 0o755 });
+  const env = {
+    ...process.env,
+    NOOK_HOME: home,
+    LINEAR_ISSUE_BRANCH_NAME: "ree-auz/ree-280-orca",
+    LINEAR_WORK_DIR: repo,
+    LINEAR_ISSUE_IDENTIFIER: "REE-280",
+    LINEAR_PROMPT: 'Work on REE-280: "Orca"\n\n- step one\n',
+    GIT_AUTHOR_NAME: "Test",
+    GIT_AUTHOR_EMAIL: "t@example.com",
+    GIT_COMMITTER_NAME: "Test",
+    GIT_COMMITTER_EMAIL: "t@example.com",
+  };
+  const run = () => {
+    const r = spawnSync(process.execPath, [script, "--terminal", "orca", "--orca", orca, "--agent", "codex"], { cwd: root, encoding: "utf8", env });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+  };
+
+  run();
+  const ws = join(home, "workspace", "demo", "ree-auz-ree-280-orca");
+  assert.ok(existsSync(ws), "nk created the workspace");
+  run();
+  const calls = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+  const launch = ["agent", "launch", "--agent", "codex", "--worktree", `path:${ws}`, "--focus", "--json"];
+  assert.deepEqual(calls, [["open", "--json"], [...launch, "--prompt", env.LINEAR_PROMPT], ["open", "--json"], launch]);
+});
