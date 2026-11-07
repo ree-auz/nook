@@ -11,7 +11,7 @@ export function homePaths(home) {
   return {
     home,
     config: join(home, "config.toml"),
-    workspaces: join(home, "workspaces"),
+    workspaces: join(home, "workspace"),
     shared: join(home, "shared"),
     backup: join(home, "backup"),
     logs: join(home, "logs"),

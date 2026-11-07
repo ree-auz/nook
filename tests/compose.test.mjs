@@ -3,7 +3,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { describeProject, findComposeProjects, leftoverComposeProjects, removeComposeProject } from "../src/compose.mjs";
 
-const ws = resolve("/work/nook/workspaces/demo/feat");
+const ws = resolve("/work/nook/workspace/demo/feat");
 const main = resolve("/work/demo");
 
 /** A stand-in for the docker CLI: answers ls calls from a table, records the rest. */
@@ -61,7 +61,7 @@ test("removes containers first, then volumes, networks and images", () => {
 });
 
 test("doctor's check: projects left behind by a workspace that is gone", () => {
-  const root = resolve("/work/nook/workspaces/demo");
+  const root = resolve("/work/nook/workspace/demo");
   const docker = () => ({
     ok: true,
     out: [`old\t${join(root, "old")}`, `feat\t${ws}`, `demo\t${main}`].join("\n"),

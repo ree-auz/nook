@@ -44,7 +44,7 @@ function setup(t) {
   const lines = [];
   const sink = { write: (text) => lines.push(text) };
   const ctx = () => createContext({ env: { ...process.env, NOOK_HOME: home }, cwd: repo, out: sink, err: sink });
-  return { home, repo, run, lines, ctx, ws: (name) => join(home, "workspaces", "demo", name) };
+  return { home, repo, run, lines, ctx, ws: (name) => join(home, "workspace", "demo", name) };
 }
 
 test("clean removes merged workspaces and keeps the rest", async (t) => {

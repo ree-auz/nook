@@ -59,7 +59,9 @@ export async function hook(ctx, target, event, { prompter = createPrompter() } =
 async function finish(ctx, target, { agent, prompt, extra }) {
   if (!agent) {
     if (prompt || extra.length) throw new NookError("-p and extra arguments need an agent, e.g. nk <name> <agent> -p ...");
-    ctx.print(target.ws.path);
+    // On a terminal the path is a line like the others; captured (cd "$(nk …)"), it is the bare path.
+    if (ctx.out.isTTY) ctx.ok(`Ready at ${target.ws.path}`);
+    else ctx.print(target.ws.path);
     return 0;
   }
   const command = agentCommand(ctx.config, agent, { prompt, extra }, ctx.env);

@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import { NookError } from "./errors.mjs";
+import { line, useColor } from "./ui.mjs";
 
 /**
  * Asks questions on the terminal. With `yes`, every question takes its default.
@@ -7,6 +8,8 @@ import { NookError } from "./errors.mjs";
  */
 export function createPrompter({ yes = false, input = process.stdin, output = process.stderr } = {}) {
   const interactive = Boolean(input.isTTY);
+  // Questions get a mark like every other line, so their text lines up.
+  const mark = (text) => line("ask", text, useColor(output));
 
   async function raw(question) {
     if (!interactive)
@@ -24,7 +27,7 @@ export function createPrompter({ yes = false, input = process.stdin, output = pr
     interactive,
     async ask(question, fallback = "") {
       if (yes) return fallback;
-      const answer = await raw(`${question}${fallback ? ` [${fallback}]` : ""}: `);
+      const answer = await raw(mark(`${question}${fallback ? ` [${fallback}]` : ""}: `));
       return answer || fallback;
     },
     /** Shows `initial` already typed so it can be edited; Enter keeps it. */
@@ -32,7 +35,7 @@ export function createPrompter({ yes = false, input = process.stdin, output = pr
       if (yes || !interactive) return initial;
       const rl = createInterface({ input, output });
       try {
-        const pending = rl.question(`${question}: `);
+        const pending = rl.question(mark(`${question}: `));
         rl.write(initial);
         return (await pending).trim() || initial;
       } finally {
@@ -42,7 +45,7 @@ export function createPrompter({ yes = false, input = process.stdin, output = pr
     async confirm(question, fallback = false) {
       if (yes) return fallback;
       for (;;) {
-        const answer = (await raw(`${question} ${fallback ? "[Y/n]" : "[y/N]"} `)).toLowerCase();
+        const answer = (await raw(mark(`${question} ${fallback ? "[Y/n]" : "[y/N]"} `))).toLowerCase();
         if (!answer) return fallback;
         if (["y", "yes"].includes(answer)) return true;
         if (["n", "no"].includes(answer)) return false;
@@ -51,12 +54,12 @@ export function createPrompter({ yes = false, input = process.stdin, output = pr
     /** choices: [{ key, label }]; returns the chosen key. */
     async choose(question, choices, fallback) {
       if (yes) return fallback;
-      output.write(`${question}\n`);
+      output.write(`${mark(question)}\n`);
       choices.forEach((choice, index) =>
         output.write(`  ${index + 1}. ${choice.label}${choice.key === fallback ? " (default)" : ""}\n`),
       );
       for (;;) {
-        const answer = await raw("Choose a number: ");
+        const answer = await raw(mark("Choose a number: "));
         if (!answer) return fallback;
         const picked = choices[Number(answer) - 1];
         if (picked) return picked.key;

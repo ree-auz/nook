@@ -1,4 +1,5 @@
-import { basename, join } from "node:path";
+import { existsSync, renameSync } from "node:fs";
+import { basename, join, relative } from "node:path";
 import { loadConfig, saveConfig } from "./config.mjs";
 import { NookError } from "./errors.mjs";
 import { homePaths, isInside, nookHome, samePath } from "./home.mjs";
@@ -10,6 +11,7 @@ import { line, useColor } from "./ui.mjs";
 export function createContext({ env = process.env, cwd = process.cwd(), out = process.stdout, err = process.stderr } = {}) {
   const paths = homePaths(nookHome(env));
   const config = loadConfig(paths.config);
+  moveOldWorkspaceFolder(paths, config);
   const color = useColor(err, env);
   const say = (kind) => (text) => err.write(`${line(kind, text, color)}\n`);
   return {
@@ -34,6 +36,30 @@ export function createContext({ env = process.env, cwd = process.cwd(), out = pr
     info: say("info"),
     item: say("item"),
   };
+}
+
+/**
+ * Before 0.1 the folder was called "workspaces". Renames it once and tells git
+ * where the workspaces went. When it cannot (a file is open on Windows), keeps
+ * using the old folder.
+ */
+function moveOldWorkspaceFolder(paths, config) {
+  const old = join(paths.home, "workspaces");
+  if (!existsSync(old) || existsSync(paths.workspaces)) return;
+  const moves = [];
+  for (const repo of Object.values(config.repos ?? {}))
+    for (const ws of Object.values(repo.workspaces ?? {}))
+      if (isInside(ws.path, old)) moves.push({ repo, ws, path: join(paths.workspaces, relative(old, ws.path)) });
+  try {
+    renameSync(old, paths.workspaces);
+  } catch {
+    paths.workspaces = old;
+    return;
+  }
+  for (const move of moves) move.ws.path = move.path;
+  for (const repo of new Set(moves.map((move) => move.repo)))
+    gitTry(["worktree", "repair", ...moves.filter((move) => move.repo === repo).map((move) => move.path)], { cwd: repo.path });
+  if (moves.length) saveConfig(paths.config, config);
 }
 
 /** The registered repository `cwd` belongs to, or null. */

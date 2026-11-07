@@ -34,7 +34,7 @@ test("the Linear launcher creates the workspace once, then reopens it", (t) => {
   };
 
   run();
-  const ws = join(home, "workspaces", "demo", "ree-auz-ree-270-linear");
+  const ws = join(home, "workspace", "demo", "ree-auz-ree-270-linear");
   assert.deepEqual(JSON.parse(readFileSync(join(ws, "agent.json"), "utf8")), [prompt]);
   run();
   assert.deepEqual(JSON.parse(readFileSync(join(ws, "agent.json"), "utf8")), [], "reopened without the task prompt");
