@@ -20,6 +20,20 @@ test("a step that runs a project package installs dependencies first when CI hid
   assert.deepEqual(plan.create.map((step) => step.run), ["npm ci", "npx playwright install"], "CI's own install is enough");
 });
 
+test("run: steps use the job's or workflow's default working directory (firezone)", (t) => {
+  const dir = makeRepo(tempDir(t), {
+    ".github/workflows/ci.yml": `on: pull_request
+defaults: { run: { working-directory: ./rust/gui-client } }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps: [{ run: pnpm install }, { run: uv sync, working-directory: py }, { run: pnpm test }]
+`,
+  });
+  const { best } = planFromCi(dir);
+  assert.deepEqual(best.create.map((step) => [step.run, step.cwd]), [["pnpm install", "./rust/gui-client"], ["uv sync", "py"]]);
+});
+
 test("CI values that could reach a real database on this machine are left out", () => {
   const plan = planJob("ci.yml", "test", {
     services: { db: { image: "postgres:16", ports: ["5432:5432"] } },
