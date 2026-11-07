@@ -122,12 +122,16 @@ nk ls                       PR and CI of every workspace; merge or close on GitH
 nk clean | nk rm <name>     remove merged or chosen workspaces
 ```
 
-What `nk hooks write` takes from the CI job with the most setup in it:
+nk picks the CI job most like "set up and test the project": it runs on pull
+requests or pushes, runs tests, and has the most setup steps and services. Jobs
+that release, deploy, lint or only build are passed over; the report lists the
+others. Local composite actions (`uses: ./.github/actions/setup`) are read
+step by step, as if their steps were in the job. What it takes from that job:
 
 | In CI | In the hooks |
 |---|---|
 | `actions/setup-node`, `setup-python`, `pnpm/action-setup`, `astral-sh/setup-uv`... | create checks the tool is installed and warns about another version |
-| `run:` steps before the first test, lint or build step | create runs them in the workspace |
+| `run:` steps before the first test, lint or build step | create runs them in the workspace; an install CI skips on a cache hit (`if: steps.cache.outputs.cache-hit != 'true'`) runs, since a new workspace has no cache |
 | `services:` (a database, say) | create starts one container per workspace on the workspace's own ports; open starts it again; remove deletes it with its volumes |
 | `env:` | added to the workspace's `.env`, with `localhost:<CI port>` changed to the workspace's port |
 | `run:` steps with `if: always()` (cleanup) | remove runs them |
@@ -140,15 +144,22 @@ in CI:
 
 | In the Compose file | In the hooks |
 |---|---|
-| a service that uses an image as it is (`postgres`, `redis`...) | create starts it in the workspace's own Compose project, `nook-<repo>-<workspace>`; open starts it again; remove runs `docker compose down --volumes` for that project |
+| a database or similar service used as it is (`postgres`, `redis`, `rabbitmq`, `minio`, `mailpit`...) | create starts it in the workspace's own Compose project, `nook-<repo>-<workspace>`; open starts it again; remove runs `docker compose down --volumes` for that project |
 | a host port written as a variable, `${API_PORT:-3001}:3001` | the variable gets one of the workspace's ports in its `.env`, so you can run that service too without a clash |
 | a value it needs, `${POSTGRES_PASSWORD:?...}` | create stops and names it when `.env` does not have it; set it once in the shared `.env` |
-| a service built from the repository (the app), or under a profile | not started; start it yourself when you need it |
+| a service built from the repository, the project's own image (the app), or one under a profile | not started; start it yourself when you need it |
+| more services than the workspace's ten ports hold | the last ones are not started, and listed |
 | a fixed host port, `5432:5432` | moved to one of the workspace's ports (`127.0.0.1:<port>:5432`) by a small Compose file nk writes into the worktree's git folder; `COMPOSE_FILE` in `.env` lists it, so a `docker compose` you run there uses it too |
+
+When the chosen CI job has services of its own, nk starts those and none from
+Compose, so the same database is not started twice.
 
 The workspace's `.env` also gets `COMPOSE_PROJECT_NAME` set to the
 workspace's project, replacing whatever the copied file said, so a
 `docker compose` you run there never reaches the main checkout's project.
+Values in the copied `.env` that point at a moved port are pointed at the
+workspace's port: `DATABASE_URL=postgres://...@localhost:5432/app` becomes
+`localhost:<workspace port>`, and so does `DB_PORT=5432`.
 
 CI runs on a throwaway machine; a developer machine also has the real
 database and other workspaces. So nk copies less than CI does, never more:

@@ -66,6 +66,13 @@ function portEntry(entry) {
   return { host: parts.length >= 2 ? parts.at(-2) : null, target: parts.at(-1) };
 }
 
+/**
+ * Images a project uses as they are, beside its own code: databases, caches,
+ * queues, search, object storage, mail catchers, cloud emulators. An image the
+ * project publishes itself (its app) is not one of them.
+ */
+const BACKING = /(^|[/:_-])(postgres|postgis|pgvector|timescale(db)?|mysql|mariadb|percona|mongo(db)?|redis|valkey|keydb|dragonfly(db)?|memcached|rabbitmq|kafka|redpanda|zookeeper|nats|elasticsearch|opensearch|meilisearch|typesense|minio|clickhouse(-server)?|cassandra|scylla|neo4j|couchdb|cockroach(db)?|mssql(-server)?|azure-sql-edge|localstack|dynamodb-local|azurite|mailpit|mailhog|maildev|smtp4dev|qdrant|weaviate|milvus|chroma|influxdb|questdb|surrealdb|etcd|pubsub-emulator|firebase-emulator|spanner-emulator|garage|seaweedfs|valkey-bundle)($|[/:._@-]|\d)/i;
+
 /** Variables a service needs set: ${NAME:?message} or ${NAME?message}. */
 function requiredVariables(service) {
   return [...JSON.stringify(service).matchAll(/\$\{(\w+):?\?/g)].map((match) => match[1]);
@@ -75,7 +82,10 @@ function requiredVariables(service) {
  * { file, files, start, ports, remap, required, notStarted, untranslated } for the
  * repository's Compose file and its override file, or null without one.
  */
-export function planCompose(repoPath) {
+const PORTS = 10;
+
+/** startAny false: start nothing (CI has its own services). reserved: ports CI's services take first. */
+export function planCompose(repoPath, { start: startAny = true, reserved = 0 } = {}) {
   const file = composeFile(repoPath);
   if (!file) return null;
   const untranslated = [];
@@ -106,13 +116,23 @@ export function planCompose(repoPath) {
     if (service.build) notStarted.push({ name, why: "built from this repository" });
     else if (service.profiles?.length) notStarted.push({ name, why: `only with the profile ${service.profiles.join(", ")}` });
     else if (!service.image) notStarted.push({ name, why: "no image" });
+    else if (!BACKING.test(service.image)) notStarted.push({ name, why: `${service.image} is not a database or similar service` });
+    else if (!startAny) notStarted.push({ name, why: "CI starts its own services" });
     else {
       start.push(name);
       for (const variable of requiredVariables(service)) required.add(variable);
+      // A fixed host port (5432:5432) would be the same for every workspace, and the main checkout may hold
+      // it: each workspace moves it to one of its own ports.
+      if (fixed.length) remap[name] = fixed;
     }
-    // A fixed host port (5432:5432) would be the same for every workspace, and the main checkout may hold it:
-    // each workspace moves it to one of its own ports, for started services and the ones you start yourself.
-    if (fixed.length) remap[name] = fixed;
+  }
+  // A workspace has ten ports: services that do not fit are left out, last first.
+  const used = (extra = 0) => Object.keys(ports).length + Object.values(remap).flat().length + extra;
+  while (start.length && used() > PORTS - reserved) {
+    const name = start.pop();
+    delete remap[name];
+    notStarted.push({ name, why: "no port left of the workspace's ten" });
+    untranslated.push({ step: `${where} › ${name}`, why: "not started: the workspace's ten ports are taken by the other services" });
   }
   return { file: where, files: [file, override].filter(Boolean), start, ports, remap, required: [...required], notStarted, untranslated };
 }

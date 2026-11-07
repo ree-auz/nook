@@ -68,8 +68,13 @@ function existingHooks(dir) {
  * hook someone wrote by hand. Returns { plan, written } or { reason }.
  */
 export function generateHooks(dir) {
-  const ci = planFromCi(dir);
-  const compose = planCompose(dir);
+  // Compose services nk would start, so CI's addresses that point at them count as the workspace's own.
+  const candidate = planCompose(dir);
+  const known = candidate ? [...Object.values(candidate.remap).flat().map((entry) => entry.host), ...Object.values(candidate.ports).filter((port) => /^\d+$/.test(port))] : [];
+  const ci = planFromCi(dir, known);
+  // CI that starts its own services says what the project needs; the Compose file is then for other uses.
+  const ciPorts = ci.best?.services.flatMap((service) => service.ports).length ?? 0;
+  const compose = candidate && (ci.best?.services.length ? planCompose(dir, { start: false, reserved: ciPorts }) : candidate);
   if (!ci.files.length && !compose) return { reason: "no GitHub Actions workflow (.github/workflows/*.yml) and no Compose file" };
   if (!ci.best && !compose) return { reason: `could not read ${ci.errors.map((e) => `${e.source} (${e.error.split("\n")[0]})`).join(", ")}` };
   const base = ci.best ?? { source: compose.file, job: null, tools: [], env: {}, services: [], create: [], remove: [], skipped: [], untranslated: [] };
@@ -89,7 +94,7 @@ function report(ctx, result) {
   ctx.ok(`Wrote ${result.written.map((file) => `.nook/${file}`).join(", ")} from ${sources(plan)}`);
   if (result.others.length) ctx.info(`Other CI jobs not used: ${result.others.slice(0, 5).join(", ")}${result.others.length > 5 ? ` and ${result.others.length - 5} more` : ""}`);
   if (plan.tools.length) ctx.info(`Checks the tools CI installs: ${plan.tools.map((t) => (t.version ? `${t.name} ${t.version}` : t.name)).join(", ")}`);
-  if (plan.services.length) ctx.info(`Starts for each workspace, on its own ports: ${plan.services.map((s) => `${s.name} (${s.image})`).join(", ")}`);
+  if (plan.services.length) ctx.info(`Starts for each workspace, on its own ports: ${plan.services.map((s) => `${s.name} (${s.image.split("@")[0]})`).join(", ")}`);
   if (plan.compose) {
     const { file, start, ports, notStarted } = plan.compose;
     if (start.length) ctx.info(`Starts from ${file} in each workspace's own Compose project: ${start.join(", ")}`);

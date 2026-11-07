@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { isInstallCommand, planJob } from "../src/ci.mjs";
+import { isInstallCommand, planFromCi, planJob } from "../src/ci.mjs";
 import { createHook } from "../src/generate-hooks.mjs";
 import { planCompose } from "../src/compose-plan.mjs";
-import { tempDir, write } from "./helpers.mjs";
+import { makeRepo, tempDir, write } from "./helpers.mjs";
 
 test("only dependency installs are copied from CI", () => {
-  for (const command of ["pnpm install --frozen-lockfile", "npm ci", "uv sync --locked --project apps/collector", "pip install -r requirements.txt", "pnpm exec playwright install chromium"])
+  for (const command of ["pnpm install --frozen-lockfile", "npm ci", "uv sync --locked --project apps/collector", "pip install -r requirements.txt", "pnpm exec playwright install chromium", "yarn --immutable", "bun ci"])
     assert.ok(isInstallCommand(command), command);
-  for (const command of ["node scripts/ci-docker.mjs start", "docker compose up -d", "pnpm db:migrate", "npm install && psql -c 'drop table x'", "pip install x; rm -rf /", "make setup", "npm ci\nnpm run seed"])
+  for (const command of ["node scripts/ci-docker.mjs start", "docker compose up -d", "pnpm db:migrate", "npm install && psql -c 'drop table x'", "pip install x; rm -rf /", "make setup", "npm ci\nnpm run seed", "yarn sequelize db:migrate", "yarn build"])
     assert.ok(!isInstallCommand(command), command);
 });
 
@@ -27,7 +27,7 @@ test("CI values that could reach a real database on this machine are left out", 
   assert.deepEqual(Object.keys(plan.env), ["DATABASE_URL", "TZ"]);
   assert.deepEqual(plan.create.map((step) => step.run), ["npm ci"]);
   const why = plan.untranslated.map((item) => item.why).join("\n");
-  assert.match(why, /CACHE_URL points at local port 6379, which is not a CI service/);
+  assert.match(why, /CACHE_URL points at local port 6379, which is not a service nk starts/);
   assert.match(why, /REPORTS_DB is a service address outside the workspace/);
   assert.match(plan.untranslated.find((item) => item.step === "docker compose up -d").why, /not a dependency install/);
 });
@@ -71,4 +71,66 @@ test("reads the Compose override file the way docker compose does", (t) => {
   assert.deepEqual(plan.files, ["compose.yml", "compose.override.yml"]);
   assert.deepEqual(plan.start, ["db", "mail"]);
   assert.deepEqual(plan.remap, { db: [{ host: "5432", target: "5432" }], mail: [{ host: "1025", target: "1025" }] });
+});
+
+test("picks the job that sets up and tests the project, reading local actions", (t) => {
+  const dir = makeRepo(tempDir(t), {
+    ".github/actions/setup/action.yml": `runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+    - run: pnpm install --frozen-lockfile \${{ inputs.flags }}
+      shell: bash
+inputs:
+  flags: { default: "--prefer-offline" }
+`,
+    ".github/workflows/release.yml": `on: push
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    services: { db: { image: postgres, ports: ["5432:5432"] } }
+    steps: [{ uses: actions/setup-node@v4 }, { run: npm ci }, { run: npm publish }]
+`,
+    ".github/workflows/ci.yml": `on: pull_request
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps: [{ uses: ./.github/actions/setup }, { run: pnpm lint }]
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql: { image: "mysql:8", ports: ["3306:3306"] }
+      mariadb: { image: mariadb, ports: ["3307:3306"] }
+    steps:
+      - uses: ./.github/actions/setup
+      - id: cache
+        uses: actions/cache@v4
+      - run: pnpm exec playwright install chromium
+        if: steps.cache.outputs.cache-hit != 'true'
+      - run: pnpm install --filter docs
+        if: runner.os == 'Linux'
+      - run: pnpm test
+`,
+  });
+  const { best, others } = planFromCi(dir);
+  assert.equal(`${best.source} › ${best.job}`, ".github/workflows/ci.yml › test", "not lint, not the release job");
+  assert.ok(others.includes(".github/workflows/release.yml › publish"));
+  assert.deepEqual(best.tools.map((tool) => tool.name), ["pnpm"]);
+  assert.deepEqual(best.create.map((step) => step.run), ["pnpm install --frozen-lockfile --prefer-offline", "pnpm exec playwright install chromium"]);
+  assert.ok(best.untranslated.some((entry) => /runner\.os/.test(entry.why)), "an OS-only step is listed, not run");
+  assert.deepEqual(best.services.map((service) => service.ports), [[{ host: 3306, container: 3306 }], [{ host: 3307, container: 3306 }]]);
+});
+
+test("Compose starts only databases and similar services, within the workspace's ten ports", (t) => {
+  const dir = tempDir(t);
+  const many = Array.from({ length: 11 }, (_, i) => `  db${i}: { image: "postgres:${i + 10}", ports: ["${5432 + i}:5432"] }`).join("\n");
+  write(dir, { "compose.yaml": `services:\n  web: { image: "acme/web:1", ports: ["3000:3000"] }\n${many}\n` });
+  const plan = planCompose(dir);
+  assert.equal(plan.start.length, 10);
+  assert.ok(!plan.start.includes("web"), "an app image is not started");
+  assert.deepEqual(plan.notStarted.map((service) => service.name), ["web", "db10"]);
+  assert.ok(plan.untranslated.some((entry) => /db10/.test(entry.step)));
+
+  const ci = planCompose(dir, { start: false });
+  assert.deepEqual(ci.start, [], "CI has its own services, so Compose starts none");
 });

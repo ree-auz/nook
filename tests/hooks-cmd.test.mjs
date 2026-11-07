@@ -197,7 +197,8 @@ const composeFile = `services:
 test("hooks write starts the repository's Compose services in each workspace's own project, on its own ports", { skip: !services && "generated hooks call docker without a shell" }, (t) => {
   const { home, repo, run, state } = setup(t, { "docker-compose.yml": composeFile, ".gitignore": ".env\n" });
   // The shared .env every workspace gets, here with the main checkout's own project name in it.
-  write(join(home, "shared", "demo"), { ".env": "POSTGRES_PASSWORD=dev\nCOMPOSE_PROJECT_NAME=demo\n" });
+  // It also points the app at the main checkout's cache, on the port the Compose file publishes.
+  write(join(home, "shared", "demo"), { ".env": "POSTGRES_PASSWORD=dev\nCOMPOSE_PROJECT_NAME=demo\nCACHE_URL=redis://localhost:6379/0\nCACHE_PORT=6379\nINSIDE=redis://cache:6379\n" });
   let r = run(["hooks", "write"]);
   assert.equal(r.status, 0, r.all);
   assert.match(r.err, /Wrote \.nook\/create\.mjs, \.nook\/open\.mjs, \.nook\/remove\.mjs from docker-compose\.yml/);
@@ -218,6 +219,9 @@ test("hooks write starts the repository's Compose services in each workspace's o
   const env = readFileSync(join(ws, ".env"), "utf8");
   assert.match(env, /^COMPOSE_PROJECT_NAME=nook-demo-feat$/m, "never the main checkout's project");
   assert.doesNotMatch(env, /COMPOSE_PROJECT_NAME=demo/);
+  assert.match(env, new RegExp(`^CACHE_URL=redis://localhost:${port + 1}/0$`, "m"), "the app reaches this workspace's cache, not the main checkout's");
+  assert.match(env, new RegExp(`^CACHE_PORT=${port + 1}$`, "m"));
+  assert.match(env, /^INSIDE=redis:\/\/cache:6379$/m, "an address inside Docker stays");
   assert.match(env, new RegExp(`^API_PORT=${port}$`, "m"));
   assert.deepEqual(state().containers.map((c) => c.name), ["nook-demo-feat-db-1", "nook-demo-feat-cache-1"]);
   // cache's fixed 6379 moves to this workspace's port, in a file outside the working tree.

@@ -30,10 +30,26 @@ function portMap() {
   const map = {};
   let next = firstPort;
   const take = (fallback) => (Number.isInteger(next) && next < firstPort + 10 ? next++ : fallback);
-  for (const service of plan.services) for (const port of service.ports) map[port] = take(port);
+  for (const service of plan.services) for (const port of service.ports) map["ci:" + service.name + ":" + port.host] = take(null);
   for (const [name, fallback] of Object.entries(plan.compose?.ports ?? {})) map[name] = take(fallback);
   for (const [service, entries] of Object.entries(plan.compose?.remap ?? {})) for (const entry of entries) map[service + ":" + entry.host] = take(null);
   return map;
+}
+
+/**
+ * Host ports this workspace moved → its own: CI's 5432, a Compose file's fixed
+ * 5432:5432 or \${DB_PORT:-5432}. An address that still points at the old one
+ * would reach the main checkout's service, maybe the real database.
+ */
+function movedPorts(ports) {
+  const moved = {};
+  const add = (from, to) => {
+    if (to && String(from) !== String(to)) moved[from] ??= to;
+  };
+  for (const service of plan.services) for (const port of service.ports) add(port.host, ports["ci:" + service.name + ":" + port.host]);
+  for (const [service, entries] of Object.entries(plan.compose?.remap ?? {})) for (const entry of entries) add(entry.host, ports[service + ":" + entry.host]);
+  for (const [name, fallback] of Object.entries(plan.compose?.ports ?? {})) if (/^\d+$/.test(fallback)) add(fallback, ports[name]);
+  return moved;
 }
 
 /**
@@ -124,14 +140,21 @@ function startServices({ ports, reuse }) {
       docker(["start", name]);
     } else {
       const args = ["run", "-d", "--name", name, "--label", "dev.nook.workspace=" + ws];
-      for (const port of service.ports) args.push("-p", "127.0.0.1:" + ports[port] + ":" + port);
+      for (const port of service.ports) {
+        const own = ports["ci:" + service.name + ":" + port.host];
+        if (!own) {
+          console.error("No free port left for " + service.name + " " + port.host + ": a workspace has ten");
+          process.exit(1);
+        }
+        args.push("-p", "127.0.0.1:" + own + ":" + port.container);
+      }
       for (const [key, value] of Object.entries(service.env)) args.push("-e", key + "=" + value);
       if (service.options) args.push(...service.options.split(" "));
       args.push(service.image);
       if (!docker(args).ok) process.exit(1);
     }
     waitHealthy(name);
-    console.log(service.name + ": " + service.ports.map((port) => "localhost:" + ports[port]).join(", "));
+    console.log(service.name + ": " + service.ports.map((port) => "localhost:" + ports["ci:" + service.name + ":" + port.host]).join(", "));
   }
 }
 `;
@@ -176,17 +199,37 @@ const own = plan.compose
       ...Object.fromEntries(Object.keys(plan.compose.ports).map((key) => [key, ports[key]])),
     }
   : {};
-let text = (existsSync(envFile) ? readFileSync(envFile, "utf8") : "").split(/\\r?\\n/).filter((line) => !Object.keys(own).some((key) => assignment(key).test(line))).join("\\n").trimEnd();
+const moved = movedPorts(ports);
+const repointed = [];
+const repoint = (line) => {
+  const match = /^(\\s*(?:export\\s+)?([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*)(.*)$/.exec(line);
+  if (!match) return line;
+  const [, head, key, value] = match;
+  // localhost:5432 and 127.0.0.1:5432 in a URL; a bare 5432 only in a *_PORT key.
+  let next = withPorts(value, moved);
+  const bare = /^(["']?)(\\d+)\\1$/.exec(next.trim());
+  if (bare && /PORT$/i.test(key) && moved[bare[2]]) next = next.replace(bare[2], String(moved[bare[2]]));
+  if (next === value) return line;
+  repointed.push(key);
+  return head + next;
+};
+let text = (existsSync(envFile) ? readFileSync(envFile, "utf8") : "")
+  .split(/\\r?\\n/)
+  .filter((line) => !Object.keys(own).some((key) => assignment(key).test(line)))
+  .map(repoint)
+  .join("\\n")
+  .trimEnd();
+if (repointed.length) console.log("Pointed .env at this workspace's ports: " + repointed.join(", "));
 const missing = Object.entries(plan.env).filter(([key]) => !text.split("\\n").some((line) => assignment(key).test(line)));
 if (Object.keys(own).length) text += (text ? "\\n\\n" : "") + "# This workspace's Compose project and ports (nk hooks write)\\n" + Object.entries(own).map(([key, value]) => key + "=" + value).join("\\n");
-if (missing.length) text += (text ? "\\n\\n" : "") + "# From CI (nk hooks write)\\n" + missing.map(([key, value]) => key + "=" + withPorts(value, ports)).join("\\n");
+if (missing.length) text += (text ? "\\n\\n" : "") + "# From CI (nk hooks write)\\n" + missing.map(([key, value]) => key + "=" + withPorts(value, moved)).join("\\n");
 if (text) writeFileSync(envFile, text + "\\n");
 startCompose();
 
-const env = Object.fromEntries(Object.entries(plan.env).map(([key, value]) => [key, withPorts(value, ports)]));
+const env = Object.fromEntries(Object.entries(plan.env).map(([key, value]) => [key, withPorts(value, moved)]));
 for (const step of plan.create) {
   console.log("> " + step.name);
-  const stepEnv = Object.fromEntries(Object.entries(step.env ?? {}).map(([key, value]) => [key, withPorts(value, ports)]));
+  const stepEnv = Object.fromEntries(Object.entries(step.env ?? {}).map(([key, value]) => [key, withPorts(value, moved)]));
   sh(step.run, { cwd: step.cwd ? join(ws, step.cwd) : ws, env: { ...env, ...stepEnv } });
 }
 `;
@@ -205,7 +248,9 @@ export function removeHook(plan) {
 ${planText(plan)}
 for (const step of plan.remove) {
   console.log("> " + step.name);
-  sh(step.run, { cwd: step.cwd ? join(ws, step.cwd) : ws, env: plan.env, check: false });
+  const moved = movedPorts(portMap());
+  const env = Object.fromEntries(Object.entries({ ...plan.env, ...step.env }).map(([key, value]) => [key, withPorts(value, moved)]));
+  sh(step.run, { cwd: step.cwd ? join(ws, step.cwd) : ws, env, check: false });
 }
 for (const service of plan.services) {
   const name = prefix + "-" + slug(service.name);
