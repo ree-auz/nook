@@ -344,7 +344,8 @@ with the tool versions its CI uses, `scripts/real-run.mjs` runs `nk init`,
 services usually take (5432, 3306, 6379 and others) held as if they were
 running, and a stand-in for the main checkout's own database container and
 volume, it creates two workspaces, `try1` and `try2`. Each must be clean in
-git, have no address or port in its `.env` files that points at those ports,
+git, have no address or port in its `.env` files that still points at the
+usual port of a service it runs itself (5432 when it has its own Postgres),
 and have its own services answering. Then:
 
 - the two share no port, container or volume, and `try1` still answers once

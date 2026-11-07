@@ -93,7 +93,8 @@ function containersOf(ws) {
     .filter((row) => row.startsWith(prefix + "-") || row.startsWith(prefix + "_") || row === prefix || row.startsWith(prefix + "\t"))
     .map((row) => {
       const [name, state, ports = ""] = row.split("\t");
-      return { name, state, ports: [...new Set([...ports.matchAll(/(?:127\.0\.0\.1|0\.0\.0\.0|\[::\]):(\d+)->/g)].map((m) => Number(m[1])))] };
+      const published = [...ports.matchAll(/(?:127\.0\.0\.1|0\.0\.0\.0|\[::\]):(\d+)->(\d+)/g)];
+      return { name, state, ports: [...new Set(published.map((m) => Number(m[1])))], targets: [...new Set(published.map((m) => Number(m[2])))] };
     });
 }
 
@@ -111,17 +112,22 @@ function servicesAnswer(ws) {
   return { ok, output: lines.join("\n") || "no containers (the repository needs no services)" };
 }
 
-/** .env and .env.* in the workspace: no address or *_PORT may name a port the main checkout's services hold. */
-function envOwnPorts(dir) {
+/**
+ * .env and the .env.* files development and tests read: no address or *_PORT may still name the usual port of
+ * a service the workspace runs itself (5432 when it has its own postgres), which is the main checkout's.
+ * Services nk does not start for the workspace are not its to move.
+ */
+function envOwnPorts(dir, ws) {
+  const own = new Set((containersOf(ws) ?? []).flatMap((c) => c.targets));
   const bad = [];
-  for (const file of readdirSync(dir).filter((name) => /^\.env(\..+)?$/.test(name) && !/example|sample|template|dist/i.test(name))) {
+  for (const file of readdirSync(dir).filter((name) => /^\.env(\..+)?$/.test(name) && !/example|sample|template|dist|prod/i.test(name))) {
     for (const line of readFileSync(join(dir, file), "utf8").split(/\r?\n/)) {
       const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*["']?(.*?)["']?\s*$/.exec(line);
       if (!match) continue;
       const [, key, value] = match;
       const ports = [...value.matchAll(/\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d+)\b/g)].map((m) => Number(m[1]));
       if (/PORT$/i.test(key) && /^\d+$/.test(value)) ports.push(Number(value));
-      for (const port of ports) if (MAIN_PORTS.includes(port)) bad.push(`${file}: ${key} uses ${port}, the main checkout's port`);
+      for (const port of ports) if (own.has(port)) bad.push(`${file}: ${key} uses ${port}, the main checkout's port, though the workspace runs that service on its own`);
     }
   }
   return { ok: !bad.length, output: bad.join("\n") || "every service address uses this workspace's own ports" };
@@ -184,7 +190,7 @@ const makeWorkspace = (ws) =>
     const status = run("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: workspaces[ws] });
     return { ok: status.ok && !status.stdout.trim(), output: status.output };
   }) &&
-  step(`${ws} .env uses its own ports`, () => envOwnPorts(workspaces[ws])) &&
+  step(`${ws} .env uses its own ports`, () => envOwnPorts(workspaces[ws], ws)) &&
   step(`${ws} services answer`, () => servicesAnswer(ws));
 
 /** Every mark the workspace wrote is still there. */
