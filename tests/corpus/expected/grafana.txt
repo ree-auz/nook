@@ -1,6 +1,6 @@
 source: .github/workflows/pr-diagnostics-e2e.yml › run-diagnostics-e2e
 tools: node
-create: pnpm exec playwright install chromium --with-deps
+create: pnpm install --frozen-lockfile ; pnpm exec playwright install chromium --with-deps
 left out: Install pnpm and dependencies: uses the action pnpm/setup@fbda4c85fc2e1e08721cd8763afea8f48d60f024
 left out: Prune pnpm store: runs only when steps.pnpm-store.outputs.cache-hit != 'true' && inputs.cache-node-modules != 'true'
 left out: Fix binary permissions: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

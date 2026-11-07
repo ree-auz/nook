@@ -239,6 +239,15 @@ export function planJob(file, jobName, job, workflowEnv = {}, knownPorts = []) {
     target.push({ name, run: String(step.run).trim(), ...(step["working-directory"] && { cwd: step["working-directory"] }), ...(step.env && { env: safeEnv(plainEnv(step.env, untranslated, name), name) }) });
   });
 
+  // A step that runs a project's own package (pnpm exec playwright) needs its dependencies. When CI installs
+  // them inside an action nk cannot read (vuetify's vuetifyjs/setup-action), install them first, as a person would.
+  const hidden = untranslated.find((entry) => /^uses the action /.test(entry.why));
+  const runner = create.map((step) => /^(pnpm|npx|npm|yarn|bunx|bun)\b/.exec(step.run)?.[1]).find(Boolean);
+  if (hidden && runner && !create.some((step) => /^(pnpm|npm|yarn|bun)\s+(i|ci|install)\b|^yarn\s*$/.test(step.run))) {
+    const install = { pnpm: "pnpm install --frozen-lockfile", npx: "npm ci", npm: "npm ci", yarn: "yarn install", bunx: "bun install", bun: "bun install" }[runner];
+    create.unshift({ name: `${install} (CI installs in ${hidden.step})`, run: install });
+  }
+
   // CI machines have corepack; Node 25 and later no longer include it, so check for it before anything starts.
   if (create.some((step) => /^corepack\b/.test(step.run)) && !tools.some((tool) => tool.name === "corepack")) tools.push({ name: "corepack" });
 

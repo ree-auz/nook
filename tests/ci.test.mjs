@@ -13,6 +13,13 @@ test("only dependency installs are copied from CI", () => {
     assert.ok(!isInstallCommand(command), command);
 });
 
+test("a step that runs a project package installs dependencies first when CI hides the install in an action (vuetify)", () => {
+  let plan = planJob("ci.yml", "test", { steps: [{ uses: "vuetifyjs/setup-action@v1" }, { run: "pnpm exec playwright install chromium" }] });
+  assert.deepEqual(plan.create.map((step) => step.run), ["pnpm install --frozen-lockfile", "pnpm exec playwright install chromium"]);
+  plan = planJob("ci.yml", "test", { steps: [{ uses: "acme/setup@v1" }, { run: "npm ci" }, { run: "npx playwright install" }] });
+  assert.deepEqual(plan.create.map((step) => step.run), ["npm ci", "npx playwright install"], "CI's own install is enough");
+});
+
 test("CI values that could reach a real database on this machine are left out", () => {
   const plan = planJob("ci.yml", "test", {
     services: { db: { image: "postgres:16", ports: ["5432:5432"] } },
