@@ -160,6 +160,9 @@ workspace's project, replacing whatever the copied file said, so a
 Values in the copied `.env` that point at a moved port are pointed at the
 workspace's port: `DATABASE_URL=postgres://...@localhost:5432/app` becomes
 `localhost:<workspace port>`, and so does `DB_PORT=5432`.
+When the repository commits its `.env` (a template), the workspace's copy
+comes from git and is changed in place; nk marks it `skip-worktree`, so these
+changes never show in `git status` or reach a commit.
 
 CI runs on a throwaway machine; a developer machine also has the real
 database and other workspaces. So nk copies less than CI does, never more:
@@ -189,8 +192,9 @@ hand.
 
 `nk hooks test` runs the hooks of the folder you are in (the agent's branch,
 before it is merged) in a temporary workspace: create, open twice, then
-remove. It fails when a hook fails, when open cannot run twice, or when
-remove leaves a Docker container, volume, network or built image behind.
+remove. It fails when a hook fails, when open cannot run twice, when the
+hooks change files git would commit, or when remove leaves a Docker
+container, volume, network or built image behind.
 
 A passing test records the hooks, the CI files and the Compose file. If any of them changes, `nk -b`
 stops before creating a workspace (pass `--untested` to start anyway), and

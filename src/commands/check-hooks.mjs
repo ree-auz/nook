@@ -36,8 +36,8 @@ export function setupChanges(repo) {
 /**
  * nk hooks test: runs the hooks of the folder you are in (an agent's
  * branch, say) in a throwaway workspace: create, open twice, then remove.
- * Passes when the hooks succeed, open can repeat, and Docker is back to what
- * it was. Hooks that pass are recorded, so doctor and rm can tell when a hook
+ * Passes when the hooks succeed, open can repeat, git sees no changed files,
+ * and Docker is back to what it was. Hooks that pass are recorded, so doctor and rm can tell when a hook
  * changed without being checked again.
  */
 export async function testHooks(ctx, { repo: repoFlag, docker = dockerCli, scan = findOccupants, stop = stopProcesses }) {
@@ -71,6 +71,10 @@ export async function testHooks(ctx, { repo: repoFlag, docker = dockerCli, scan 
   };
   try {
     if (await run("create")) if (await run("open")) await run("open", "open, run a second time,");
+    // Hooks set up the workspace; they must not change what git tracks, or every commit would carry it.
+    const changed = gitTry(["status", "--porcelain", "--untracked-files=all"], { cwd: path });
+    if (changed.ok && changed.out.trim())
+      problems.push(`The hooks changed files in the workspace that git would commit (ignore them in .gitignore, or do not write them):\n${changed.out.trim().split(/\r?\n/).slice(0, 10).map((line) => `  ${line.trim()}`).join("\n")}`);
   } finally {
     await run("remove");
     const running = scan(path).processes ?? [];

@@ -243,3 +243,27 @@ test("a generated create stops when the Compose file needs a value .env does not
   assert.match(r.all, /needs POSTGRES_PASSWORD in \.env/);
   assert.deepEqual(state().containers ?? [], []);
 });
+
+test("a .env the repository commits gets the workspace's ports without showing up in git", { skip: !services && "generated hooks call docker without a shell" }, (t) => {
+  const { home, run } = setup(t, { "docker-compose.yml": composeFile, ".env": "POSTGRES_PASSWORD=changethis\nCACHE_URL=redis://localhost:6379/0\n" });
+  assert.equal(run(["hooks", "write"]).status, 0);
+  let r = run(["hooks", "test"]);
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.all, /\.env is committed in this repository/);
+
+  assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
+  assert.equal(run(["-b", "feat"]).status, 0);
+  const ws = join(home, "workspaces", "demo", "feat");
+  assert.match(readFileSync(join(ws, ".env"), "utf8"), /^COMPOSE_PROJECT_NAME=nook-demo-feat$/m);
+  assert.equal(sh("git", ["status", "--porcelain"], ws), "", "the workspace's ports never reach a commit");
+  r = run(["rm", "feat", "-y"]);
+  assert.equal(r.status, 0, r.all);
+});
+
+test("check fails when the hooks change files git tracks", (t) => {
+  const { run } = setup(t, { ".nook/create.mjs": 'import { appendFileSync } from "node:fs";\nappendFileSync("README.md", "changed\\n");\n' });
+  const r = run(["hooks", "test"]);
+  assert.equal(r.status, 1, r.all);
+  assert.match(r.all, /changed files in the workspace that git would commit/);
+  assert.match(r.all, /M README\.md/);
+});

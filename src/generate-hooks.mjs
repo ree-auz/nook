@@ -97,7 +97,7 @@ function startCompose() {
     console.error(plan.compose.file + " needs " + missing.join(", ") + " in .env. Set it once in the shared .env (nk copies it into every workspace), then create the workspace again.");
     process.exit(1);
   }
-  compose(["up", "--detach", "--wait", ...plan.compose.start]);
+  compose(["up", "--detach", "--wait", "--quiet-pull", ...plan.compose.start]);
 }
 
 /** localhost:5432 in a CI value becomes localhost:<this workspace's port>. */
@@ -177,7 +177,8 @@ ${planText(plan)}
 const ports = portMap();
 
 for (const tool of plan.tools) {
-  const result = spawnSync(tool.name, ["--version"], { encoding: "utf8", shell: process.platform === "win32" });
+  // On Windows a shell finds pnpm.cmd and the like; it takes one command line, not arguments.
+  const result = process.platform === "win32" ? spawnSync(tool.name + " --version", { encoding: "utf8", shell: true }) : spawnSync(tool.name, ["--version"], { encoding: "utf8" });
   if (result.status !== 0) {
     console.error(tool.name + " is not installed" + (tool.version ? " (CI uses " + tool.version + ")" : ""));
     process.exit(1);
@@ -224,6 +225,11 @@ const missing = Object.entries(plan.env).filter(([key]) => !text.split("\\n").so
 if (Object.keys(own).length) text += (text ? "\\n\\n" : "") + "# This workspace's Compose project and ports (nk hooks write)\\n" + Object.entries(own).map(([key, value]) => key + "=" + value).join("\\n");
 if (missing.length) text += (text ? "\\n\\n" : "") + "# From CI (nk hooks write)\\n" + missing.map(([key, value]) => key + "=" + withPorts(value, moved)).join("\\n");
 if (text) writeFileSync(envFile, text + "\\n");
+// A .env the repository commits (a template) now holds this workspace's ports: keep that change out of git status and commits.
+if (text && spawnSync("git", ["ls-files", "--error-unmatch", ".env"], { cwd: ws, stdio: "ignore" }).status === 0) {
+  spawnSync("git", ["update-index", "--skip-worktree", ".env"], { cwd: ws, stdio: "ignore" });
+  console.log(".env is committed in this repository; git now ignores this workspace's changes to it (git update-index --no-skip-worktree .env to undo)");
+}
 startCompose();
 
 const env = Object.fromEntries(Object.entries(plan.env).map(([key, value]) => [key, withPorts(value, moved)]));
