@@ -8,6 +8,7 @@ import { dockerCli, leftoverComposeProjects } from "../compose.mjs";
 import { ciChanged, uncheckedHooks } from "./check-hooks.mjs";
 import { HOOK_EVENTS, findHook, trustState } from "../hooks.mjs";
 import { gitVersion, toolStatus } from "../tools.mjs";
+import { DEFAULT_PORT_BASE, ephemeralRange, inEphemeral } from "../ports.mjs";
 
 /** nk doctor: checks only, changes nothing. Exit 1 when something is broken. */
 export function doctor(ctx, { docker = dockerCli } = {}) {
@@ -36,6 +37,13 @@ export function doctor(ctx, { docker = dockerCli } = {}) {
   const tools = toolStatus(ctx.env);
   (tools.gh === "logged in" ? ok : warn)(`gh ${tools.gh}`);
   (tools.docker === "running" ? ok : warn)(`docker ${tools.docker}`);
+  const range = ephemeralRange();
+  const base = ctx.config.port_base ?? DEFAULT_PORT_BASE;
+  // A range that starts well above the workspace ports (Linux: 32768) leaves plenty of room below it.
+  if (range && range.end >= base && range.start < base + 1000) {
+    const fix = process.platform === "win32" ? "; Windows' default is 49152-65535 (as administrator: netsh int ipv4 set dynamicport tcp start=49152 num=16384, then restart)" : "";
+    warn(`outgoing connections take ports ${range.start}-${range.end}, which overlaps the workspace ports from ${base}; new workspaces avoid them where they can${fix}`);
+  } else if (range) ok(`outgoing connections take ports ${range.start}-${range.end}`);
 
   ctx.print("Agents");
   const agents = Object.entries(ctx.config.agents);
@@ -66,6 +74,7 @@ export function doctor(ctx, { docker = dockerCli } = {}) {
       if (!exists(ws.path)) bad(`workspace ${name}: ${ws.path} is missing (nk rm ${name} cleans up)`);
       else if (!known) bad(`workspace ${name}: ${ws.path} is not a git worktree`);
       else if (known.branch !== (ws.branch ?? name)) warn(`workspace ${name}: checked out ${known.branch ?? "detached HEAD"}`);
+      else if (inEphemeral(ws.port, range)) warn(`workspace ${name}: ports ${ws.port}-${ws.port + 9} are among those outgoing connections take, so one may be in use by another program`);
       else ok(`workspace ${name}`);
     }
     const dir = join(ctx.paths.workspaces, repoName);

@@ -135,6 +135,10 @@ works everywhere.
 
 Hooks see `NOOK_WORKSPACE`, `NOOK_PATH`, `NOOK_REPO`, `NOOK_SHARED` and
 `NOOK_PORT` (the first of 10 ports reserved for the workspace).
+Blocks start at 20000 (`port_base` in `config.toml` changes that) and skip
+ports something already listens on, as well as the range the system hands to
+outgoing connections, since any program could take one of those at any time.
+Some software moves Windows' range down from 49152; `nk doctor` says so.
 
 ### Writing the hooks from CI and Compose
 
