@@ -13,4 +13,4 @@ compose start: redis, postgres
 compose moves: redis 6379
 compose moves: postgres 5432
 template addresses: redis:6379 -> 127.0.0.1:6379, postgres:5432 -> 127.0.0.1:5432
-left out: env: URL points at local port 3000, which is not a service nk starts; on this machine it may be a real database
+left out: env: URL points at local port 3000, which is not a service nk starts; likely the app's own address, so the shared .env keeps its value

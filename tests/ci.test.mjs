@@ -19,6 +19,7 @@ test("CI values that could reach a real database on this machine are left out", 
     env: {
       DATABASE_URL: "postgres://u:p@localhost:5432/app",
       CACHE_URL: "redis://localhost:6379",
+      URL: "http://localhost:3000",
       REPORTS_DB: "postgres://u:p@db.internal/reports",
       TZ: "UTC",
     },
@@ -27,7 +28,8 @@ test("CI values that could reach a real database on this machine are left out", 
   assert.deepEqual(Object.keys(plan.env), ["DATABASE_URL", "TZ"]);
   assert.deepEqual(plan.create.map((step) => step.run), ["npm ci"]);
   const why = plan.untranslated.map((item) => item.why).join("\n");
-  assert.match(why, /CACHE_URL points at local port 6379, which is not a service nk starts/);
+  assert.match(why, /CACHE_URL points at local port 6379, which is not a service nk starts; on this machine it may be a real database/);
+  assert.match(why, /URL points at local port 3000, which is not a service nk starts; likely the app's own address/);
   assert.match(why, /REPORTS_DB is a service address outside the workspace/);
   assert.match(plan.untranslated.find((item) => item.step === "docker compose up -d").why, /not a dependency install/);
 });

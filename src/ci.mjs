@@ -134,7 +134,13 @@ export function planJob(file, jobName, job, workflowEnv = {}, knownPorts = []) {
       const ports = [...value.matchAll(LOCAL_PORT)].map((match) => Number(match[2]));
       const strayPort = ports.find((port) => !servicePorts.has(port));
       if (strayPort !== undefined)
-        untranslated.push({ step: where, why: `${key} points at local port ${strayPort}, which is not a service nk starts; on this machine it may be a real database` });
+        untranslated.push({
+          step: where,
+          // An http address is usually the app itself; anything else could be a real database on this machine.
+          why: /^https?:\/\//i.test(value.trim())
+            ? `${key} points at local port ${strayPort}, which is not a service nk starts; likely the app's own address, so the shared .env keeps its value`
+            : `${key} points at local port ${strayPort}, which is not a service nk starts; on this machine it may be a real database`,
+        });
       else if (SERVICE_URL.test(value) && !ports.length)
         untranslated.push({ step: where, why: `${key} is a service address outside the workspace` });
       else kept[key] = value;
