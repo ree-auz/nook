@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { NookError } from "../errors.mjs";
-import { exists } from "../home.mjs";
+import { exists, isInside } from "../home.mjs";
 import { resolveRepo } from "../context.mjs";
 import { createPrompter } from "../prompt.mjs";
 import { dockerCli, findComposeProjects, removeComposeProject } from "../compose.mjs";
@@ -40,8 +40,14 @@ export async function forgetRepo(ctx, { name: input, yes = false, prompter = cre
     if (!ok) throw new NookError("Nothing was changed");
   }
 
-  // Compose projects started in those folders go with them, as nk rm does for a workspace.
-  if (exists(dir)) for (const project of findComposeProjects(dir, docker).projects) removeComposeProject(project, docker);
+  // What was started from those folders goes with them: Compose projects (containers, volumes, networks,
+  // built images) and the service containers generated hooks start (labelled with their workspace).
+  if (exists(dir)) {
+    for (const project of findComposeProjects(dir, docker).projects) removeComposeProject(project, docker);
+    const labelled = docker(["container", "ls", "-a", "--filter", "label=dev.nook.workspace", "--format", '{{.ID}}\t{{.Label "dev.nook.workspace"}}']);
+    const ids = labelled.ok ? labelled.out.split(/\r?\n/).filter(Boolean).map((row) => row.split("\t")).filter(([, path]) => path && isInside(path, dir)).map(([id]) => id) : [];
+    if (ids.length) docker(["container", "rm", "-f", "-v", ...ids]);
+  }
   deleteFolder(dir);
   deleteFolder(shared);
   delete ctx.config.repos[name];

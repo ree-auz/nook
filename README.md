@@ -275,8 +275,10 @@ folder and the backups `nk rm` made stay.
 It refuses while the repository has workspaces, so their work is backed up by
 `nk rm` first. If the repository folder is already deleted, git can no longer
 remove its workspaces; then `nk forget` lists what is left in
-`~/nook/workspaces/<short-name>/` and deletes it too, with any Compose project
-started there.
+`~/nook/workspaces/<short-name>/` and deletes it too, with the containers,
+volumes, networks and built images started there (Compose projects, and the
+service containers generated hooks start). Their remove hooks cannot run, since
+they were in the deleted folder.
 
 ## Linear
 
