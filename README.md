@@ -364,7 +364,9 @@ CI runs the tests on Linux, macOS and Windows.
 To release, set the new `version` in `package.json` on main, then publish a
 GitHub Release tagged `v<version>`. `.github/workflows/release.yml` checks the
 tag against `package.json`, runs the tests and publishes to npm with trusted
-publishing (no npm token is stored).
+publishing (no npm token is stored). npm lets only an existing package trust a
+workflow, so the first version was published by hand; a release whose version
+is already on npm is not published again.
 
 `npm run corpus` checks what `nk hooks write` makes of real repositories
 (`tests/corpus/repos.json`, each at a pinned commit; only their CI, Compose and
