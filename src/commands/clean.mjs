@@ -1,8 +1,8 @@
-import { statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { NookError } from "../errors.mjs";
-import { isInside } from "../home.mjs";
-import { gitTry, remoteUrl } from "../git.mjs";
+import { exists, isInside, samePath } from "../home.mjs";
+import { gitTry, listWorktrees, remoteUrl } from "../git.mjs";
 import { githubPrs } from "../forge.mjs";
 import { inspectWorkspace, isMerged } from "../backup.mjs";
 import { describeOccupants, findOccupants, stopProcesses } from "../occupancy.mjs";
@@ -10,7 +10,8 @@ import { createPrompter } from "../prompt.mjs";
 import { branchTip, contains } from "../status.mjs";
 import { resolveRepo } from "../context.mjs";
 import { collect } from "./ls.mjs";
-import { deleteWorkspace } from "./rm.mjs";
+import { deleteFolder, deleteWorkspace } from "./rm.mjs";
+import { dockerCli, findComposeProjects, removeComposeProject } from "../compose.mjs";
 import { approveHooks } from "./workspace.mjs";
 import { findHook } from "../hooks.mjs";
 
@@ -47,8 +48,23 @@ function createdAt(path) {
   }
 }
 
+/**
+ * Folders in the repository's workspaces folder that are neither a workspace
+ * nor a git worktree: what a removal left halfway, such as node_modules that
+ * Windows would not let go of.
+ */
+export function leftoverFolders(ctx, repoName, repo) {
+  const dir = join(ctx.paths.workspaces, repoName);
+  if (!exists(dir)) return [];
+  const worktrees = listWorktrees(repo.path);
+  return readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !repo.workspaces[entry.name])
+    .map((entry) => join(dir, entry.name))
+    .filter((path) => !worktrees.some((w) => samePath(w.path, path)));
+}
+
 /** nk clean [-n] [-y]: remove workspaces whose work is merged. */
-export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes = false, prs = githubPrs, scan = findOccupants, stop = stopProcesses, prompter = createPrompter(), now = Date.now() } = {}) {
+export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes = false, prs = githubPrs, scan = findOccupants, stop = stopProcesses, prompter = createPrompter(), now = Date.now(), docker = dockerCli } = {}) {
   const { name, repo } = resolveRepo(ctx, repoFlag);
   if (remoteUrl(repo.path)) {
     const fetched = gitTry(["fetch", "--quiet", "origin", repo.default_branch], { cwd: repo.path });
@@ -71,17 +87,30 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
     else remove.push({ item, label, reason: reason.ok, running: item.changes === null ? [] : scan(item.ws.path).processes });
   }
 
+  const leftovers = [];
+  for (const path of leftoverFolders(ctx, name, repo)) {
+    if (isInside(ctx.cwd, path)) skipped.push(`${path}: you are inside it`);
+    else if (scan(path).processes?.length) skipped.push(`${path}: programs are running in it`);
+    else leftovers.push(path);
+  }
+
   if (skipped.length) {
     ctx.warn(`Kept ${skipped.length}:`);
     for (const text of skipped) ctx.item(text);
   }
-  if (!remove.length) {
+  if (!remove.length && !leftovers.length) {
     ctx.info("Nothing to clean");
     return 0;
   }
-  ctx.info(`${remove.length === 1 ? "1 workspace is" : `${remove.length} workspaces are`} merged:`);
-  const width = Math.max(...remove.map((entry) => entry.label.length));
-  for (const entry of remove) ctx.item(`${entry.label.padEnd(width)}  ${entry.reason}`);
+  if (remove.length) {
+    ctx.info(`${remove.length === 1 ? "1 workspace is" : `${remove.length} workspaces are`} merged:`);
+    const width = Math.max(...remove.map((entry) => entry.label.length));
+    for (const entry of remove) ctx.item(`${entry.label.padEnd(width)}  ${entry.reason}`);
+  }
+  if (leftovers.length) {
+    ctx.info(`Left from earlier removals (not workspaces any more):`);
+    for (const path of leftovers) ctx.item(path);
+  }
   const running = remove.flatMap((entry) => entry.running);
   if (running.length) {
     // Same as nk rm: programs inside are listed, and stopped after one yes.
@@ -98,7 +127,8 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
   if (!yes) {
     let ok;
     try {
-      const what = remove.length === 1 ? "it" : `these ${remove.length}`;
+      const count = remove.length + leftovers.length;
+      const what = count === 1 ? "it" : `these ${count}`;
       ok = await prompter.confirm(running.length ? `Stop the programs and remove ${what}?` : `Remove ${what}?`, false);
     } catch {
       throw new NookError("Confirmation needs a terminal; pass -y to remove without asking");
@@ -125,6 +155,17 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
       ctx.warn(`${item.name} was not removed: ${error.message.split("\n").join("; ")}`);
     }
   }
-  if (failed) throw new NookError(`${failed} of ${remove.length} not removed; see the messages above`);
+  for (const path of leftovers) {
+    try {
+      // Compose projects started there go too, as nk rm does for a workspace.
+      for (const project of findComposeProjects(path, docker).projects) removeComposeProject(project, docker);
+      deleteFolder(path);
+      ctx.ok(`Deleted ${path}`);
+    } catch (error) {
+      failed++;
+      ctx.warn(`${path} was not deleted: ${error.message.split("\n").join("; ")}`);
+    }
+  }
+  if (failed) throw new NookError(`${failed} of ${remove.length + leftovers.length} not removed; see the messages above`);
   return 0;
 }

@@ -116,3 +116,22 @@ test("clean removes merged workspaces and keeps the rest", async (t) => {
   assert.equal(data.find((item) => item.name === "main").main, true);
   assert.equal(data.find((item) => item.name === "dirty").changes, 1);
 });
+
+test("clean deletes folders a removal left behind, and nothing else", async (t) => {
+  const { lines, ctx, ws, run } = setup(t);
+  assert.equal(run(["-b", "keep"]).status, 0);
+  // What Windows can leave after git worktree remove: ignored folders such as node_modules.
+  write(ws("half-removed"), { "node_modules/pkg/index.js": "x\n", "apps/web/node_modules/a.js": "x\n" });
+  const noDocker = () => ({ ok: false, out: "", err: "not installed" });
+  const lookup = async () => ({ prs: new Map() });
+
+  assert.equal(await cleanWorkspaces(ctx(), { dryRun: true, prs: lookup, docker: noDocker }), 0);
+  assert.match(lines.join(""), /Left from earlier removals[^]*half-removed/);
+  assert.ok(existsSync(ws("half-removed")), "dry run removes nothing");
+
+  lines.length = 0;
+  assert.equal(await cleanWorkspaces(ctx(), { yes: true, prs: lookup, docker: noDocker }), 0);
+  assert.ok(!existsSync(ws("half-removed")), "the leftover folder is deleted");
+  assert.ok(existsSync(ws("keep")), "a workspace is not a leftover");
+  assert.match(run(["doctor"]).out, /No problems found/);
+});

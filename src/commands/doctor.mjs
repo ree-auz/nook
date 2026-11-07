@@ -79,7 +79,7 @@ export function doctor(ctx, { docker = dockerCli } = {}) {
         warn(
           worktrees.some((w) => samePath(w.path, path))
             ? `${path} is a git worktree nk did not create (remove it with: git worktree remove)`
-            : `${path} is not a workspace, only a leftover folder (safe to delete)`,
+            : `${path} is not a workspace, only a leftover folder (nk clean deletes it)`,
         );
       }
   }

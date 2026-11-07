@@ -16,7 +16,7 @@ repository's setup hooks, and can start a command-line agent inside it.
 | `nk <name> [agent] [-p <prompt>]` | Open a workspace; start the agent if given |
 | `nk ls [--json]` | List workspaces: uncommitted changes, commits ahead of and behind the default branch, PR and CI |
 | `nk rm <name>... [-n] [-y]` | Back up and remove one or more workspaces, asking once (`-n` shows what would happen, `-y` skips the question) |
-| `nk clean [-n] [-y]` | Remove every workspace whose work is merged |
+| `nk clean [-n] [-y]` | Remove every workspace whose work is merged, and folders left from earlier removals |
 | `nk hooks` | The repository's `.nook` hooks: allowed, and tested since they last changed |
 | `nk hooks write [agent]` | Write the hooks from the repository's CI; with an agent, also starts it in the same folder to finish what CI could not tell |
 | `nk hooks test` | Run the hooks of the folder you are in, in a temporary workspace; fails if remove leaves anything behind |
@@ -239,6 +239,13 @@ keeps, and the programs running in the ones it removes, asks once, then stops
 those programs and removes each workspace the way `nk rm` does (backup,
 `remove` hook, folder and branch). `-n` only shows
 the list; `-y` removes without asking.
+
+It also deletes folders left from earlier removals: on Windows, git can
+remove a worktree and still leave ignored folders such as `node_modules` or
+`.venv` behind. Such a folder is neither a workspace nor a git worktree any
+more; `nk clean` deletes it, with any Compose project started in it, unless a
+program is still running there. `nk rm` itself now deletes whatever git leaves
+and stops with the reason when Windows keeps a file open.
 
 ## Linear
 
