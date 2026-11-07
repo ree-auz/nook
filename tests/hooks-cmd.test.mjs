@@ -301,6 +301,21 @@ test("env files the repository commits get the workspace's ports without showing
   assert.equal(r.status, 0, r.all);
 });
 
+test("a CI service on an odd host port still moves its usual port, which .env names", { skip: !services && "generated hooks call docker without a shell" }, (t) => {
+  // invoiceninja: CI publishes mariadb's 3306 on 32768, .env.example says DB_PORT=3306.
+  const ci = "on: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    services:\n      mariadb: { image: 'mariadb:10.6', ports: ['32768:3306'] }\n    steps:\n      - run: npm test\n";
+  const { home, run } = setup(t, { ".github/workflows/ci.yml": ci, ".gitignore": ".env\n" });
+  write(join(home, "shared", "demo"), { ".env": "DB_PORT=3306\nDB_URL=mysql://root@127.0.0.1:3306/app\n" });
+  assert.equal(run(["hooks", "write"]).status, 0);
+  assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
+  const r = run(["-b", "feat"]);
+  assert.equal(r.status, 0, r.all);
+  const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;
+  const env = readFileSync(join(home, "workspace", "demo", "feat", ".env"), "utf8");
+  assert.match(env, new RegExp(`^DB_PORT=${port}$`, "m"));
+  assert.match(env, new RegExp(`^DB_URL=mysql://root@127\\.0\\.0\\.1:${port}/app$`, "m"));
+});
+
 test("check fails when the hooks change files git tracks", (t) => {
   const { run } = setup(t, { ".nook/create.mjs": 'import { appendFileSync } from "node:fs";\nappendFileSync("README.md", "changed\\n");\n' });
   const r = run(["hooks", "test"]);

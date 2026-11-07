@@ -38,7 +38,7 @@ function portMap() {
 
 /**
  * Host ports this workspace moved → its own: CI's 5432, a Compose file's fixed
- * 5432:5432 or \${DB_PORT:-5432}. An address that still points at the old one
+ * 5432:5432 or \${DB_PORT:-5432}, and the services' own ports (32768:3306 moves 3306 too). An address that still points at the old one
  * would reach the main checkout's service, maybe the real database.
  */
 function movedPorts(ports) {
@@ -49,6 +49,10 @@ function movedPorts(ports) {
   for (const service of plan.services) for (const port of service.ports) add(port.host, ports["ci:" + service.name + ":" + port.host]);
   for (const [service, entries] of Object.entries(plan.compose?.remap ?? {})) for (const entry of entries) add(entry.host, ports[service + ":" + entry.host]);
   for (const [name, fallback] of Object.entries(plan.compose?.ports ?? {})) if (/^\d+$/.test(fallback)) add(fallback, ports[name]);
+  // A service's own port too, when no host port is already 3306: CI publishes mariadb's 3306 on 32768, but
+  // .env.example says DB_PORT=3306, the port a database on this machine usually takes (invoiceninja).
+  for (const service of plan.services) for (const port of service.ports) add(port.container, ports["ci:" + service.name + ":" + port.host]);
+  for (const [service, entries] of Object.entries(plan.compose?.remap ?? {})) for (const entry of entries) add(String(entry.target).split("/")[0], ports[service + ":" + entry.host]);
   return moved;
 }
 
