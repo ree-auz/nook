@@ -19,12 +19,17 @@ const known = new Set(JSON.parse(readFileSync(join(root, "tests", "corpus", "rep
 const LANGUAGES = ["TypeScript", "JavaScript", "Python", "Go", "Ruby", "PHP", "Java", "Rust", "Elixir", "C#", "Kotlin"];
 const COMPOSE = /^(docker-)?compose(\.[\w-]+)?\.ya?ml$/;
 
+/** One GitHub API request, tried twice; null when it fails, so one bad answer skips one search. */
 async function api(path) {
-  const response = await fetch(`https://api.github.com${path}`, {
-    headers: { accept: "application/vnd.github+json", "user-agent": "nook-real-repos", ...(process.env.GITHUB_TOKEN && { authorization: `Bearer ${process.env.GITHUB_TOKEN}` }) },
-  });
-  if (!response.ok) return null;
-  return response.json();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetch(`https://api.github.com${path}`, {
+        headers: { accept: "application/vnd.github+json", "user-agent": "nook-real-repos", ...(process.env.GITHUB_TOKEN && { authorization: `Bearer ${process.env.GITHUB_TOKEN}` }) },
+      });
+      if (response.ok) return await response.json();
+    } catch {}
+  }
+  return null;
 }
 
 /**

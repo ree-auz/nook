@@ -37,7 +37,7 @@ jobs:
           NEW: ${{ inputs.new || '10' }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          if [ -z "$ONLY" ] && [ "$NEW" != "0" ]; then node scripts/real-explore.mjs "$NEW" > new.json; else echo "[]" > new.json; fi
+          if [ -z "$ONLY" ] && [ "$NEW" != "0" ]; then node scripts/real-explore.mjs "$NEW" > new.json || echo "[]" > new.json; else echo "[]" > new.json; fi
           node -e '
             const only = (process.env.ONLY || "").split(/\s+/).filter(Boolean);
             const all = require("./tests/corpus/repos.json");
