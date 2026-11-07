@@ -80,6 +80,12 @@ New worktrees do not contain ignored files such as `.env`. `nk init` prepares
   (in any folder) and opens it for you to fill in once. Examples: `.env.example`,
   `.dev.vars.example`, `config/database.yml.dist`. The same file in the main
   checkout is not copied then, since it may be production.
+- A template written for running the app inside Docker names Compose services:
+  `DATABASE_URL=...@postgres:5432/app`. When the Compose file publishes that
+  service on this machine (`127.0.0.1:5432:5432`), init points the value at
+  `127.0.0.1:5432` and leaves the user, password and database name as they
+  are; each workspace then moves the port to its own. Secrets stay for you to
+  fill in.
 - Other ignored files in the main checkout are copied only if you say yes.
 - Running `nk init` again never replaces a shared file that is already there;
   it only adds new ones. Edit the files in `~/nook/shared/<repo>/` directly.

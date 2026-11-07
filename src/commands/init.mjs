@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import spawn from "cross-spawn";
 import { detectAgents, which } from "../agents.mjs";
@@ -10,6 +10,7 @@ import { assertName, suggestRepoName } from "../names.mjs";
 import { createPrompter, splitArgs } from "../prompt.mjs";
 import { copyFile, includePatterns, knownSecretFiles, listFiles, sharedCandidates, templateFiles } from "../shared.mjs";
 import { toolStatus } from "../tools.mjs";
+import { hostAddresses, pointAtHost } from "../compose-plan.mjs";
 
 function openEditor(ctx, file, prompter) {
   if (!prompter.interactive || prompter.yes) return false;
@@ -54,6 +55,16 @@ async function prepareShared(ctx, { repoPath, sharedDir, prompter }) {
       copies.push({ from: join(repoPath, file), to: file });
 
   for (const copy of copies) copyFile(copy.from, join(sharedDir, copy.to));
+  // A template for running the app inside Docker names Compose services (postgres:5432); here the app runs on
+  // this machine, so point those values at where the services are published.
+  const addresses = fill.length ? hostAddresses(repoPath) : {};
+  if (Object.keys(addresses).length)
+    for (const file of fill) {
+      const { text, keys } = pointAtHost(readFileSync(file, "utf8"), addresses);
+      if (!keys.length) continue;
+      writeFileSync(file, text);
+      ctx.info(`Pointed ${keys.join(", ")} in ${basename(file)} at the Compose services on this machine (each workspace then uses its own ports)`);
+    }
   if (present.size) ctx.info(`Kept shared files: ${[...present].join(", ")} (edit them in ${sharedDir})`);
   if (copies.length) ctx.ok(`Shared files in ${sharedDir}: ${copies.map((c) => c.to).join(", ")}`);
   for (const file of fill) {

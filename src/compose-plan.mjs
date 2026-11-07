@@ -136,3 +136,43 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
   }
   return { file: where, files: [file, override].filter(Boolean), start, ports, remap, required: [...required], notStarted, untranslated };
 }
+
+/**
+ * Where the Compose services a workspace starts are reached from this machine:
+ * { "postgres:5432": "127.0.0.1:5432" }. A template written for apps running
+ * inside Docker (DATABASE_URL=...@postgres:5432) is rewritten with it, since
+ * here the app runs on the machine; each workspace then moves the port to its own.
+ */
+export function hostAddresses(repoPath) {
+  const plan = planCompose(repoPath);
+  if (!plan?.start.length) return {};
+  const services = readServices(repoPath, plan.files[0], plan.files[1]);
+  const addresses = {};
+  for (const name of plan.start)
+    for (const entry of services[name]?.ports ?? []) {
+      const { host, target } = portEntry(entry);
+      if (!host) continue;
+      const variable = portVariable(host);
+      const port = variable ? variable.fallback : host;
+      if (/^\d+$/.test(port)) addresses[`${name}:${target.split("/")[0]}`] = `127.0.0.1:${port}`;
+    }
+  return addresses;
+}
+
+/** Rewrites service addresses in an env file's values; returns { text, keys } with the keys it changed. */
+export function pointAtHost(text, addresses) {
+  const keys = [];
+  const lines = text.split(/(\r?\n)/).map((line) => {
+    const match = /^(\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=)(.*)$/.exec(line);
+    if (!match) return line;
+    let value = match[3];
+    for (const [from, to] of Object.entries(addresses)) {
+      const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      value = value.replace(new RegExp(`(^|[\\s"'=/@,])${escaped}(?!\\d)`, "g"), `$1${to}`);
+    }
+    if (value === match[3]) return line;
+    keys.push(match[2]);
+    return match[1] + value;
+  });
+  return { text: lines.join(""), keys };
+}
