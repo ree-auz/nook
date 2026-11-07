@@ -383,3 +383,21 @@ function setupForget(t) {
   assert.ok(existsSync(join(home, "shared", "demo")));
   return { root, home, repo, run };
 }
+
+test("init points a template's Compose service addresses at this machine", (t) => {
+  const root = tempDir(t);
+  const home = join(root, "nook-home");
+  const repo = makeRepo(join(root, "demo"), {
+    ".gitignore": ".env\n",
+    "docker-compose.yml": "services:\n  postgres: { image: postgres, ports: ['127.0.0.1:5432:5432'] }\n  redis: { image: redis, ports: ['${REDIS_PORT:-6380}:6379'] }\n  app: { build: ., ports: ['3000:3000'] }\n",
+    ".env.sample": "DATABASE_URL=postgres://user:pass@postgres:5432/app\nREDIS_URL=redis://redis:6379\nAPP_URL=http://app:3000\nSECRET_KEY=\n",
+  });
+  const r = nk(["init", "--yes"], { cwd: repo, home });
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.err, /Pointed DATABASE_URL, REDIS_URL in \.env at the Compose services on this machine/);
+  assert.equal(
+    readFileSync(join(home, "shared", "demo", ".env"), "utf8"),
+    "DATABASE_URL=postgres://user:pass@127.0.0.1:5432/app\nREDIS_URL=redis://127.0.0.1:6380\nAPP_URL=http://app:3000\nSECRET_KEY=\n",
+    "only services nk starts; the app built from the repository is not one",
+  );
+});

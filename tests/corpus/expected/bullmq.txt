@@ -1,0 +1,23 @@
+source: .github/workflows/valkey-glide-test.yml › valkey-glide + docker-compose.yml
+tools: node@lts/*
+create: yarn install --ignore-engines --frozen-lockfile --non-interactive ; npm install --no-save @valkey/valkey-glide@2.5.0
+ci service: valkey valkey/valkey:8-alpine3.20 6379:6379
+compose start: -
+compose port vars: POSTGRES_PORT
+compose not started: redis (CI starts its own services)
+compose not started: dragonfly (CI starts its own services)
+compose not started: postgres (CI starts its own services)
+compose not started: redis-cluster-node-1 (only with the profile cluster)
+compose not started: redis-cluster-node-2 (only with the profile cluster)
+compose not started: redis-cluster-node-3 (only with the profile cluster)
+compose not started: redis-cluster-node-4 (only with the profile cluster)
+compose not started: redis-cluster-node-5 (only with the profile cluster)
+compose not started: redis-cluster-node-6 (only with the profile cluster)
+compose not started: redis-cluster-init (only with the profile cluster)
+compose not started: redis-cluster-auth-node-1 (only with the profile cluster-auth)
+compose not started: redis-cluster-auth-node-2 (only with the profile cluster-auth)
+compose not started: redis-cluster-auth-node-3 (only with the profile cluster-auth)
+compose not started: redis-cluster-auth-node-4 (only with the profile cluster-auth)
+compose not started: redis-cluster-auth-node-5 (only with the profile cluster-auth)
+compose not started: redis-cluster-auth-node-6 (only with the profile cluster-auth)
+compose not started: redis-cluster-auth-init (only with the profile cluster-auth)

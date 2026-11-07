@@ -1,0 +1,12 @@
+source: .github/workflows/migration-tests.yml › tests
+tools: -
+create: -
+env: RAILS_ENV=test
+env: PGUSER=discourse
+env: PGPASSWORD=discourse
+env: LOAD_PLUGINS=1
+left out: Set working directory owner: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Setup Git: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Start redis: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Start Postgres: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Symlink vendor/bundle from image: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

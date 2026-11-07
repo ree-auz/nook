@@ -144,13 +144,19 @@ test("hooks write turns CI into hooks that pass hooks test; a CI change then sto
   if (services) assert.deepEqual(state().containers, [], "remove deleted the service container");
 
   assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
+  // A template's own database user would not match the container started from CI's service.
+  write(join(home, "shared", "demo"), { ".env": "DATABASE_URL=postgres://user:pass@localhost:5432/app\nKEEP=1\n" });
   r = run(["-b", "feat"]);
   assert.equal(r.status, 0, r.all);
   const ws = join(home, "workspaces", "demo", "feat");
   assert.ok(existsSync(join(ws, "package-lock.json")), "create ran npm install in the workspace");
+  assert.match(readFileSync(join(ws, ".env"), "utf8"), /^KEEP=1$/m);
   const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;
   if (services) {
-    assert.match(readFileSync(join(ws, ".env"), "utf8"), new RegExp(`DATABASE_URL=postgres://postgres:postgres@localhost:${port}/app`));
+    assert.match(r.all, /Set DATABASE_URL in \.env from CI/);
+    const env = readFileSync(join(ws, ".env"), "utf8");
+    assert.match(env, new RegExp(`^DATABASE_URL=postgres://postgres:postgres@localhost:${port}/app$`, "m"), "CI's user and password, this workspace's port");
+    assert.doesNotMatch(env, /user:pass/);
     assert.ok(state().containers[0].args.join(" ").includes(`-p 127.0.0.1:${port}:5432`));
   }
 
@@ -242,4 +248,37 @@ test("a generated create stops when the Compose file needs a value .env does not
   assert.equal(r.status, 1, r.all);
   assert.match(r.all, /needs POSTGRES_PASSWORD in \.env/);
   assert.deepEqual(state().containers ?? [], []);
+});
+
+test("env files the repository commits get the workspace's ports without showing up in git", { skip: !services && "generated hooks call docker without a shell" }, (t) => {
+  const { home, run } = setup(t, {
+    "docker-compose.yml": composeFile,
+    ".env": "POSTGRES_PASSWORD=changethis\nCACHE_URL=redis://localhost:6379/0\n",
+    // Loaded after .env in development and tests, so it must point at the workspace too.
+    ".env.development": "# dev\r\nCACHE_URL=redis://127.0.0.1:6379\r\nLOG_LEVEL=debug\r\n",
+    ".env.sample": "CACHE_URL=redis://localhost:6379\n",
+  });
+  assert.equal(run(["hooks", "write"]).status, 0);
+  let r = run(["hooks", "test"]);
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.all, /\.env is committed in this repository/);
+
+  assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
+  assert.equal(run(["-b", "feat"]).status, 0);
+  const ws = join(home, "workspaces", "demo", "feat");
+  assert.match(readFileSync(join(ws, ".env"), "utf8"), /^COMPOSE_PROJECT_NAME=nook-demo-feat$/m);
+  const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;
+  assert.equal(readFileSync(join(ws, ".env.development"), "utf8"), `# dev\r\nCACHE_URL=redis://127.0.0.1:${port + 1}\r\nLOG_LEVEL=debug\r\n`, "only the address changes, line endings too stay");
+  assert.equal(readFileSync(join(ws, ".env.sample"), "utf8"), "CACHE_URL=redis://localhost:6379\n", "a template stays as it is");
+  assert.equal(sh("git", ["status", "--porcelain"], ws), "", "the workspace's ports never reach a commit");
+  r = run(["rm", "feat", "-y"]);
+  assert.equal(r.status, 0, r.all);
+});
+
+test("check fails when the hooks change files git tracks", (t) => {
+  const { run } = setup(t, { ".nook/create.mjs": 'import { appendFileSync } from "node:fs";\nappendFileSync("README.md", "changed\\n");\n' });
+  const r = run(["hooks", "test"]);
+  assert.equal(r.status, 1, r.all);
+  assert.match(r.all, /changed files in the workspace that git would commit/);
+  assert.match(r.all, /M README\.md/);
 });

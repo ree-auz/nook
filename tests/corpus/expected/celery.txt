@@ -1,0 +1,7 @@
+source: .github/workflows/python-package.yml › Unit
+tools: python
+create: -
+left out: Install apt packages: runs only when startsWith(matrix.os, 'blacksmith-4vcpu-ubuntu')
+left out: Install tox: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Run tox for "${{ matrix.python-version }}-unit"
+: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

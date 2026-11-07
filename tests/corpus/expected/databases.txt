@@ -1,0 +1,6 @@
+source: .github/workflows/test-suite.yml › tests
+tools: python
+create: -
+ci service: mysql mysql:5.7 3306:3306
+ci service: postgres postgres:14 5432:5432
+left out: Install dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

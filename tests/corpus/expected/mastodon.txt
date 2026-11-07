@@ -1,0 +1,30 @@
+source: .github/workflows/test-ruby.yml › test + docker-compose.yml
+tools: ruby
+create: -
+ci service: postgres postgres:14-alpine 5432:5432
+ci service: redis redis:7-alpine 6379:6379
+env: BUNDLE_CLEAN=true
+env: BUNDLE_FROZEN=true
+env: DB_HOST=localhost
+env: DB_USER=postgres
+env: DB_PASS=postgres
+env: COVERAGE=true
+env: RAILS_ENV=test
+env: ALLOW_NOPAM=true
+env: PAM_ENABLED=true
+env: PAM_DEFAULT_SERVICE=pam_test
+env: PAM_CONTROLLED_SERVICE=pam_test_controlled
+env: OIDC_ENABLED=true
+env: OIDC_SCOPE=read
+env: SAML_ENABLED=true
+env: CAS_ENABLED=true
+env: BUNDLE_WITH=pam_authentication test
+compose start: -
+compose not started: db (CI starts its own services)
+compose not started: redis (CI starts its own services)
+compose not started: web (ghcr.io/mastodon/mastodon:v4.7.5 is not a database or similar service)
+compose not started: streaming (ghcr.io/mastodon/mastodon-streaming:v4.7.5 is not a database or similar service)
+compose not started: sidekiq (ghcr.io/mastodon/mastodon:v4.7.5 is not a database or similar service)
+left out: job test env: GITHUB_RSPEC comes from a CI expression (${{ github.event.pull_request && 'true' }})
+left out: Expand archived asset artifacts: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Install system dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

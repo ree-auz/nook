@@ -1,0 +1,14 @@
+source: .github/workflows/playwright.yml › test-playwright + compose.yml + compose.override.yml
+tools: bun@1.3.12, python, uv@latest-known
+create: uv sync ; bun ci
+compose start: db, mailpit
+compose moves: db 5432
+compose moves: mailpit 8025 1025
+compose needs: POSTGRES_PASSWORD
+compose not started: proxy (traefik:v3.7 is not a database or similar service)
+compose not started: adminer (adminer is not a database or similar service)
+compose not started: backend (built from this repository)
+compose not started: playwright (built from this repository)
+template addresses: db:5432 -> 127.0.0.1:5432, mailpit:8025 -> 127.0.0.1:8025, mailpit:1025 -> 127.0.0.1:1025
+left out: Setup tmate session: uses the action mxschmitt/action-tmate@35b54afac29c97fb54faba5b513f8fbd1882f113
+left out: bash scripts/generate-client.sh: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

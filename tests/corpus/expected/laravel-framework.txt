@@ -1,0 +1,17 @@
+source: .github/workflows/tests.yml › linux_tests + docker-compose.yml
+tools: php
+create: -
+ci service: memcached memcached:1.6-alpine 11211:11211
+ci service: mysql mysql:9.7 3306:3306
+ci service: redis redis:7.0 6379:6379
+ci service: dynamodb amazon/dynamodb-local:2.0.0 8888:8000
+env: PHP_SHARED_EXTENSIONS=dom, curl, libxml, mbstring, zip, pdo,  sqlite, pdo_sqlite, gd, imagick, redis, memcached, gmp, igbinary, msgpack, :php-psr
+env: PHP_LINUX_EXTENSIONS=pcntl
+env: PHP_WINDOWS_EXTENSIONS=pdo_mysql, fileinfo, ftp, intl
+compose start: -
+compose not started: dynamodb (CI starts its own services)
+compose not started: memcached (CI starts its own services)
+compose not started: mysql (CI starts its own services)
+compose not started: redis (CI starts its own services)
+left out: Set framework version: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Install dependencies: uses the action nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60

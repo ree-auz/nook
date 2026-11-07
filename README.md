@@ -80,6 +80,12 @@ New worktrees do not contain ignored files such as `.env`. `nk init` prepares
   (in any folder) and opens it for you to fill in once. Examples: `.env.example`,
   `.dev.vars.example`, `config/database.yml.dist`. The same file in the main
   checkout is not copied then, since it may be production.
+- A template written for running the app inside Docker names Compose services:
+  `DATABASE_URL=...@postgres:5432/app`. When the Compose file publishes that
+  service on this machine (`127.0.0.1:5432:5432`), init points the value at
+  `127.0.0.1:5432` and leaves the user, password and database name as they
+  are; each workspace then moves the port to its own. Secrets stay for you to
+  fill in.
 - Other ignored files in the main checkout are copied only if you say yes.
 - Running `nk init` again never replaces a shared file that is already there;
   it only adds new ones. Edit the files in `~/nook/shared/<repo>/` directly.
@@ -160,6 +166,12 @@ workspace's project, replacing whatever the copied file said, so a
 Values in the copied `.env` that point at a moved port are pointed at the
 workspace's port: `DATABASE_URL=postgres://...@localhost:5432/app` becomes
 `localhost:<workspace port>`, and so does `DB_PORT=5432`.
+Other env files at the root that many projects load after `.env`, such as
+`.env.development` or `.env.test`, are pointed at the workspace's ports the
+same way; templates (`.env.example`, `.env.sample`) are left alone. When the
+repository commits one of these files, the workspace's copy comes from git and
+is changed in place; nk marks it `skip-worktree`, so these changes never show
+in `git status` or reach a commit.
 
 CI runs on a throwaway machine; a developer machine also has the real
 database and other workspaces. So nk copies less than CI does, never more:
@@ -189,8 +201,9 @@ hand.
 
 `nk hooks test` runs the hooks of the folder you are in (the agent's branch,
 before it is merged) in a temporary workspace: create, open twice, then
-remove. It fails when a hook fails, when open cannot run twice, or when
-remove leaves a Docker container, volume, network or built image behind.
+remove. It fails when a hook fails, when open cannot run twice, when the
+hooks change files git would commit, or when remove leaves a Docker
+container, volume, network or built image behind.
 
 A passing test records the hooks, the CI files and the Compose file. If any of them changes, `nk -b`
 stops before creating a workspace (pass `--untested` to start anyway), and
@@ -311,6 +324,13 @@ npm test
 ```
 
 CI runs the tests on Linux, macOS and Windows.
+
+`npm run corpus` checks what `nk hooks write` makes of real repositories
+(`tests/corpus/repos.json`, each at a pinned commit; only their CI, Compose and
+env template files are fetched, and nothing in them is run) against the
+reviewed results in `tests/corpus/expected/`. CI runs it too. After a change to
+how hooks are written, review the lines it prints and accept them with
+`npm run corpus -- --update`.
 
 ## License
 

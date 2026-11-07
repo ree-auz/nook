@@ -1,0 +1,5 @@
+source: .github/workflows/test.yml › e2e-tests-server-cli
+tools: pnpm, node
+create: -
+left out: immich-app/devtools/actions/create-workflow-token@2760f037fd3707bb91b16e4c41dc62b8c512393e: uses the action immich-app/devtools/actions/create-workflow-token@2760f037fd3707bb91b16e4c41dc62b8c512393e
+left out: Capture Docker logs: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

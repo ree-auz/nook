@@ -1,0 +1,6 @@
+source: .github/workflows/coverage.yml › build
+tools: node
+create: npm i pg-native
+left out: job build env: DOCKERHUB_USERNAME comes from a CI expression (${{ secrets.DOCKERHUB_USERNAME }})
+left out: Start Databases: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Run npm install: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

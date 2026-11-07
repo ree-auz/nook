@@ -1,0 +1,14 @@
+source: .github/workflows/tests.yaml › unit_tests
+tools: uv
+create: uv sync --locked
+ci service: postgres library/postgres:15-alpine (no ports)
+ci service: cache valkey/valkey:8.1-alpine (no ports)
+env: BENCH_PATH=./queries-results.json
+env: SECRET_KEY=ci-test
+left out: job container: CI runs this job inside a container and reaches its services by name; here they need host ports, which the CI file does not list
+left out: env: CACHE_URL is a service address outside the workspace
+left out: env: DB_URL_XDIST_WORKER_0 is a service address outside the workspace
+left out: env: DATABASE_URL is a service address outside the workspace
+left out: Install system dependencies: runs only when steps.changes.outputs.changed == 'true'
+left out: Restore DB: runs only when steps.changes.outputs.changed == 'true'
+left out: Compare DB Queries Results (PR): uses the action NyanKiyoshi/pytest-django-queries-ci-tools@45b5ac36ff19669a88fe56429b662b0661d8f46b
