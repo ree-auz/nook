@@ -1,6 +1,6 @@
 {
   "name": "@ree-auz/nook",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "One home folder for your git worktrees: create, open and remove workspaces with shared files, ports and hooks.",
   "license": "MIT",
   "type": "module",
