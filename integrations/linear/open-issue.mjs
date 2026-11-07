@@ -6,7 +6,7 @@
 //   node open-issue.mjs [--agent a] [--terminal wt|warp|orca]   started by Linear
 //   node open-issue.mjs --run <file> ...     inside the new tab
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -186,7 +186,20 @@ function fromLinear(argv) {
   closeLinearWindow();
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === self) {
+/**
+ * Run directly, not imported. Node gives this file its real path, so a path
+ * through a link (fnm's aliases\default, for one) is resolved before comparing.
+ */
+function runDirectly() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(resolve(process.argv[1])) === realpathSync(self);
+  } catch {
+    return resolve(process.argv[1]) === self;
+  }
+}
+
+if (runDirectly()) {
   const [first, ...rest] = process.argv.slice(2);
   if (first === "--run") insideTab(rest);
   else fromLinear(process.argv.slice(2));
