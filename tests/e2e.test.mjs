@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { parse } from "smol-toml";
@@ -346,3 +346,40 @@ test("the agent's prompt carries what nk knows and never reads out values", (t) 
   assert.match(prompt, /\.env \(empty: API_KEY\)/);
   assert.doesNotMatch(prompt, /secret-value/);
 });
+
+test("forget keeps the repository's workspaces until nk rm, then removes its registration and shared files", (t) => {
+  const { home, repo, run } = setupForget(t);
+  assert.equal(run(["-b", "feat"]).status, 0);
+  let r = run(["forget", "-y"]);
+  assert.equal(r.status, 1);
+  assert.match(r.err, /still has workspaces: feat[^]*nk rm feat --repo demo/);
+  assert.equal(run(["rm", "feat", "-y"]).status, 0);
+  r = run(["forget", "-y"]);
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.err, /Deletes the shared files/);
+  assert.ok(!existsSync(join(home, "shared", "demo")), "shared files deleted");
+  assert.ok(existsSync(join(repo, "README.md")), "the repository folder stays");
+  assert.equal(parse(readFileSync(join(home, "config.toml"), "utf8")).repos?.demo, undefined);
+  assert.equal(run(["init", "--yes"]).status, 0, "it can be registered again");
+});
+
+test("forget a repository whose folder is gone deletes what its workspaces left", (t) => {
+  const { root, home, repo, run } = setupForget(t);
+  assert.equal(run(["-b", "feat"]).status, 0);
+  rmSync(repo, { recursive: true, force: true });
+  const r = nk(["forget", "demo", "-y"], { cwd: root, home });
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.err, /which no longer exists/);
+  assert.ok(!existsSync(join(home, "workspaces", "demo")), "the orphaned workspace folder is deleted");
+  assert.equal(parse(readFileSync(join(home, "config.toml"), "utf8")).repos?.demo, undefined);
+});
+
+function setupForget(t) {
+  const root = tempDir(t);
+  const home = join(root, "nook-home");
+  const repo = makeRepo(join(root, "demo"), { ".gitignore": ".env\n", ".env.example": "KEY=\n" });
+  const run = (args) => nk(args, { cwd: repo, home });
+  assert.equal(run(["init", "--yes"]).status, 0);
+  assert.ok(existsSync(join(home, "shared", "demo")));
+  return { root, home, repo, run };
+}

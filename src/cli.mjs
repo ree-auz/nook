@@ -13,6 +13,7 @@ import { createWorkspace, openWorkspace } from "./commands/workspace.mjs";
 import { writeHooks } from "./commands/write-hooks.mjs";
 import { listHooks } from "./commands/hooks.mjs";
 import { testHooks } from "./commands/check-hooks.mjs";
+import { forgetRepo } from "./commands/forget.mjs";
 
 const HELP = `nk - one home for your git worktrees
 
@@ -32,6 +33,8 @@ Usage:
                                          same folder to finish what they could not tell
   nk hooks test                           run this folder's hooks in a temporary workspace;
                                          fails if remove leaves anything behind
+  nk forget [<short-name>] [-y]           stop knowing a repository: its registration and shared
+                                         files go; the repository folder and backups stay
   nk doctor                               check nk's tools: node, git, gh, docker, agents
 
 Options:
@@ -95,6 +98,11 @@ export async function run(argv, io = {}) {
       if (action === "write" && !rest.length) return writeHooks(ctx, { repo: values.repo, agent, extra });
       if (action === "test" && !agent) return testHooks(ctx, { repo: values.repo });
       throw new NookError("Usage: nk hooks | nk hooks write [agent] | nk hooks test");
+    }
+    case "forget": {
+      const { values, positionals } = parse(args.slice(1), { yes: { type: "boolean", short: "y" }, repo: { type: "string" } });
+      if (positionals.length > 1) throw new NookError("Usage: nk forget [<short-name>] [-y]");
+      return forgetRepo(ctx, { name: positionals[0] ?? values.repo, yes: values.yes });
     }
     case "doctor":
       parse(args.slice(1), {});

@@ -20,6 +20,7 @@ repository's setup hooks, and can start a command-line agent inside it.
 | `nk hooks` | The repository's `.nook` hooks: allowed, and tested since they last changed |
 | `nk hooks write [agent]` | Write the hooks from the repository's CI; with an agent, also starts it in the same folder to finish what CI could not tell |
 | `nk hooks test` | Run the hooks of the folder you are in, in a temporary workspace; fails if remove leaves anything behind |
+| `nk forget [<short-name>]` | Stop knowing a repository: remove its registration and shared files; its folder and backups stay |
 | `nk doctor` | Check nk's tools (node, git, gh, docker, agents) without changing anything |
 
 Like git, every command acts on the repository you are in: its main
@@ -49,7 +50,7 @@ arguments to one agent, set `args` under `[agents.<name>]` in `config.toml`.
 
 A workspace name is also its branch name and folder name. It uses lowercase
 letters, digits, `-` and `.` only, and cannot be a command name (`init`, `ls`,
-`rm`, `clean`, `doctor`, `help`, `version`).
+`rm`, `clean`, `hooks`, `forget`, `doctor`, `help`, `version`).
 
 You can pass any branch text; `nk` turns it into a valid name and says so:
 uppercase becomes lowercase, and `/`, spaces, non-ASCII and other characters
@@ -263,6 +264,19 @@ remove a worktree and still leave ignored folders such as `node_modules` or
 more; `nk clean` deletes it, with any Compose project started in it, unless a
 program is still running there. `nk rm` itself now deletes whatever git leaves
 and stops with the reason when Windows keeps a file open.
+
+## Forgetting a repository
+
+`nk forget` (in the repository, or `nk forget <short-name>` from anywhere)
+undoes `nk init`: it removes the repository's registration and its shared
+files in `~/nook/shared/<short-name>/`, after one confirmation. The repository
+folder and the backups `nk rm` made stay.
+
+It refuses while the repository has workspaces, so their work is backed up by
+`nk rm` first. If the repository folder is already deleted, git can no longer
+remove its workspaces; then `nk forget` lists what is left in
+`~/nook/workspaces/<short-name>/` and deletes it too, with any Compose project
+started there.
 
 ## Linear
 
