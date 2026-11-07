@@ -14,7 +14,7 @@ npm install -g @ree-auz/nook
 nk doctor
 ```
 
-Needs Node.js 20 or later and git. Docker is used when a repository's hooks
+Needs Node.js 20.12 or later and git. Docker is used when a repository's hooks
 start services, and the [GitHub CLI](https://cli.github.com/) (`gh`) for pull
 requests and CI in `nk ls` and `nk clean`; both are optional. `nk doctor`
 checks them and changes nothing.
@@ -314,7 +314,8 @@ workspace as merged when:
   is at least a day old (so a workspace you just created is kept).
 
 It keeps locked worktrees, workspaces with uncommitted changes, with commits made after the PR
-was merged, and the one you are inside. It lists what it would remove, what it
+was merged, with files git ignores that are not rebuilt or shared (a local
+database, say; `nk rm` removes them after listing them), and the one you are inside. It lists what it would remove, what it
 keeps, and the programs running in the ones it removes, asks once, then stops
 those programs and removes each workspace the way `nk rm` does (backup,
 `remove` hook, folder and branch). `-n` only shows

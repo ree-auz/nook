@@ -77,7 +77,7 @@ export async function deleteWorkspace(ctx, target, { state, base, backupRoot, pr
 const REBUILT = new Set(["node_modules", ".venv", "venv", "vendor", "dist", "build", "out", "target", "coverage", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".next", ".nuxt", ".svelte-kit", ".turbo", ".cache", ".parcel-cache", ".gradle", ".tox", "_build", "deps", "tmp", "log", "logs", ".idea", ".vscode", ".DS_Store"]);
 
 /** Ignored files and folders in a workspace that hold more than a rebuild or a shared copy: a local database, say. */
-function ignoredData(path, sharedDir) {
+export function ignoredData(path, sharedDir) {
   const listed = gitTry(["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "--no-empty-directory"], { cwd: path });
   if (!listed.ok) return [];
   const shared = new Set(listFiles(sharedDir));
