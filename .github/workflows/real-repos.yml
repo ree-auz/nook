@@ -1,0 +1,97 @@
+name: Real repositories
+
+# Runs nk for real on the repositories marked "full" in tests/corpus/repos.json:
+# init, hooks write, hooks test, nk -b, checks, nk rm. Weekly, or by hand from
+# the Actions tab (Run workflow), optionally for some repositories only.
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Repository names, separated by spaces (empty: all marked full)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  pick:
+    runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.pick.outputs.repos }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: pick
+        env:
+          ONLY: ${{ inputs.only }}
+        run: |
+          node -e '
+            const only = (process.env.ONLY || "").split(/\s+/).filter(Boolean);
+            const all = require("./tests/corpus/repos.json");
+            const picked = all.filter((r) => (only.length ? only.includes(r.name) : r.full));
+            console.log("repos=" + JSON.stringify(picked.map(({ name, repo, commit }) => ({ name, repo, commit }))));
+          ' >> "$GITHUB_OUTPUT"
+
+  run:
+    needs: pick
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        include: ${{ fromJSON(needs.pick.outputs.repos) }}
+    env:
+      # Corepack would otherwise ask before downloading the package manager a project pins.
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: nook
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          ref: ${{ matrix.commit }}
+          path: repos/${{ matrix.name }}
+          persist-credentials: false
+      # Install what a person working on the repository would: the versions it asks for.
+      - id: want
+        run: node nook/scripts/real-versions.mjs "repos/${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.want.outputs.node }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ steps.want.outputs.python }}
+      - uses: astral-sh/setup-uv@v6
+      - uses: oven-sh/setup-bun@v2
+      - name: corepack (Node 25 and later no longer include it)
+        run: |
+          command -v corepack >/dev/null || npm install -g corepack
+          corepack enable
+      - run: npm ci
+        working-directory: nook
+      - name: nk on ${{ matrix.name }}
+        run: node nook/scripts/real-run.mjs "${{ matrix.name }}" --dir "repos/${{ matrix.name }}" --out "results/${{ matrix.name }}.json"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-${{ matrix.name }}
+          path: results/
+          if-no-files-found: ignore
+
+  summary:
+    needs: run
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: result-*
+          merge-multiple: true
+          path: results
+      - run: node scripts/real-summary.mjs results >> "$GITHUB_STEP_SUMMARY"

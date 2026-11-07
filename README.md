@@ -334,6 +334,16 @@ reviewed results in `tests/corpus/expected/`. CI runs it too. After a change to
 how hooks are written, review the lines it prints and accept them with
 `npm run corpus -- --update`.
 
+The repositories marked `"full": true` also get a real run every Monday
+(`.github/workflows/real-repos.yml`; start it by hand from the Actions tab with
+Run workflow, optionally for some repositories only). On a fresh GitHub runner
+with the Node and Python versions each asks for, `scripts/real-run.mjs` runs
+`nk init`, `nk hooks write`, `nk hooks test` and `nk -b try1`, checks that git
+sees no changes in the workspace and that its services answer, then runs
+`nk rm try1` and checks that no container, volume, network or folder is left.
+The run's summary is one table: each repository, the step it failed at, and
+that step's last lines.
+
 ## License
 
 MIT
