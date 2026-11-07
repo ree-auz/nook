@@ -43,7 +43,8 @@ export function templateFiles(repo) {
   const pairs = [];
   for (const from of listed.out.split("\0").filter(Boolean)) {
     const match = TEMPLATE_SUFFIX.exec(from);
-    if (match && !match[1].endsWith("/")) pairs.push({ from, to: match[1] });
+    // A library's own template in a committed vendor folder (showdoc's guzzle phpunit.xml.dist) is not the project's.
+    if (match && !match[1].endsWith("/") && !/(^|\/)(vendor|node_modules)\//.test(from)) pairs.push({ from, to: match[1] });
   }
   const ignored = ignoredPaths(repo, pairs.map((pair) => pair.to));
   return pairs.filter((pair) => ignored.has(pair.to)).sort((a, b) => a.to.localeCompare(b.to));

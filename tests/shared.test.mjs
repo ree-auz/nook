@@ -50,15 +50,16 @@ test("copies only files git ignores in the workspace", (t) => {
 
 test("finds templates for any ignored file, in any folder", (t) => {
   const repo = makeRepo(join(tempDir(t), "demo"), {
-    ".gitignore": ".env\n.dev.vars\nconfig/database.yml\n",
+    ".gitignore": ".env\n.dev.vars\nconfig/database.yml\nphpunit.xml\n",
     ".env.sample": "KEY=\n",
     "apps/api/.dev.vars.example": "TOKEN=\n",
     "config/database.yml.dist": "host: localhost\n",
     "docs/readme.template": "not a secret\n",
+    "server/vendor/guzzle/phpunit.xml.dist": "<phpunit/>\n",
   });
   assert.deepEqual(templateFiles(repo), [
     { from: ".env.sample", to: ".env" },
     { from: "apps/api/.dev.vars.example", to: "apps/api/.dev.vars" },
     { from: "config/database.yml.dist", to: "config/database.yml" },
-  ]);
+  ], "not a library's template in a committed vendor folder");
 });
