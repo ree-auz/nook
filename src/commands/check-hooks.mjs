@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { NookError } from "../errors.mjs";
 import { exists } from "../home.mjs";
@@ -10,6 +10,7 @@ import { resolveRepo, workspaceEnv } from "../context.mjs";
 import { describeOccupants, findOccupants, stopProcesses } from "../occupancy.mjs";
 import { ciHash } from "../ci.mjs";
 import { dockerCli, dockerSnapshot, findComposeProjects, removeComposeProject, snapshotDiff } from "../compose.mjs";
+import { deleteFolder } from "./rm.mjs";
 
 const CHECK_NAME = "nook-hooks-test";
 
@@ -88,7 +89,11 @@ export async function testHooks(ctx, { repo: repoFlag, docker = dockerCli, scan 
     // Clean up whatever is left, so the check itself leaves nothing behind.
     for (const project of findComposeProjects(path, docker).projects) removeComposeProject(project, docker);
     gitTry(["worktree", "remove", "--force", path], { cwd: repo.path });
-    if (exists(path)) rmSync(path, { recursive: true, force: true, maxRetries: 3 });
+    try {
+      deleteFolder(path);
+    } catch (error) {
+      problems.push(error.message);
+    }
     gitTry(["worktree", "prune"], { cwd: repo.path });
   }
 

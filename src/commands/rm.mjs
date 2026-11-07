@@ -73,6 +73,9 @@ export function deleteFolder(path) {
   try {
     rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   } catch (error) {
+    // A container that mounts the workspace and runs as root leaves files this user cannot delete.
+    if (error.code === "EACCES" || (error.code === "EPERM" && process.platform !== "win32"))
+      throw new NookError(`Could not delete ${path}: ${error.message}\nA container probably wrote these files as another user (often root). Delete the folder with sudo rm -rf, or have the remove hook delete them from inside the container`);
     throw new NookError(`Could not delete ${path}: ${error.message}\nClose what uses it and run the command again`);
   }
   if (exists(path)) throw new NookError(`Could not delete ${path}; close what uses it and run the command again`);

@@ -131,7 +131,7 @@ const ciWorkflow = services ? workflow : workflow.replace(/^    services:[^]*?(?
 
 test("hooks write turns CI into hooks that pass hooks test; a CI change then stops nk -b", (t) => {
   const workflow = ciWorkflow;
-  const { home, repo, run, state } = setup(t, { ".github/workflows/ci.yml": workflow, "package.json": '{"name":"demo","private":true}\n', ".gitignore": "package-lock.json\nnode_modules\n.env\n" });
+  const { home, repo, run, state } = setup(t, { ".github/workflows/ci.yml": workflow, "package.json": '{"name":"demo","private":true}\n', ".gitignore": "package-lock.json\nnode_modules\n" });
   let r = run(["hooks", "write"]);
   assert.equal(r.status, 0, r.all);
   assert.match(r.err, services ? /Wrote \.nook\/create\.mjs, \.nook\/open\.mjs, \.nook\/remove\.mjs from \.github\/workflows\/ci\.yml \(job test\)/ : /Wrote \.nook\/create\.mjs from/);
@@ -151,6 +151,8 @@ test("hooks write turns CI into hooks that pass hooks test; a CI change then sto
   const ws = join(home, "workspace", "demo", "feat");
   assert.ok(existsSync(join(ws, "package-lock.json")), "create ran npm install in the workspace");
   assert.match(readFileSync(join(ws, ".env"), "utf8"), /^KEEP=1$/m);
+  // The repository does not ignore .env; nk keeps it out of git status anyway.
+  assert.equal(sh("git", ["status", "--porcelain", "--untracked-files=all"], ws).trim(), "");
   const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;
   if (services) {
     assert.match(r.all, /Set DATABASE_URL in \.env from CI/);

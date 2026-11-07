@@ -4,10 +4,13 @@
  * outputs (node=..., python=...), so the full run installs what a person
  * working on it would. Reads .nvmrc, .node-version, .tool-versions,
  * package.json engines and .python-version; falls back to current releases.
+ * Also says which other toolchains it needs (go, ruby, java, php, elixir,
+ * dotnet), so the workflow installs only those, and the uv version a
+ * pyproject.toml or uv.toml requires (required-version), here or in a subfolder.
  *
  *   node scripts/real-versions.mjs <checkout> >> "$GITHUB_OUTPUT"
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const dir = process.argv[2] ?? ".";
@@ -29,5 +32,40 @@ function fromRange(range) {
 const pinned = (read(".nvmrc") || read(".node-version") || toolVersion("nodejs") || "").replace(/^v/, "").split(/\s+/)[0];
 const node = pinned || fromRange(engines) || "22";
 const python = (read(".python-version") || toolVersion("python") || "3.13").split(/\s+/)[0];
-console.log(`node=${node}`);
-console.log(`python=${python}`);
+const has = (...files) => files.some((file) => existsSync(join(dir, file)));
+const first = (...values) => values.find(Boolean) ?? "";
+let php = "";
+try {
+  php = JSON.parse(read("composer.json") || "{}").require?.php ?? "";
+} catch {}
+/** uv's required-version, from the first pyproject.toml or uv.toml within three folders of the root. */
+function uvVersion(folder = "", depth = 0) {
+  for (const file of ["uv.toml", "pyproject.toml"]) {
+    const spec = read(join(folder, file)).match(/^\s*required-version\s*=\s*["']([^"']+)["']/m)?.[1];
+    if (spec) return spec.replace(/^\s*==\s*/, "").trim();
+  }
+  if (depth >= 3) return "";
+  let entries = [];
+  try {
+    entries = readdirSync(join(dir, folder), { withFileTypes: true });
+  } catch {}
+  for (const entry of entries.filter((e) => e.isDirectory() && !/^(\.|node_modules$|vendor$)/.test(e.name)).sort((a, b) => a.name.localeCompare(b.name))) {
+    const found = uvVersion(join(folder, entry.name), depth + 1);
+    if (found) return found;
+  }
+  return "";
+}
+const out = {
+  node,
+  python,
+  go: has("go.mod") ? "go.mod" : "",
+  ruby: has("Gemfile") ? first(read(".ruby-version").replace(/^ruby-/, ""), toolVersion("ruby"), "3.4") : "",
+  java: has("pom.xml", "build.gradle", "build.gradle.kts") ? first(read(".java-version"), toolVersion("java")?.replace(/^\D*/, "").split(".")[0], "21") : "",
+  // "^8.1" or ">=8.1" allows a current 8.x; otherwise the newest version it names.
+  php: has("composer.json") ? first(/(\^|>=\s*)8/.test(php) && "8.3", php.match(/(\d+\.\d+)/g)?.sort((a, b) => Number(b.split(".")[0]) - Number(a.split(".")[0]) || Number(b.split(".")[1]) - Number(a.split(".")[1]))[0], "8.3") : "",
+  elixir: has("mix.exs") ? first(toolVersion("elixir")?.split("-")[0], "1.18") : "",
+  otp: has("mix.exs") ? first(toolVersion("erlang")?.split(".")[0], "27") : "",
+  dotnet: has("global.json") ? "global.json" : "",
+  uv: uvVersion(),
+};
+for (const [key, value] of Object.entries(out)) console.log(`${key}=${value}`);
