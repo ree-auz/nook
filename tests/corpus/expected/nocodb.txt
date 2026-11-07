@@ -1,0 +1,7 @@
+source: .github/workflows/jest-unit-test.yml › jest-unit-test
+tools: pnpm@10, node@24.22.1
+create: -
+left out: Set CI env: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Set NC Edition: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: remove use-node-version line from .npmrc: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: install dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

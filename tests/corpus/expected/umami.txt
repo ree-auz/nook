@@ -1,0 +1,8 @@
+source: .github/workflows/ci.yml › build + docker-compose.yml
+tools: pnpm@12.3.4, node@22
+create: pnpm install
+env: SKIP_DB_CHECK=1
+compose start: db
+compose not started: umami (ghcr.io/umami-software/umami:latest is not a database or similar service)
+left out: env: DATABASE_URL points at local port 5432, which is not a service nk starts; on this machine it may be a real database
+left out: pnpm openapi:generate: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

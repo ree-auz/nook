@@ -1,0 +1,4 @@
+source: .github/workflows/tests_ci.yml › graphql_api_tests_postgresql
+tools: node@26, corepack
+create: npm i -g corepack@0.31.0 ; corepack enable
+ci service: postgres postgres:18 5432:5432

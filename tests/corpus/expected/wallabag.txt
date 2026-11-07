@@ -1,0 +1,19 @@
+source: .github/workflows/continuous-integration.yml › phpunit + compose.yaml
+tools: php, node
+create: yarn install
+ci service: rabbitmq rabbitmq:3-alpine 5672:5672
+ci service: redis redis:6-alpine 6379:6379
+env: DOCTRINE_DEPRECATIONS=none
+env: WALLABAG_SYMFONY_DEPRECATIONS_HELPER_BASE=max[self]=0&max[direct]=0&quiet[]=other
+env: PGPASSWORD=wallabagrocks
+compose start: -
+compose port vars: PORT
+compose not started: php (built from this repository)
+compose not started: redis (CI starts its own services)
+left out: workflow env: COMPOSER_TOKEN comes from a CI expression (${{ secrets.GITHUB_TOKEN }})
+left out: job phpunit env: DATABASE_URL comes from a CI expression (${{ matrix.database == 'mysql' && 'mysql://root:root@127.0.0.1:3306/wallabag?charset=utf8mb4'
+ || matrix.database == 'pgsql' && 'postgresql://wallabag:wallabagrocks@127.0.0.1:5432/wallabag?charset=utf8'
+ || format('sqlite:///{0}/data/db/wallabag_test.sqlite', github.workspace) }})
+left out: Setup MySQL: runs only when ${{ matrix.database == 'mysql' }}
+left out: Setup PostgreSQL: runs only when ${{ matrix.database == 'pgsql' }}
+left out: Install dependencies with Composer: uses the action ramsey/composer-install@65e4f84970763564f46a70b8a54b90d033b3bdda

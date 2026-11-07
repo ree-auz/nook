@@ -1,0 +1,15 @@
+source: .github/workflows/hlint.yml › hlint + docker-compose.yaml
+tools: -
+create: -
+env: working-directory=.
+env: HLINT_BASE_URL=https://github.com/ndmitchell/hlint/releases/download
+env: HLINT_ARCH=x86_64
+env: HLINT_OS=linux
+compose start: -
+compose not started: postgres (no image)
+compose not started: citus (no image)
+compose not started: cockroach (no image)
+compose not started: sqlserver (no image)
+compose not started: dc-reference-agent (no image)
+compose not started: dc-sqlite-agent (no image)
+left out: Download hlint: uses a CI expression (${{ … }})

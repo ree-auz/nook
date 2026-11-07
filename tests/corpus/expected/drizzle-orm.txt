@@ -1,0 +1,8 @@
+source: .github/workflows/release-feature-branch.yaml › test
+tools: node@20.19, pnpm@latest
+create: pnpm install
+ci service: postgres-postgis postgis/postgis:16-3.4 54322:5432
+ci service: postgres-vector pgvector/pgvector:pg16 54321:5432
+ci service: postgres postgres:14 55433:5432
+ci service: mysql mysql:8 33306:3306
+ci service: singlestore ghcr.io/singlestore-labs/singlestoredb-dev:latest 33307:3306

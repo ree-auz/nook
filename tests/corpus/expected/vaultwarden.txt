@@ -1,0 +1,5 @@
+source: .github/workflows/build.yml › build
+tools: -
+create: -
+env: RUSTFLAGS=-Dwarnings
+left out: Rust Caching: uses the action Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0

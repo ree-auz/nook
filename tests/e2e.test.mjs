@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { parse } from "smol-toml";
@@ -27,7 +27,7 @@ function setup(t) {
     ".nook/remove.mjs": "console.log('remove hook for ' + process.env.NOOK_WORKSPACE)\n",
   });
   write(repo, { ".env": "API_KEY=fake-production-value\n" });
-  return { root, home, repo, ws: join(home, "workspaces", "demo", "smoke") };
+  return { root, home, repo, ws: join(home, "workspace", "demo", "smoke") };
 }
 
 test("init -> -b -> open -> rm", async (t) => {
@@ -120,7 +120,7 @@ test("a changed hook needs a new OK; a failing create hook keeps the workspace",
   assert.match(r.err, /need your OK/);
 
   assert.equal(run(["init", "--yes"]).status, 0, "init allows the new version");
-  const ws = join(home, "workspaces", "demo", "failing");
+  const ws = join(home, "workspace", "demo", "failing");
   r = run(["-b", "failing", "node", "--", "-e", agentScript]);
   assert.equal(r.status, 4, r.all);
   assert.match(r.err, /create\.mjs failed \(exit 4\)/);
@@ -140,7 +140,28 @@ test("a failing remove hook stops the removal", (t) => {
   const r = run(["rm", "keep", "-y"]);
   assert.equal(r.status, 2, r.all);
   assert.match(r.err, /nothing was deleted/);
-  assert.ok(existsSync(join(home, "workspaces", "demo", "keep")));
+  assert.ok(existsSync(join(home, "workspace", "demo", "keep")));
+});
+
+test("the old workspaces folder is renamed to workspace and git follows", (t) => {
+  const { home, repo } = setup(t);
+  const run = (args) => nk(args, { cwd: repo, home });
+  assert.equal(run(["init", "--yes"]).status, 0);
+  const made = run(["-b", "old"]);
+  assert.equal(made.status, 0, made.all);
+  // Put things back the way nk before 0.1 kept them.
+  const oldWs = join(home, "workspaces", "demo", "old");
+  renameSync(join(home, "workspace"), join(home, "workspaces"));
+  sh("git", ["worktree", "repair", oldWs], repo);
+  const configPath = join(home, "config.toml");
+  writeFileSync(configPath, readFileSync(configPath, "utf8").replaceAll(join(home, "workspace").replaceAll("\\", "\\\\"), join(home, "workspaces").replaceAll("\\", "\\\\")));
+
+  const r = run(["old"]);
+  assert.equal(r.status, 0, r.all);
+  assert.equal(r.out.trim(), join(home, "workspace", "demo", "old"));
+  assert.ok(!existsSync(join(home, "workspaces")));
+  assert.equal(sh("git", ["status", "--short"], r.out.trim()), "");
+  assert.equal(run(["rm", "old", "-y"]).status, 0);
 });
 
 test("-b turns any branch text into a workspace name", (t) => {
@@ -150,7 +171,7 @@ test("-b turns any branch text into a workspace name", (t) => {
   const r = run(["-b", "REE-12-修复登录/Login"]);
   assert.equal(r.status, 0, r.all);
   assert.match(r.err, /Using the name ree-12-login/);
-  assert.equal(r.out.trim(), join(home, "workspaces", "demo", "ree-12-login"));
+  assert.equal(r.out.trim(), join(home, "workspace", "demo", "ree-12-login"));
   assert.equal(sh("git", ["branch", "--show-current"], r.out.trim()), "ree-12-login");
   assert.equal(run(["rm", "REE-12-修复登录/Login", "-y"]).status, 0);
 });
@@ -166,7 +187,7 @@ test("a converted name can be edited before the workspace is created", async (t)
   const prompter = { interactive: true, edit: async (_q, initial) => (offered.push(initial), "Fix Login") };
   assert.equal(await createWorkspace(ctx, { name: "REE-12-修复登录", prompter }), 0);
   assert.deepEqual(offered, ["ree-12"]);
-  assert.ok(existsSync(join(home, "workspaces", "demo", "fix-login")));
+  assert.ok(existsSync(join(home, "workspace", "demo", "fix-login")));
   assert.equal(nk(["rm", "fix-login", "-y"], { cwd: repo, home }).status, 0);
 });
 
@@ -196,14 +217,14 @@ test("an old branch without .nook still gets the hooks; a branch with / keeps it
   assert.equal(r.status, 0, r.all);
   assert.match(r.err, /Using the name feat-login for branch feat\/Login/);
   const ws = r.out.trim();
-  assert.equal(ws, join(home, "workspaces", "demo", "feat-login"));
+  assert.equal(ws, join(home, "workspace", "demo", "feat-login"));
   assert.equal(sh("git", ["branch", "--show-current"], ws), "feat/Login");
   assert.ok(!existsSync(join(ws, ".nook")), "the branch has no hooks of its own");
   assert.ok(existsSync(join(ws, "hook-create.txt")), "the repository's hooks ran");
   assert.equal(parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces["feat-login"].branch, "feat/Login");
   assert.equal(JSON.parse(run(["ls", "--json"]).out).find((item) => !item.main).branch, "feat/Login");
   assert.equal(run(["doctor"]).status, 0);
-  write(join(home, "workspaces", "demo", "half-removed"), { "left.txt": "x\n" });
+  write(join(home, "workspace", "demo", "half-removed"), { "left.txt": "x\n" });
   const checked = run(["doctor"]);
   assert.equal(checked.status, 0, "a leftover folder is a warning, not a problem");
   assert.match(checked.out, /half-removed is not a workspace, only a leftover folder \(nk clean deletes it\)/);
@@ -321,13 +342,13 @@ test("rm removes several workspaces after one check of all of them", (t) => {
   let r = run(["rm", "one", "missing", "-y"]);
   assert.equal(r.status, 1, "an unknown name stops everything");
   assert.match(r.err, /No workspace named "missing"/);
-  assert.ok(existsSync(join(home, "workspaces", "demo", "one")), "nothing removed before every name checked out");
+  assert.ok(existsSync(join(home, "workspace", "demo", "one")), "nothing removed before every name checked out");
 
   r = run(["rm", "one", "two", "-y"]);
   assert.equal(r.status, 0, r.all);
-  assert.ok(!existsSync(join(home, "workspaces", "demo", "one")));
-  assert.ok(!existsSync(join(home, "workspaces", "demo", "two")));
-  assert.ok(existsSync(join(home, "workspaces", "demo", "three")));
+  assert.ok(!existsSync(join(home, "workspace", "demo", "one")));
+  assert.ok(!existsSync(join(home, "workspace", "demo", "two")));
+  assert.ok(existsSync(join(home, "workspace", "demo", "three")));
 });
 
 test("the agent's prompt carries what nk knows and never reads out values", (t) => {
@@ -370,7 +391,7 @@ test("forget a repository whose folder is gone deletes what its workspaces left"
   const r = nk(["forget", "demo", "-y"], { cwd: root, home });
   assert.equal(r.status, 0, r.all);
   assert.match(r.err, /which no longer exists/);
-  assert.ok(!existsSync(join(home, "workspaces", "demo")), "the orphaned workspace folder is deleted");
+  assert.ok(!existsSync(join(home, "workspace", "demo")), "the orphaned workspace folder is deleted");
   assert.equal(parse(readFileSync(join(home, "config.toml"), "utf8")).repos?.demo, undefined);
 });
 

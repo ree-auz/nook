@@ -1,0 +1,6 @@
+source: .github/workflows/test.yml › test-postgres-elasticsearch7
+tools: python, uv
+create: -
+ci service: postgres postgres:latest 5432:5432
+ci service: elasticsearch7 docker.elastic.co/elasticsearch/elasticsearch:7.17.13 9200:9200
+left out: Install libpq-dev: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

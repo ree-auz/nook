@@ -1,0 +1,10 @@
+source: .github/workflows/js-ci.yml › account-ui-e2e
+tools: node, java@25, corepack
+create: corepack enable ; pnpm install --prefer-offline --frozen-lockfile
+env: WORKSPACE=@keycloak/keycloak-account-ui
+left out: Install Corepack tools from cache: runs only when steps.cache.outputs.cache-hit == 'true'
+left out: Package Corepack tools: runs only when steps.cache.outputs.cache-hit != 'true'
+left out: Set up Wireit GitHub Actions caching: uses the action google/wireit@9d7c2e5346f8ef1b1ab6014c4e96c74e234f7ed5
+left out: Start Keycloak server: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Install Playwright browser: uses a CI expression (${{ … }})
+left out: Wait for Keycloak server to start: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

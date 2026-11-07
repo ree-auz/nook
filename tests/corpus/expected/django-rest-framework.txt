@@ -1,0 +1,7 @@
+source: .github/workflows/main.yml › tests
+tools: python
+create: python -m pip install --upgrade pip setuptools virtualenv wheel ; python -m pip install --upgrade tox
+ci service: postgres postgres:16 5432:5432
+env: DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres
+left out: Run tox targets for ${{ matrix.python-version }}: uses a CI expression (${{ … }})
+left out: Run extra tox targets: runs only when ${{ matrix.python-version == '3.13' }}

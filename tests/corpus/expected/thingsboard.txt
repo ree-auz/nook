@@ -1,0 +1,3 @@
+source: .github/workflows/license-header-format.yml › license-format
+tools: java@25
+create: -

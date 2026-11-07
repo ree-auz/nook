@@ -1,0 +1,27 @@
+source: .github/workflows/phpunit.yml › run
+tools: php
+create: -
+ci service: mariadb mariadb:10.6 32768:3306
+ci service: redis redis 6379:6379
+env: DB_CONNECTION=mysql
+env: DB_DATABASE1=ninja
+env: DB_USERNAME1=root
+env: DB_PASSWORD1=ninja
+env: DB_HOST1=127.0.0.1
+env: DB_DATABASE=ninja
+env: DB_USERNAME=root
+env: DB_PASSWORD=ninja
+env: DB_HOST=127.0.0.1
+env: REDIS_PORT=6379
+env: BROADCAST_DRIVER=log
+env: CACHE_DRIVER=redis
+env: QUEUE_CONNECTION=redis
+env: SESSION_DRIVER=redis
+env: NINJA_ENVIRONMENT=hosted
+env: MULTI_DB_ENABLED=false
+env: TRAVIS=true
+env: MAIL_MAILER=log
+env: PDF_GENERATOR=simulator
+env: PDF_GENERATOR_REAL=snappdf
+env: SENTRY_SAMPLE_RATE=0
+left out: job run env: NINJA_LICENSE comes from a CI expression (${{ secrets.ninja_license }})

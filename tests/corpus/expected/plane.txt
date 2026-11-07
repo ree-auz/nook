@@ -1,0 +1,19 @@
+source: .github/workflows/migration-check.yml › migration-check + docker-compose.yml
+tools: uv, python@3.12.12
+create: uv sync --locked --no-default-groups --group production
+env: DJANGO_SETTINGS_MODULE=plane.settings.production
+env: SECRET_KEY=ci-migration-check
+compose start: plane-db, plane-redis, plane-mq
+compose port vars: LISTEN_HTTP_PORT, LISTEN_HTTPS_PORT
+compose not started: web (built from this repository)
+compose not started: admin (built from this repository)
+compose not started: space (built from this repository)
+compose not started: api (built from this repository)
+compose not started: worker (built from this repository)
+compose not started: beat-worker (built from this repository)
+compose not started: migrator (built from this repository)
+compose not started: live (built from this repository)
+compose not started: plane-minio (docker.io/pgsty/silo:RELEASE.2026-09-16T00-00-00Z is not a database or similar service)
+compose not started: proxy (built from this repository)
+left out: env: REDIS_URL points at local port 6379, which is not a service nk starts; on this machine it may be a real database
+left out: env: DATABASE_URL points at local port 5432, which is not a service nk starts; on this machine it may be a real database

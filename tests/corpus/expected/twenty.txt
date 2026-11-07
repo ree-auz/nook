@@ -1,8 +1,17 @@
-source: .github/workflows/ci-e2e-main.yaml › e2e-test
-tools: node@lts/*, node@26
+source: .github/workflows/ci-server-integration-test.yaml › server-integration-test
+tools: node@26
 create: -
 ci service: postgres postgres:18 5432:5432
 ci service: redis redis 6379:6379
-env: NODE_OPTIONS=--max-old-space-size=10240
-left out: Harden runner (egress audit): uses the action step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c
+ci service: clickhouse clickhouse/clickhouse-server:25.8.8 8123:8123 9000:9000
+env: SERVER_BUILD_CACHE_KEY=server-build
+env: NODE_ENV=test
+env: ANALYTICS_ENABLED=true
+env: CLICKHOUSE_URL=http://default:clickhousePassword@localhost:8123/twenty
+env: CLICKHOUSE_PASSWORD=clickhousePassword
+env: SHARD_COUNTER=24
+left out: workflow env: NODE_COMPILE_CACHE comes from a CI expression (${{ github.workspace }}/.cache/node-compile)
+left out: job server-integration-test env: INTEGRATION_TEST_DB_RESET_STATUS_FILE comes from a CI expression (${{ github.workspace }}/.cache/integration-db-reset-status)
 left out: Install Dependencies: runs only when ${{ steps.cache-node-modules.outputs.cache-hit != 'true' && steps.cache-node-modules.outputs.cache-matched-key == '' }}
+left out: Get last successful commit: uses the action nrwl/nx-set-shas@3e9ad7370203c1e93d109be57f3b72eb0eb511b1
+left out: Get last successful commit: uses the action nrwl/nx-set-shas@3e9ad7370203c1e93d109be57f3b72eb0eb511b1

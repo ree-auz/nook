@@ -1,6 +1,25 @@
-source: .github/workflows/ci-python.yml › checks
-tools: uv
+source: .github/workflows/test-e2e-reusable.yml › test
+tools: node@26.12.1, node@26.12.1
 create: -
-left out: Install just: uses the action extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff
-left out: Install Python: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
-left out: Install project dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+env: TEST_IMAGE_N8N=n8nio/n8n:local
+env: N8N_SKIP_LICENSES=true
+left out: workflow env: NODE_OPTIONS comes from a CI expression (${{ contains(inputs.runner, '2vcpu') && '--max-old-space-size=6144' || '' }})
+left out: workflow env: PLAYWRIGHT_WORKERS comes from a CI expression (${{ inputs.workers != '' && inputs.workers || '2' }})
+left out: workflow env: PLAYWRIGHT_BROWSERS_PATH comes from a CI expression (${{ github.workspace }}/packages/quality/testing/playwright/.playwright-browsers)
+left out: workflow env: CURRENTS_CI_BUILD_ID comes from a CI expression (${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }})
+left out: workflow env: CURRENTS_PROJECT_ID comes from a CI expression (${{ inputs.currents-project-id }})
+left out: Checkout: uses the action useblacksmith/checkout@bcec731f1eb1367240608d1c889a75b96db6ec53
+left out: Verify Docker cache key is set: runs only when ${{ inputs.enable-docker-cache == 'true' && inputs.docker-cache-key == '' }}
+left out: Resolve pnpm version: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Setup pnpm: uses the action pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b
+left out: Retry pnpm setup: uses the action pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b
+left out: Verify pnpm Version: uses a CI expression (${{ … }})
+left out: Verify Node.js Version: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Verify PNPM Cache Directory: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Configure SafeChain: uses a CI expression (${{ … }})
+left out: Configure Turborepo Cache: uses the action rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7
+left out: Setup Docker Builder for Docker Cache (Blacksmith): uses the action useblacksmith/setup-docker-builder@a5256a73e30f09e37e3eceb8ca36043d17621d24
+left out: Setup pnpm: uses the action pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b
+left out: Retry pnpm setup: uses the action pnpm/setup@703c52620218391530e48b9e8870d5c0082e1b9b
+left out: Configure Turborepo Cache: uses the action rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7
+left out: Setup Docker Builder for Docker Cache (Blacksmith): uses the action useblacksmith/setup-docker-builder@a5256a73e30f09e37e3eceb8ca36043d17621d24

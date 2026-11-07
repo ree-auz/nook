@@ -40,7 +40,7 @@ arguments to one agent, set `args` under `[agents.<name>]` in `config.toml`.
 ```
 ~/nook/                      (set NOOK_HOME to move it)
   config.toml                repositories, agents, workspaces, allowed hooks
-  workspaces/<repo>/<name>/  one git worktree per workspace
+  workspace/<repo>/<name>/   one git worktree per workspace
   shared/<repo>/             files copied into every new workspace
   backup/<repo>/             what nk rm saved before deleting
   logs/                      output of every hook run
@@ -137,7 +137,9 @@ step by step, as if their steps were in the job. What it takes from that job:
 | In CI | In the hooks |
 |---|---|
 | `actions/setup-node`, `setup-python`, `pnpm/action-setup`, `astral-sh/setup-uv`... | create checks the tool is installed and warns about another version |
-| `run:` steps before the first test, lint or build step | create runs them in the workspace; an install CI skips on a cache hit (`if: steps.cache.outputs.cache-hit != 'true'`) runs, since a new workspace has no cache |
+| `corepack enable` | also a tool check: Node 25 and later no longer include corepack (`npm install -g corepack`) |
+| `run:` steps before the first test, lint or build step | create runs them in the workspace, and stops with a plain message when a step's program is not installed; an install CI skips on a cache hit (`if: steps.cache.outputs.cache-hit != 'true'`) runs, since a new workspace has no cache |
+| a job that `needs:` another and downloads its artifact | the other job's installs come first |
 | `services:` (a database, say) | create starts one container per workspace on the workspace's own ports; open starts it again; remove deletes it with its volumes |
 | `env:` | added to the workspace's `.env`, with `localhost:<CI port>` changed to the workspace's port |
 | `run:` steps with `if: always()` (cleanup) | remove runs them |
@@ -299,7 +301,7 @@ folder and the backups `nk rm` made stay.
 It refuses while the repository has workspaces, so their work is backed up by
 `nk rm` first. If the repository folder is already deleted, git can no longer
 remove its workspaces; then `nk forget` lists what is left in
-`~/nook/workspaces/<short-name>/` and deletes it too, with the containers,
+`~/nook/workspace/<short-name>/` and deletes it too, with the containers,
 volumes, networks and built images started there (Compose projects, and the
 service containers generated hooks start). Their remove hooks cannot run, since
 they were in the deleted folder.

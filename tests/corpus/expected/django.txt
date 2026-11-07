@@ -1,0 +1,5 @@
+source: .github/workflows/playwright.yml › playwright-postgresql
+tools: python@3.15
+create: python -m pip install --upgrade pip wheel
+ci service: postgres postgres:16-alpine 5432:5432
+left out: Install system packages: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

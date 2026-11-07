@@ -1,0 +1,19 @@
+source: .github/workflows/backend.yml › test-postgres
+tools: ruby@4.0
+create: -
+ci service: postgres postgres:16 5432:5432
+ci service: meilisearch getmeili/meilisearch:latest 7700:7700
+env: DB=postgres
+env: DB_HOST=localhost
+env: DB_USERNAME=postgres
+env: DB_PASSWORD=postgres
+env: MEILISEARCH_URL=http://localhost:7700
+env: RAILS_VERSION=~> 8.1.0
+env: CI_ARTIFACTS=/tmp/test-artifacts
+env: BUNDLE_JOBS=4
+env: BUNDLE_RETRY=3
+env: COVERAGE=true
+left out: job test-postgres env: COVERAGE_DIR comes from a CI expression (${{ github.workspace }}/coverage)
+left out: job test-postgres env: CI_SHARD comes from a CI expression (${{ matrix.shard }})
+left out: Install libvips: uses the action awalsh128/cache-apt-pkgs-action@v1
+left out: Install dependencies: uses a CI expression (${{ … }})

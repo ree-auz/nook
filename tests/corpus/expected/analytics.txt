@@ -8,7 +8,7 @@ env: PERSISTENT_CACHE_DIR=cached
 env: npm_config_audit=false
 env: npm_config_fund=false
 env: MIX_ENV=e2e_test
-left out: env: BASE_URL points at local port 8111, which is not a service nk starts; on this machine it may be a real database
+left out: env: BASE_URL points at local port 8111, which is not a service nk starts; likely the app's own address, so the shared .env keeps its value
 left out: marocchino/tool-versions-action@4219f2e6bfdb4cce482b78f71ad9663e64f4d247: uses the action marocchino/tool-versions-action@4219f2e6bfdb4cce482b78f71ad9663e64f4d247
 left out: Check for changes in tracker/**: uses the action dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
 left out: npm install --prefix ./tracker: runs only when steps.changes.outputs.tracker == 'true' || env.HAS_BUILT_TRACKER == 'false'

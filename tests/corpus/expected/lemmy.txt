@@ -1,0 +1,1 @@
+none: no GitHub Actions workflow (.github/workflows/*.yml) and no Compose file

@@ -1,0 +1,4 @@
+source: .github/workflows/ci.yml › test
+tools: go
+create: -
+left out: Setup database server for testing: uses a CI expression (${{ … }})

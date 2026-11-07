@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import spawn from "cross-spawn";
 import { which } from "./agents.mjs";
 import { NookError } from "./errors.mjs";
-import { line, useColor } from "./ui.mjs";
+import { line, useColor, indenter } from "./ui.mjs";
 
 export const HOOK_EVENTS = ["create", "open", "remove"];
 
@@ -115,12 +115,13 @@ export function runHook(hook, { cwd, env, logsDir, label, output = process.stder
   output.write(`${line("step", `Running ${hook.event} hook .nook/${hook.name}`, useColor(output))}\n`);
   return new Promise((done) => {
     const child = spawn(command, args, { cwd, env, stdio: ["inherit", "pipe", "pipe"], windowsHide: true });
-    const forward = (chunk) => {
+    // Indented under the "Running … hook" line; the log keeps the output as it was.
+    const forward = (indent) => (chunk) => {
       stream.write(chunk);
-      output.write(chunk);
+      output.write(indent(chunk));
     };
-    child.stdout.on("data", forward);
-    child.stderr.on("data", forward);
+    child.stdout.on("data", forward(indenter()));
+    child.stderr.on("data", forward(indenter()));
     let finished = false;
     const finish = (status, error) => {
       if (finished) return;

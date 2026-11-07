@@ -1,0 +1,10 @@
+source: .github/workflows/e2e-tests.yml › e2e_tests
+tools: node@v24.x, corepack
+create: corepack enable npm ; npx playwright install --with-deps ; npx playwright install --with-deps
+left out: job e2e_tests env: TURBO_TOKEN comes from a CI expression (${{ secrets.TURBO_TOKEN }})
+left out: job e2e_tests env: TURBO_TEAM comes from a CI expression (${{ vars.TURBO_TEAM }})
+left out: Copy env: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Install dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Start Services: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Create the database: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Seed the database: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

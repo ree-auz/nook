@@ -1,0 +1,8 @@
+source: .github/workflows/github-actions.yml › pipeline
+tools: node@20.15.0, java@17.x
+create: npm install
+env: NODE_VERSION=20.15.0
+env: SPRING_OUTPUT_ANSI_ENABLED=DETECT
+env: SPRING_JPA_SHOW_SQL=false
+env: JHI_DISABLE_WEBPACK_LOGS=true
+env: NG_CLI_ANALYTICS=false

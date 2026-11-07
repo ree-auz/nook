@@ -1,0 +1,5 @@
+source: .github/workflows/buildvue.yml › build
+tools: php@8.1, node@24
+create: composer install --prefer-dist ; npm install --ignore-scripts
+left out: Quick Matomo Install: runs only when steps.vars.outputs.branch != '' && steps.vuecheck.outputs.vue_modified == '1'
+left out: Prepare git config: uses a CI expression (${{ … }})

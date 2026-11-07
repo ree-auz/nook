@@ -1,0 +1,5 @@
+source: .github/workflows/e2e-tests-check.yml › check
+tools: node, node
+create: -
+left out: ci/npm-cache-verify: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: ci/get-node-modules: runs only when steps.cache-hit.outputs.cache-hit != 'true'

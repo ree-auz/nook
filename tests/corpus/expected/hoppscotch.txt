@@ -1,0 +1,16 @@
+source: .github/workflows/tests.yml › test + docker-compose.yml
+tools: node, pnpm@10
+create: pnpm install
+compose start: -
+compose not started: hoppscotch-backend (built from this repository)
+compose not started: hoppscotch-app (built from this repository)
+compose not started: hoppscotch-sh-admin (built from this repository)
+compose not started: hoppscotch-aio (built from this repository)
+compose not started: hoppscotch-aio-no-db (built from this repository)
+compose not started: hoppscotch-db (only with the profile default, database, just-backend, backend, app, admin, deprecated)
+compose not started: hoppscotch-migrate (built from this repository)
+compose not started: hoppscotch-old-backend (built from this repository)
+compose not started: hoppscotch-old-app (built from this repository)
+compose not started: hoppscotch-old-sh-admin (built from this repository)
+left out: Setup environment: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Install dependencies: DATABASE_URL points at local port 5432, which is not a service nk starts; on this machine it may be a real database

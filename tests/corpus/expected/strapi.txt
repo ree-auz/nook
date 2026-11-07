@@ -1,0 +1,5 @@
+source: .github/workflows/tests.yml › typescript
+tools: node
+create: yarn install --immutable --inline-builds
+left out: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1: uses the action nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1
+left out: ⚙️ Enable Corepack: runs only when inputs.enable-corepack == 'true'

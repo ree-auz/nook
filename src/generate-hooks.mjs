@@ -105,9 +105,27 @@ function withPorts(value, ports) {
   return String(value).replace(/\b(localhost|127\.0\.0\.1):(\d+)\b/g, (all, host, port) => (ports[port] ? host + ":" + ports[port] : all));
 }
 
+// Shell built-ins (sh and cmd.exe) are not programs on PATH.
+const BUILTINS = new Set(["cd", "echo", "export", "set", "unset", "source", ".", "eval", "exec", "printf", "test", "[", "true", "false", "if", "for", "while", "case", "call", "rem", "copy", "del", "md", "mkdir", "type", "exit"]);
+const HINTS = { corepack: "Node 25 and later no longer include it; install it with npm install -g corepack" };
+
+/** The program a one-line command starts, when this machine does not have it. */
+function missingProgram(command) {
+  const word = command.trim().split(/\s+/)[0];
+  if (!word || /[\/\\=$%"'&|<>()]/.test(word) || BUILTINS.has(word.toLowerCase())) return null;
+  const found = process.platform === "win32" ? spawnSync("where", [word], { stdio: "ignore" }) : spawnSync("sh", ["-c", "command -v " + word], { stdio: "ignore" });
+  return found.status === 0 ? null : word;
+}
+
 function sh(command, { cwd = ws, env = {}, check = true } = {}) {
   // Multi-line CI scripts are written for bash; on Windows, Git for Windows provides it.
   const shell = process.platform === "win32" && command.includes("\n") ? "bash" : true;
+  // A missing program fails with the shell's message, which on Windows is in the system code page; say it plainly instead.
+  const missing = check && !command.includes("\n") && missingProgram(command);
+  if (missing) {
+    console.error(missing + " is not installed or not on PATH" + (HINTS[missing] ? "; " + HINTS[missing] : "") + ". Needed by: " + command);
+    process.exit(127);
+  }
   // Any docker compose a step runs gets this workspace's own project, never the main checkout's.
   const result = spawnSync(command, { cwd, env: { ...process.env, COMPOSE_PROJECT_NAME: prefix, ...env }, stdio: "inherit", shell });
   if (check && result.status !== 0) {
@@ -180,7 +198,7 @@ for (const tool of plan.tools) {
   // On Windows a shell finds pnpm.cmd and the like; it takes one command line, not arguments.
   const result = process.platform === "win32" ? spawnSync(tool.name + " --version", { encoding: "utf8", shell: true }) : spawnSync(tool.name, ["--version"], { encoding: "utf8" });
   if (result.status !== 0) {
-    console.error(tool.name + " is not installed" + (tool.version ? " (CI uses " + tool.version + ")" : ""));
+    console.error(tool.name + " is not installed" + (tool.version ? " (CI uses " + tool.version + ")" : "") + (HINTS[tool.name] ? "; " + HINTS[tool.name] : ""));
     process.exit(1);
   }
   const found = (result.stdout || result.stderr).trim().split("\\n")[0];

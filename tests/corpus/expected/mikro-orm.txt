@@ -1,0 +1,13 @@
+source: .github/workflows/tests.yml › test-deno + docker-compose.yml
+tools: node@26, deno@v2.x, corepack
+create: corepack enable
+compose start: mongo, mysql9, mariadb, postgre, postgis, cockroachdb, mssql
+compose moves: mongo 27017
+compose moves: mysql9 3308
+compose moves: mariadb 3309
+compose moves: postgre 5432
+compose moves: postgis 5433
+compose moves: cockroachdb 26257 8080
+compose moves: mssql 1433
+compose not started: oracledb (container-registry.oracle.com/database/free:latest-lite is not a database or similar service)
+template addresses: mongo:27017 -> 127.0.0.1:27017, mysql9:3306 -> 127.0.0.1:3308, mariadb:3306 -> 127.0.0.1:3309, postgre:5432 -> 127.0.0.1:5432, postgis:5432 -> 127.0.0.1:5433, cockroachdb:26257 -> 127.0.0.1:26257, cockroachdb:8080 -> 127.0.0.1:8080, mssql:1433 -> 127.0.0.1:1433

@@ -1,0 +1,6 @@
+source: .github/workflows/api-v3-contract-tests.yml › contract-tests
+tools: pnpm, node, python@3.13
+create: -
+ci service: postgres pgvector/pgvector 5432:5432
+ci service: valkey valkey/valkey 6379:6379
+left out: Harden the runner (Audit all outbound calls): uses the action step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25

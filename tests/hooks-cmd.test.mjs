@@ -69,7 +69,7 @@ test("check passes when remove undoes create, and records the hooks", (t) => {
   assert.deepEqual(Object.keys(config.repos.demo.checked).sort(), ["create.mjs", "remove.mjs"]);
   assert.doesNotMatch(run(["doctor"]).out, /not tested since changed/);
   assert.match(run(["hooks"]).out, /remove .nook\/remove\.mjs {2}allowed, tested/);
-  assert.ok(!existsSync(join(home, "workspaces", "demo", "nook-hooks-test")));
+  assert.ok(!existsSync(join(home, "workspace", "demo", "nook-hooks-test")));
 });
 
 test("check fails and names what remove left behind", (t) => {
@@ -92,7 +92,7 @@ test("check fails when open cannot run twice", (t) => {
 test("check runs the hooks of the folder it runs in, such as an agent's branch", (t) => {
   const { root, home, run } = setup(t, {});
   assert.equal(run(["-b", "setup-hooks"]).status, 0);
-  const ws = join(home, "workspaces", "demo", "setup-hooks");
+  const ws = join(home, "workspace", "demo", "setup-hooks");
   write(ws, { ".nook/create.mjs": "console.log('branch hook ran')\n" });
   sh("git", ["add", "-A"], ws);
   sh("git", ["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "hooks"], ws);
@@ -148,7 +148,7 @@ test("hooks write turns CI into hooks that pass hooks test; a CI change then sto
   write(join(home, "shared", "demo"), { ".env": "DATABASE_URL=postgres://user:pass@localhost:5432/app\nKEEP=1\n" });
   r = run(["-b", "feat"]);
   assert.equal(r.status, 0, r.all);
-  const ws = join(home, "workspaces", "demo", "feat");
+  const ws = join(home, "workspace", "demo", "feat");
   assert.ok(existsSync(join(ws, "package-lock.json")), "create ran npm install in the workspace");
   assert.match(readFileSync(join(ws, ".env"), "utf8"), /^KEEP=1$/m);
   const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;
@@ -184,7 +184,7 @@ test("hooks write <agent> writes the hooks and starts the agent in the folder it
   assert.ok(seen.hooks, "the agent starts after the hooks are written");
   assert.match(seen.prompt, /nk already wrote \.nook\/create\.mjs/);
   assert.match(seen.prompt, /API_TOKEN comes from a CI expression/);
-  assert.ok(!existsSync(join(home, "workspaces", "demo", "nook-hooks")), "no workspace is created");
+  assert.ok(!existsSync(join(home, "workspace", "demo", "nook-hooks")), "no workspace is created");
 });
 
 const composeFile = `services:
@@ -220,7 +220,7 @@ test("hooks write starts the repository's Compose services in each workspace's o
   assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
   r = run(["-b", "feat"]);
   assert.equal(r.status, 0, r.all);
-  const ws = join(home, "workspaces", "demo", "feat");
+  const ws = join(home, "workspace", "demo", "feat");
   const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;
   const env = readFileSync(join(ws, ".env"), "utf8");
   assert.match(env, /^COMPOSE_PROJECT_NAME=nook-demo-feat$/m, "never the main checkout's project");
@@ -265,7 +265,7 @@ test("env files the repository commits get the workspace's ports without showing
 
   assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
   assert.equal(run(["-b", "feat"]).status, 0);
-  const ws = join(home, "workspaces", "demo", "feat");
+  const ws = join(home, "workspace", "demo", "feat");
   assert.match(readFileSync(join(ws, ".env"), "utf8"), /^COMPOSE_PROJECT_NAME=nook-demo-feat$/m);
   const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;
   assert.equal(readFileSync(join(ws, ".env.development"), "utf8"), `# dev\r\nCACHE_URL=redis://127.0.0.1:${port + 1}\r\nLOG_LEVEL=debug\r\n`, "only the address changes, line endings too stay");

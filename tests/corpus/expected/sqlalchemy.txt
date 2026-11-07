@@ -1,0 +1,5 @@
+source: .github/workflows/run-on-pr.yaml › run-test-amd64
+tools: python
+create: -
+env: TOX_WORKERS=-n4
+left out: Install dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

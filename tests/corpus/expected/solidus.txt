@@ -1,0 +1,7 @@
+source: .github/workflows/install_dummy_app.yml › install_dummy_app + docker-compose.yml
+tools: ruby
+create: -
+env: RUBY_VERSION=3.2
+compose start: mysql, postgres
+compose port vars: SANDBOX_PORT
+compose not started: app (built from this repository)

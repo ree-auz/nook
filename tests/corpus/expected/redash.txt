@@ -1,0 +1,16 @@
+source: .github/workflows/ci.yml › frontend-e2e-tests + compose.yaml
+tools: pnpm, node
+create: pnpm install --frozen-lockfile ; pnpm exec playwright install --with-deps chromium
+env: NODE_VERSION=24
+env: PNPM_VERSION=10.30.3
+env: COMPOSE_FILE=.ci/compose.e2e.yaml
+env: COMPOSE_PROJECT_NAME=e2e
+env: E2E_INSTALL_GROUPS=main,all_ds
+compose start: redis, postgres, email
+compose moves: postgres 15432
+compose moves: email 1080 1025
+compose not started: server (no image)
+compose not started: scheduler (no image)
+compose not started: worker (no image)
+template addresses: postgres:5432 -> 127.0.0.1:15432, email:1080 -> 127.0.0.1:1080, email:1025 -> 127.0.0.1:1025
+left out: Exit if PR is not mergeable: runs only when github.event.pull_request.mergeable == 'false'

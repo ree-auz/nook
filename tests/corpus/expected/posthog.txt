@@ -1,0 +1,18 @@
+source: .github/workflows/ci-rust-flags-integration.yml › rust-flags-integration
+tools: python@3.14.7, uv@0.13.4, cargo, cargo
+create: -
+ci service: postgres postgres:16-alpine 5432:5432
+ci service: redis redis:7-alpine 6379:6379
+env: SCHEMA_CACHE_EPOCH=v2
+env: SECRET_KEY=6b01eee4f945ca25045b5aab440b953461b81b72
+env: DATABASE_URL=postgres://posthog:posthog@localhost:5432/test_posthog
+env: REDIS_URL=redis://localhost:6379/
+env: TEST=1
+env: UV_HTTP_TIMEOUT=300
+env: INTERNAL_REQUEST_TOKEN=rust-integration-internal-token
+left out: Fetch history without file contents: runs only when github.event_name == 'pull_request'
+left out: Install system dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Cache Rust dependencies: uses the action Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
+left out: Install Python dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Create persons database: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Stop services: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

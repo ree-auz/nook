@@ -1,0 +1,24 @@
+source: .github/workflows/ci.yml › build + docker-compose.yml
+tools: ruby, node
+create: yarn install --immutable
+env: COVERAGE=false
+env: RAILS_ENV=test
+env: NODE_ENV=test
+env: DATABASE_NAME_TEST=Forem_test
+env: KNAPSACK_PRO_FIXED_QUEUE_SPLIT=true
+env: POSTGRES_PASSWORD=postgres
+env: KNAPSACK_PRO_LOG_LEVEL=info
+env: YARN_ENABLE_HARDENED_MODE=0
+env: RUBYOPT=--yjit
+env: E2E=true
+compose start: postgres, redis
+compose not started: devcontainer (no image)
+compose not started: rails (no image)
+compose not started: web (no image)
+compose not started: sidekiq (no image)
+compose not started: esbuild (no image)
+compose not started: chrome (browserless/chrome:latest is not a database or similar service)
+compose not started: rspec_system (no image)
+left out: env: DATABASE_URL_TEST points at local port 5432, which is not a service nk starts; on this machine it may be a real database
+left out: Populate vendor/cache on Bundler cache miss: runs only when steps.bundlercache-lookup.outputs.cache-hit != 'true'
+left out: rm -rf public/assets: runs only when steps.assetscache-lookup.outputs.cache-hit != 'true'
