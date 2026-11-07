@@ -244,8 +244,14 @@ test("a generated create stops when the Compose file needs a value .env does not
   assert.deepEqual(state().containers ?? [], []);
 });
 
-test("a .env the repository commits gets the workspace's ports without showing up in git", { skip: !services && "generated hooks call docker without a shell" }, (t) => {
-  const { home, run } = setup(t, { "docker-compose.yml": composeFile, ".env": "POSTGRES_PASSWORD=changethis\nCACHE_URL=redis://localhost:6379/0\n" });
+test("env files the repository commits get the workspace's ports without showing up in git", { skip: !services && "generated hooks call docker without a shell" }, (t) => {
+  const { home, run } = setup(t, {
+    "docker-compose.yml": composeFile,
+    ".env": "POSTGRES_PASSWORD=changethis\nCACHE_URL=redis://localhost:6379/0\n",
+    // Loaded after .env in development and tests, so it must point at the workspace too.
+    ".env.development": "# dev\r\nCACHE_URL=redis://127.0.0.1:6379\r\nLOG_LEVEL=debug\r\n",
+    ".env.sample": "CACHE_URL=redis://localhost:6379\n",
+  });
   assert.equal(run(["hooks", "write"]).status, 0);
   let r = run(["hooks", "test"]);
   assert.equal(r.status, 0, r.all);
@@ -255,6 +261,9 @@ test("a .env the repository commits gets the workspace's ports without showing u
   assert.equal(run(["-b", "feat"]).status, 0);
   const ws = join(home, "workspaces", "demo", "feat");
   assert.match(readFileSync(join(ws, ".env"), "utf8"), /^COMPOSE_PROJECT_NAME=nook-demo-feat$/m);
+  const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;
+  assert.equal(readFileSync(join(ws, ".env.development"), "utf8"), `# dev\r\nCACHE_URL=redis://127.0.0.1:${port + 1}\r\nLOG_LEVEL=debug\r\n`, "only the address changes, line endings too stay");
+  assert.equal(readFileSync(join(ws, ".env.sample"), "utf8"), "CACHE_URL=redis://localhost:6379\n", "a template stays as it is");
   assert.equal(sh("git", ["status", "--porcelain"], ws), "", "the workspace's ports never reach a commit");
   r = run(["rm", "feat", "-y"]);
   assert.equal(r.status, 0, r.all);

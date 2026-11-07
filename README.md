@@ -160,9 +160,12 @@ workspace's project, replacing whatever the copied file said, so a
 Values in the copied `.env` that point at a moved port are pointed at the
 workspace's port: `DATABASE_URL=postgres://...@localhost:5432/app` becomes
 `localhost:<workspace port>`, and so does `DB_PORT=5432`.
-When the repository commits its `.env` (a template), the workspace's copy
-comes from git and is changed in place; nk marks it `skip-worktree`, so these
-changes never show in `git status` or reach a commit.
+Other env files at the root that many projects load after `.env`, such as
+`.env.development` or `.env.test`, are pointed at the workspace's ports the
+same way; templates (`.env.example`, `.env.sample`) are left alone. When the
+repository commits one of these files, the workspace's copy comes from git and
+is changed in place; nk marks it `skip-worktree`, so these changes never show
+in `git status` or reach a commit.
 
 CI runs on a throwaway machine; a developer machine also has the real
 database and other workspaces. So nk copies less than CI does, never more:
