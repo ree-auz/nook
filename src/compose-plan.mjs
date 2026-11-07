@@ -117,8 +117,11 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
   const notStarted = [];
   const required = new Set();
   const mounts = {};
+  const named = [];
   for (const [name, service] of Object.entries(services)) {
     if (!service || typeof service !== "object") continue;
+    // A fixed container_name (plane-redis) would clash between workspaces, even for a service you start yourself: each gets its own.
+    if (service.container_name) named.push(name);
     const fixed = [];
     for (const entry of service.ports ?? []) {
       const { host, target } = portEntry(entry);
@@ -150,7 +153,7 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
     notStarted.push({ name, why: "no port left of the workspace's ten" });
     untranslated.push({ step: `${where} › ${name}`, why: "not started: the workspace's ten ports are taken by the other services" });
   }
-  return { file: where, files: [file, override].filter(Boolean), start, ports, remap, required: [...required], mounts, notStarted, untranslated };
+  return { file: where, files: [file, override].filter(Boolean), start, ports, remap, required: [...required], mounts, named, notStarted, untranslated };
 }
 
 /**

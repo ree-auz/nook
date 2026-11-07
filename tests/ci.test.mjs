@@ -94,10 +94,11 @@ test("reads which Compose services a workspace starts and which ports it chooses
   queue: { image: rabbitmq, ports: ["5672"] }
   web: { build: ., ports: [{ target: 80, published: "\${WEB_PORT:-8080}" }] }
   admin: { image: adminer, profiles: [tools], ports: ["127.0.0.1:\${ADMIN_PORT}:8080"] }
-  mail: { image: mailpit, ports: ["1025:1025"] }
+  mail: { image: mailpit, container_name: app-mail, ports: ["1025:1025"] }
 `,
   });
   const plan = planCompose(dir);
+  assert.deepEqual(plan.named, ["mail"], "a fixed container name, which each workspace replaces with its own");
   assert.equal(plan.file, "compose.yaml");
   assert.deepEqual(plan.start, ["db", "queue", "mail"]);
   assert.deepEqual(plan.ports, { WEB_PORT: "8080", ADMIN_PORT: "" });

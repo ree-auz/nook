@@ -218,6 +218,7 @@ const composeFile = `services:
       POSTGRES_PASSWORD: \${POSTGRES_PASSWORD:?set it in .env}
   cache:
     image: redis:7
+    container_name: demo-cache
     ports: ["6379:6379"]
   api:
     build: .
@@ -256,7 +257,8 @@ test("hooks write starts the repository's Compose services in each workspace's o
   assert.deepEqual(state().containers.map((c) => c.name), ["nook-demo-feat-db-1", "nook-demo-feat-cache-1"]);
   // cache's fixed 6379 moves to this workspace's port, in a file outside the working tree.
   const moved = join(repo, ".git", "worktrees", "feat", "nook-compose.yaml");
-  assert.match(readFileSync(moved, "utf8"), new RegExp(`"cache":\\n    ports: !override\\n      - "127\\.0\\.0\\.1:${port + 1}:6379"`));
+  // Its fixed container name gets this workspace's prefix, so a second workspace can start one too (plane).
+  assert.match(readFileSync(moved, "utf8"), new RegExp(`"cache":\\n    container_name: "nook-demo-feat-cache"\\n    ports: !override\\n      - "127\\.0\\.0\\.1:${port + 1}:6379"`));
   assert.ok(env.includes(`COMPOSE_FILE=${join(ws, "docker-compose.yml")}${delimiter}${moved}`), "docker compose run by hand there uses it too");
   assert.equal(sh("git", ["status", "--porcelain"], ws), "", "nothing new in the working tree");
 

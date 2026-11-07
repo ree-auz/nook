@@ -54,17 +54,22 @@ function movedPorts(ports) {
 
 /**
  * The Compose files for this workspace: the repository's, plus one that moves
- * fixed host ports (5432:5432) to this workspace's ports. That one lives in
+ * fixed host ports (5432:5432) to this workspace's ports and gives fixed
+ * container names (container_name: plane-redis) a workspace prefix. That one lives in
  * the worktree's git folder, so it is not a change in the workspace.
  */
 function composeFiles(ports) {
   const files = plan.compose.files.map((file) => join(ws, file));
-  const remap = Object.entries(plan.compose.remap);
-  if (!remap.length) return files;
-  const lines = ["# Written by nk: this workspace's own host ports.", "services:"];
-  for (const [service, entries] of remap) {
-    lines.push("  " + JSON.stringify(service) + ":", "    ports: !override");
-    for (const entry of entries) {
+  const remap = plan.compose.remap;
+  const named = plan.compose.named ?? [];
+  if (!Object.keys(remap).length && !named.length) return files;
+  const lines = ["# Written by nk: this workspace's own host ports and container names.", "services:"];
+  for (const service of [...new Set([...Object.keys(remap), ...named])]) {
+    lines.push("  " + JSON.stringify(service) + ":");
+    if (named.includes(service)) lines.push("    container_name: " + JSON.stringify(prefix + "-" + service));
+    if (!remap[service]) continue;
+    lines.push("    ports: !override");
+    for (const entry of remap[service]) {
       const port = ports[service + ":" + entry.host];
       if (!port) {
         console.error("No free port left for " + service + " " + entry.host + ": a workspace has ten");
@@ -198,7 +203,7 @@ function header(plan, event, what) {
 }
 
 const planText = (plan) =>
-  `const plan = ${JSON.stringify({ tools: plan.tools, env: plan.env, services: plan.services, compose: plan.compose && { file: plan.compose.file, files: plan.compose.files, start: plan.compose.start, ports: plan.compose.ports, remap: plan.compose.remap, required: plan.compose.required, mounts: plan.compose.mounts ?? {} }, create: plan.create, remove: plan.remove }, null, 2)};\n`;
+  `const plan = ${JSON.stringify({ tools: plan.tools, env: plan.env, services: plan.services, compose: plan.compose && { file: plan.compose.file, files: plan.compose.files, start: plan.compose.start, ports: plan.compose.ports, remap: plan.compose.remap, named: plan.compose.named ?? [], required: plan.compose.required, mounts: plan.compose.mounts ?? {} }, create: plan.create, remove: plan.remove }, null, 2)};\n`;
 
 export function createHook(plan) {
   return `${header(plan, "create", "create: checks the tools CI installs, sets this workspace's ports in .env, starts its services, then runs the setup steps.")}${RUNTIME}
@@ -232,7 +237,7 @@ const own = plan.compose
   ? {
       COMPOSE_PROJECT_NAME: prefix,
       // So a docker compose you run in the workspace uses its ports too.
-      ...(Object.keys(plan.compose.remap).length && { COMPOSE_FILE: composeFiles(ports).join(delimiter) }),
+      ...((Object.keys(plan.compose.remap).length || plan.compose.named?.length) && { COMPOSE_FILE: composeFiles(ports).join(delimiter) }),
       ...Object.fromEntries(Object.keys(plan.compose.ports).map((key) => [key, ports[key]])),
     }
   : {};
