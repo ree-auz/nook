@@ -1,6 +1,6 @@
 import { existsSync, renameSync } from "node:fs";
 import { basename, join, relative } from "node:path";
-import { loadConfig, saveConfig } from "./config.mjs";
+import { applyChanges, loadConfig, saveConfig, syncInPlace, withLock, withLockSync } from "./config.mjs";
 import { NookError } from "./errors.mjs";
 import { homePaths, isInside, nookHome, samePath } from "./home.mjs";
 import { normalizeName } from "./names.mjs";
@@ -12,6 +12,15 @@ export function createContext({ env = process.env, cwd = process.cwd(), out = pr
   const paths = homePaths(nookHome(env));
   const config = loadConfig(paths.config);
   const moveFailed = moveOldWorkspaceFolder(paths, config);
+  // What this run changed is config minus base; on save it goes onto what is on disk now,
+  // so changes another nk made meanwhile are kept.
+  let base = structuredClone(config);
+  const merge = () => {
+    const disk = applyChanges(base, config, loadConfig(paths.config));
+    saveConfig(paths.config, disk);
+    syncInPlace(config, disk);
+    base = structuredClone(config);
+  };
   const color = useColor(err, env);
   const say = (kind) => (text) => err.write(`${line(kind, text, color)}\n`);
   if (moveFailed)
@@ -24,7 +33,19 @@ export function createContext({ env = process.env, cwd = process.cwd(), out = pr
     out,
     err,
     save() {
-      saveConfig(paths.config, config);
+      withLockSync(paths.config, merge);
+    },
+    /**
+     * Brings config up to date with disk, runs fn on it and saves, all under the lock: for choices
+     * that must not clash with another nk running at the same time, such as a workspace's ports.
+     */
+    async update(fn) {
+      return withLock(paths.config, async () => {
+        merge();
+        const result = await fn(config);
+        merge();
+        return result;
+      });
     },
     print(text = "") {
       out.write(`${text}\n`);
