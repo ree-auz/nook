@@ -150,9 +150,12 @@ test("hooks write turns CI into hooks that pass hooks test; a CI change then sto
   assert.equal(r.status, 0, r.all);
   const ws = join(home, "workspace", "demo", "feat");
   assert.ok(existsSync(join(ws, "package-lock.json")), "create ran npm install in the workspace");
-  assert.match(readFileSync(join(ws, ".env"), "utf8"), /^KEEP=1$/m);
-  // The repository does not ignore .env; nk keeps it out of git status anyway.
-  assert.equal(sh("git", ["status", "--porcelain", "--untracked-files=all"], ws).trim(), "");
+  // The repository does not ignore .env. With services, create writes one and adds it to git's local
+  // exclude list, so it stays out of git status (and later workspaces get the shared copy).
+  if (services) {
+    assert.match(readFileSync(join(ws, ".env"), "utf8"), /^KEEP=1$/m);
+    assert.equal(sh("git", ["status", "--porcelain", "--untracked-files=all"], ws).trim(), "");
+  }
   const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;
   if (services) {
     assert.match(r.all, /Set DATABASE_URL in \.env from CI/);
