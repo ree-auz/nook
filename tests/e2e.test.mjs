@@ -118,6 +118,7 @@ test("a changed hook needs a new OK; a failing create hook keeps the workspace",
   assert.equal(r.status, 1);
   assert.match(r.err, /create: \.nook\/create\.mjs \(changed\)/);
   assert.match(r.err, /need your OK/);
+  assert.ok(!existsSync(join(home, "workspace", "demo", "changed")), "nothing is made before the hooks are allowed");
 
   r = run(["init", "--yes"]);
   assert.equal(r.status, 0);

@@ -90,7 +90,7 @@ export async function ensureTrusted({ repoName, repoConfig, hooks, prompter, sav
   try {
     ok = await prompter.confirm("Allow and remember?", false);
   } catch {
-    throw new NookError(`Hooks of ${repoName} need your OK. Run nk in a terminal once, or run nk init again`);
+    throw new NookError(`Hooks of ${repoName} need your OK. Run nk in a terminal once, or nk init --allow-hooks after reading them`);
   }
   if (!ok) throw new NookError("Hooks were not allowed; nothing ran");
   repoConfig.hooks ??= {};

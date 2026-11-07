@@ -105,6 +105,8 @@ async function pickName(ctx, input, prompter) {
 export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent, prompt, extra = [], prompter = createPrompter(), untested = false }) {
   const { name: repoName, repo } = resolveRepo(ctx, repoFlag);
   checkSetup(ctx, repo, { stop: true, untested });
+  // Asked before anything is made, so hooks that are not allowed leave no half-made workspace.
+  await approveHooks(ctx, { repoName, repo }, prompter);
   if (remoteUrl(repo.path)) {
     const fetched = gitTry(["fetch", "--quiet", "origin", repo.default_branch], { cwd: repo.path });
     if (!fetched.ok) ctx.warn(`Could not fetch origin/${repo.default_branch}; using what is local`);
