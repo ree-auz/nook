@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 /**
  * Runs nk for real on one repository of tests/corpus/repos.json, the way a
- * person would: init, hooks write, hooks test, nk -b, then checks the
- * workspace and removes it. Meant for GitHub Actions (.github/workflows/real-repos.yml),
+ * person would: init, hooks write, hooks test, then two workspaces side by
+ * side while the main checkout's usual service ports are taken, checks that
+ * each has its own services, ports and .env, and removes them. Meant for GitHub Actions (.github/workflows/real-repos.yml),
  * since it installs the repository's dependencies and starts its services.
  *
  *   node scripts/real-run.mjs <name> [--repo <owner/name> --commit <sha>] [--dir <checkout>] [--out results/<name>.json]
@@ -12,8 +13,8 @@
  *
  * Prints each step and writes a JSON result: { name, ok, failedAt, steps: [...] }.
  */
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,8 +70,81 @@ function reachable(port) {
   return spawnSync(process.execPath, ["-e", script]).status === 0;
 }
 
+/**
+ * The ports a main checkout's services usually take. They are held for the whole run, as if the main
+ * checkout's database and friends were running: a workspace that reaches for them fails.
+ */
+const MAIN_PORTS = [1025, 3306, 5432, 5672, 6379, 7700, 8025, 9200, 11211, 27017];
+function holdMainPorts() {
+  const script = `const net=require("net");for(const p of ${JSON.stringify(MAIN_PORTS)}){const s=net.createServer(c=>c.destroy());s.on("error",()=>{});s.listen(p,"0.0.0.0")}setInterval(()=>{},1e6)`;
+  const child = spawn(process.execPath, ["-e", script], { stdio: "ignore" });
+  spawnSync(process.execPath, ["-e", "setTimeout(()=>{},500)"]);
+  return child;
+}
+
+/** This workspace's containers and the host ports they publish. */
+function containersOf(ws) {
+  const prefix = `nook-${basename(repoDir)}-${ws}`.toLowerCase().replace(/[^a-z0-9_.-]+/g, "-");
+  const ps = run("docker", ["ps", "-a", "--format", "{{.Names}}\t{{.State}}\t{{.Ports}}"]);
+  if (!ps.ok) return null;
+  return ps.stdout
+    .trim()
+    .split("\n")
+    .filter((row) => row.startsWith(prefix + "-") || row.startsWith(prefix + "_") || row === prefix || row.startsWith(prefix + "\t"))
+    .map((row) => {
+      const [name, state, ports = ""] = row.split("\t");
+      return { name, state, ports: [...new Set([...ports.matchAll(/(?:127\.0\.0\.1|0\.0\.0\.0|\[::\]):(\d+)->/g)].map((m) => Number(m[1])))] };
+    });
+}
+
+/** Every container of the workspace runs and answers on each port it publishes. */
+function servicesAnswer(ws) {
+  const mine = containersOf(ws);
+  if (!mine) return { ok: true, output: "docker is not available; nothing to check" };
+  let ok = true;
+  const lines = mine.map(({ name, state, ports }) => {
+    const answering = ports.map((port) => ({ port, up: reachable(port) }));
+    const good = state === "running" && answering.every((p) => p.up);
+    ok &&= good;
+    return `${good ? "ok  " : "BAD "} ${name} ${state} ${answering.map((p) => `${p.port}${p.up ? "" : " (no answer)"}`).join(", ")}`;
+  });
+  return { ok, output: lines.join("\n") || "no containers (the repository needs no services)" };
+}
+
+/** .env and .env.* in the workspace: no address or *_PORT may name a port the main checkout's services hold. */
+function envOwnPorts(dir) {
+  const bad = [];
+  for (const file of readdirSync(dir).filter((name) => /^\.env(\..+)?$/.test(name) && !/example|sample|template|dist/i.test(name))) {
+    for (const line of readFileSync(join(dir, file), "utf8").split(/\r?\n/)) {
+      const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*["']?(.*?)["']?\s*$/.exec(line);
+      if (!match) continue;
+      const [, key, value] = match;
+      const ports = [...value.matchAll(/\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d+)\b/g)].map((m) => Number(m[1]));
+      if (/PORT$/i.test(key) && /^\d+$/.test(value)) ports.push(Number(value));
+      for (const port of ports) if (MAIN_PORTS.includes(port)) bad.push(`${file}: ${key} uses ${port}, the main checkout's port`);
+    }
+  }
+  return { ok: !bad.length, output: bad.join("\n") || "every service address uses this workspace's own ports" };
+}
+
 const before = dockerSnapshot();
-let workspace = null;
+const workspaces = {};
+let holder = null;
+
+/** nk -b <ws>, then its checks: clean in git, its own .env ports, its services answer. */
+const makeWorkspace = (ws) =>
+  step(`nk -b ${ws}`, () => {
+    const result = nk("-b", ws, "-y");
+    const path = result.ok ? result.stdout.trim().split(/\r?\n/).pop() : null;
+    if (path && existsSync(path)) workspaces[ws] = path;
+    return { ok: result.ok && Boolean(workspaces[ws]), output: result.output };
+  }) &&
+  step(`${ws} is clean in git`, () => {
+    const status = run("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: workspaces[ws] });
+    return { ok: status.ok && !status.stdout.trim(), output: status.output };
+  }) &&
+  step(`${ws} .env uses its own ports`, () => envOwnPorts(workspaces[ws])) &&
+  step(`${ws} services answer`, () => servicesAnswer(ws));
 
 const passed =
   step("clone", () => {
@@ -93,44 +167,40 @@ const passed =
   step("nk hooks test", () => nk("hooks", "test")) &&
   // A second init allows the hooks, as a person answering yes would.
   step("allow hooks", () => nk("init", "--yes")) &&
-  step("nk -b try1", () => {
-    const result = nk("-b", "try1", "-y");
-    workspace = result.ok ? result.stdout.trim().split(/\r?\n/).pop() : null;
-    return { ok: result.ok && Boolean(workspace) && existsSync(workspace), output: result.output };
+  step("hold the main checkout's ports", () => {
+    holder = holdMainPorts();
+    const held = MAIN_PORTS.filter((port) => reachable(port));
+    return { ok: true, output: `held ${held.join(", ")}` };
   }) &&
-  step("workspace is clean in git", () => {
-    const status = run("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: workspace });
-    return { ok: status.ok && !status.stdout.trim(), output: status.output };
-  }) &&
-  step("its services answer", () => {
-    const prefix = `nook-${basename(repoDir)}-try1`.toLowerCase().replace(/[^a-z0-9_.-]+/g, "-");
-    const ps = run("docker", ["ps", "-a", "--format", "{{.Names}}\t{{.State}}\t{{.Ports}}"]);
-    if (!ps.ok) return { ok: true, output: "docker is not available; nothing to check" };
-    const mine = ps.stdout.trim().split("\n").filter((row) => row.startsWith(prefix));
-    const lines = [];
-    let ok = true;
-    for (const row of mine) {
-      const [container, state, ports = ""] = row.split("\t");
-      const published = [...ports.matchAll(/(?:127\.0\.0\.1|0\.0\.0\.0|\[::\]):(\d+)->/g)].map((m) => Number(m[1]));
-      const answering = [...new Set(published)].map((port) => ({ port, up: reachable(port) }));
-      const good = state === "running" && answering.every((p) => p.up);
-      ok &&= good;
-      lines.push(`${good ? "ok  " : "BAD "} ${container} ${state} ${answering.map((p) => `${p.port}${p.up ? "" : " (no answer)"}`).join(", ")}`);
-    }
-    return { ok, output: lines.join("\n") || "no containers (the repository needs no services)" };
+  makeWorkspace("try1") &&
+  makeWorkspace("try2") &&
+  step("try1 and try2 share nothing", () => {
+    const one = containersOf("try1") ?? [];
+    const two = containersOf("try2") ?? [];
+    const shared = one.flatMap((c) => c.ports).filter((port) => two.some((d) => d.ports.includes(port)));
+    const sameName = one.filter((c) => two.some((d) => d.name === c.name)).map((c) => c.name);
+    const lines = [...shared.map((port) => `both publish port ${port}`), ...sameName.map((name) => `both use container ${name}`)];
+    // try1 still answers now that try2 runs beside it.
+    const still = servicesAnswer("try1");
+    if (!still.ok) lines.push(`try1 stopped answering after try2 started:\n${still.output}`);
+    return { ok: !lines.length, output: lines.join("\n") || `${one.length} and ${two.length} containers, no port or name in common` };
   });
 
 // Removal runs whatever happened above, so the runner is checked for leftovers too.
-const removed = step("nk rm try1", () => {
-  const result = nk("rm", "try1", "-y");
-  // nk -b failing before it made the workspace leaves nothing to remove.
-  return !workspace && /No workspace named/.test(result.output) ? { ok: true, output: "no workspace was made" } : result;
-});
+holder?.kill();
+let removed = true;
+for (const ws of ["try1", "try2"])
+  removed =
+    step(`nk rm ${ws}`, () => {
+      const result = nk("rm", ws, "-y");
+      // nk -b failing before it made the workspace leaves nothing to remove.
+      return !workspaces[ws] && /No workspace named/.test(result.output) ? { ok: true, output: "no workspace was made" } : result;
+    }) && removed;
 const clean = step("nothing left behind", () => {
   const after = dockerSnapshot();
   const left = before && after ? snapshotDiff(before, after) : [];
-  const folder = workspace && existsSync(workspace);
-  return { ok: !left.length && !folder, output: [...left.map((item) => `Docker ${item.kind}: ${item.name}`), ...(folder ? [`folder ${workspace}`] : [])].join("\n") };
+  const folders = Object.values(workspaces).filter((path) => existsSync(path));
+  return { ok: !left.length && !folders.length, output: [...left.map((item) => `Docker ${item.kind}: ${item.name}`), ...folders.map((path) => `folder ${path}`)].join("\n") };
 });
 
 const ok = passed && removed && clean;
