@@ -17,7 +17,10 @@ repository's setup hooks, and can start a command-line agent inside it.
 | `nk ls [--json]` | List workspaces: uncommitted changes, commits ahead of and behind the default branch, PR and CI |
 | `nk rm <name>... [-n] [-y]` | Back up and remove one or more workspaces, asking once (`-n` shows what would happen, `-y` skips the question) |
 | `nk clean [-n] [-y]` | Remove every workspace whose work is merged |
-| `nk doctor` | Check the setup without changing anything |
+| `nk hooks` | The repository's `.nook` hooks: allowed, and tested since they last changed |
+| `nk hooks write [agent]` | Write the hooks from the repository's CI; with an agent, also starts it in the same folder to finish what CI could not tell |
+| `nk hooks test` | Run the hooks of the folder you are in, in a temporary workspace; fails if remove leaves anything behind |
+| `nk doctor` | Check nk's tools (node, git, gh, docker, agents) without changing anything |
 
 Like git, every command acts on the repository you are in: its main
 checkout or one of its workspaces. Outside a repository, `nk -b`, opening,
@@ -101,6 +104,73 @@ works everywhere.
 Hooks see `NOOK_WORKSPACE`, `NOOK_PATH`, `NOOK_REPO`, `NOOK_SHARED` and
 `NOOK_PORT` (the first of 10 ports reserved for the workspace).
 
+### Writing the hooks from CI
+
+CI already says, step by step, how a clean machine gets the project running,
+and it is kept working because it runs on every change. Nook turns it into
+hooks without AI, and tests them.
+
+The whole cycle:
+
+```
+nk init                     once per repository
+nk hooks write              hooks from CI (GitHub Actions)
+nk hooks test               run them in a temporary workspace; nothing may be left behind
+nk -b <name> codex          new workspace; nk <name> codex reopens one
+nk ls                       PR and CI of every workspace; merge or close on GitHub
+nk clean | nk rm <name>     remove merged or chosen workspaces
+```
+
+What `nk hooks write` takes from the CI job with the most setup in it:
+
+| In CI | In the hooks |
+|---|---|
+| `actions/setup-node`, `setup-python`, `pnpm/action-setup`, `astral-sh/setup-uv`... | create checks the tool is installed and warns about another version |
+| `run:` steps before the first test, lint or build step | create runs them in the workspace |
+| `services:` (a database, say) | create starts one container per workspace on the workspace's own ports; open starts it again; remove deletes it with its volumes |
+| `env:` | added to the workspace's `.env`, with `localhost:<CI port>` changed to the workspace's port |
+| `run:` steps with `if: always()` (cleanup) | remove runs them |
+| checkout, caches, uploads, tests, lint, builds | left out |
+
+CI runs on a throwaway machine; a developer machine also has the real
+database and other workspaces. So nk copies less than CI does, never more:
+
+- Only commands that install dependencies into the folder (`pnpm install`,
+  `npm ci`, `uv sync`, `pip install`...) are copied. A script, a `docker`
+  command or a migration is listed for review instead, since nk cannot tell
+  what it would touch here.
+- An `env:` value that points at a local port that is not one of CI's
+  services (say `localhost:5432` when CI starts Postgres itself), or at a
+  database elsewhere, is left out: on this machine it may be the real one.
+- Services get containers named after the workspace, on the workspace's own
+  ports, bound to 127.0.0.1. Every step runs with `COMPOSE_PROJECT_NAME` set
+  to the workspace's own project.
+- Generated hooks refuse to run unless nk runs them in a workspace, so they
+  never run in the main checkout.
+
+What it cannot translate (a CI expression such as `${{ secrets.X }}`, a step
+that runs only under a condition, an action it does not know) is listed too,
+not guessed. `nk hooks write <agent>` does the same, then starts the agent in
+the same folder (usually the main checkout) to finish those parts; the agent
+runs `nk hooks test` until it passes and leaves the changes for you to review.
+To keep the agent out of the main checkout, run it inside a workspace instead
+(`nk -b hooks`, then `nk hooks write <agent>` there). Generated hooks start with a
+line saying so; `nk hooks write` replaces only those, never hooks written by
+hand.
+
+`nk hooks test` runs the hooks of the folder you are in (the agent's branch,
+before it is merged) in a temporary workspace: create, open twice, then
+remove. It fails when a hook fails, when open cannot run twice, or when
+remove leaves a Docker container, volume, network or built image behind.
+
+A passing test records the hooks and the CI files. If either changes, `nk -b`
+stops before creating a workspace (pass `--untested` to start anyway), and
+`nk <name>`, `nk hooks`, `nk doctor` and `nk rm` say so: run `nk hooks write`
+again for a CI change, then `nk hooks test`.
+
+[docs/setup-hooks.md](docs/setup-hooks.md) has the rules and examples for
+pnpm and npm, uv, and a Docker Compose project per workspace.
+
 Before hooks run for the first time, and again after one changes, Nook lists
 them (event and file, not the contents) and asks once: "Allow and remember?".
 Rerunning `nk init` also asks. Each run's output is saved in `~/nook/logs/`.
@@ -119,8 +189,20 @@ working directory is inside it), asks once, then:
 1. stops those programs and their child processes;
 2. saves changes and unpushed commits to `~/nook/backup/<repo>/<name>-<time>/`
    (`changes.patch`, `untracked/`, `commits.bundle`);
-3. runs the `remove` hook;
-4. deletes the folder and the branch.
+3. runs the `remove` hook, if the repository has one;
+4. removes the Docker Compose projects started inside the folder: their
+   containers, volumes, networks and built images;
+5. deletes the folder and the branch.
+
+Nothing has to be written down when the workspace is created. Compose labels
+every container with the folder it was started from, so nk asks Docker at
+removal time and also finds services an agent started later. A project that
+also has containers started elsewhere (the main checkout's, for example) is
+kept. `nk doctor` lists Compose projects left behind by workspaces that no
+longer exist.
+
+This is a safety net: the `remove` hook should still undo everything `create`
+did, and `nk hooks test` checks that it does.
 
 ## Listing and cleaning up
 

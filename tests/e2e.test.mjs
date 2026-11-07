@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { parse } from "smol-toml";
 import { makeRepo, nk, sh, tempDir, write } from "./helpers.mjs";
+import { setupPrompt } from "../src/commands/write-hooks.mjs";
 
 const agentScript =
   "require('fs').writeFileSync('agent.txt', JSON.stringify({ args: process.argv.slice(1), ws: process.env.NOOK_WORKSPACE, port: process.env.NOOK_PORT }))";
@@ -202,6 +203,11 @@ test("an old branch without .nook still gets the hooks; a branch with / keeps it
   assert.equal(parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces["feat-login"].branch, "feat/Login");
   assert.equal(JSON.parse(run(["ls", "--json"]).out).find((item) => !item.main).branch, "feat/Login");
   assert.equal(run(["doctor"]).status, 0);
+  write(join(home, "workspaces", "demo", "half-removed"), { "left.txt": "x\n" });
+  const checked = run(["doctor"]);
+  assert.equal(checked.status, 0, "a leftover folder is a warning, not a problem");
+  assert.match(checked.out, /half-removed is not a workspace, only a leftover folder/);
+  assert.match(checked.out, /No problems found, \d+ warning/);
 
   const removed = run(["rm", "feat-login", "-y"]);
   assert.equal(removed.status, 0, removed.all);
@@ -322,4 +328,21 @@ test("rm removes several workspaces after one check of all of them", (t) => {
   assert.ok(!existsSync(join(home, "workspaces", "demo", "one")));
   assert.ok(!existsSync(join(home, "workspaces", "demo", "two")));
   assert.ok(existsSync(join(home, "workspaces", "demo", "three")));
+});
+
+test("the agent's prompt carries what nk knows and never reads out values", (t) => {
+  const { home, repo } = setup(t);
+  write(repo, { "pnpm-lock.yaml": "", "compose.yaml": "services: {}\n", ".github/workflows/ci.yml": "on: push\n" });
+  sh("git", ["add", "-A"], repo);
+  sh("git", ["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qm", "markers"], repo);
+  write(join(home, "shared", "demo"), { ".env": "API_KEY=\nDB_PASSWORD=secret-value\n" });
+  const ctx = { paths: { shared: join(home, "shared") } };
+  const generated = { written: ["create.mjs"], plan: { source: ".github/workflows/ci.yml", job: "test", untranslated: [{ step: "deploy key", why: "uses a CI expression" }] } };
+  const prompt = setupPrompt(ctx, { repoName: "demo", repo: { path: repo }, generated });
+  assert.match(prompt, /nk already wrote \.nook\/create\.mjs from \.github\/workflows\/ci\.yml \(job test\)/);
+  assert.match(prompt, /- deploy key: uses a CI expression/);
+  assert.match(prompt, /CI configuration:\n- \.github\/workflows\/ci\.yml/);
+  assert.match(prompt, /- compose\.yaml\n- pnpm-lock\.yaml/);
+  assert.match(prompt, /\.env \(empty: API_KEY\)/);
+  assert.doesNotMatch(prompt, /secret-value/);
 });

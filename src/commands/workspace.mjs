@@ -10,6 +10,24 @@ import { allocatePort } from "../ports.mjs";
 import { createPrompter } from "../prompt.mjs";
 import { copyShared } from "../shared.mjs";
 import { resolveRepo, resolveWorkspace, workspaceEnv } from "../context.mjs";
+import { setupChanges } from "./check-hooks.mjs";
+
+/**
+ * Before work starts: hooks or CI that changed since nk hooks test last passed
+ * stop a new workspace (they may no longer set it up or clean it up), unless
+ * `untested` is passed; an existing workspace only gets a warning.
+ */
+function checkSetup(ctx, repo, { stop, untested }) {
+  const { tested, changes } = setupChanges(repo);
+  if (!changes.length) return;
+  if (!tested) {
+    if (findHooks(repo.path).length) ctx.warn("The hooks have never passed nk hooks test");
+    return;
+  }
+  const what = `${changes.join(" and ")} changed since nk hooks test last passed`;
+  if (stop && !untested) throw new NookError(`${what}\nRun nk hooks test first, or pass --untested to start anyway`);
+  ctx.warn(`${what} (run: nk hooks test)`);
+}
 
 /** Asks once for hooks that are new or changed; nothing when all are allowed. */
 export function approveHooks(ctx, { repoName, repo }, prompter = createPrompter()) {
@@ -82,8 +100,9 @@ async function pickName(ctx, input, prompter) {
 }
 
 /** nk -b <name> [agent] */
-export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent, prompt, extra = [], prompter = createPrompter() }) {
+export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent, prompt, extra = [], prompter = createPrompter(), untested = false }) {
   const { name: repoName, repo } = resolveRepo(ctx, repoFlag);
+  checkSetup(ctx, repo, { stop: true, untested });
   if (remoteUrl(repo.path)) {
     const fetched = gitTry(["fetch", "--quiet", "origin", repo.default_branch], { cwd: repo.path });
     if (!fetched.ok) ctx.warn(`Could not fetch origin/${repo.default_branch}; using what is local`);
@@ -125,6 +144,7 @@ export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent,
 export async function openWorkspace(ctx, { name, repo: repoFlag, agent, prompt, extra = [] }) {
   const target = resolveWorkspace(ctx, toName(name), repoFlag);
   if (!exists(target.ws.path)) throw new NookError(`${target.ws.path} is missing. Run nk doctor`);
+  if (!target.main) checkSetup(ctx, target.repo, { stop: false });
   await hook(ctx, target, "open");
   return finish(ctx, target, { agent, prompt, extra });
 }

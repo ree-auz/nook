@@ -1,6 +1,6 @@
 ---
 name: nook
-description: Use when working in a git worktree managed by nk (Nook), or when asked to create, list, open, remove or clean up workspaces with nk.
+description: Use when working in a git worktree managed by nk (Nook), when asked to create, list, open, remove or clean up workspaces with nk, or to set up a repository's .nook hooks.
 ---
 
 # Working with Nook (`nk`)
@@ -36,6 +36,16 @@ you are in one when your working directory is inside that path.
 - Hooks in `.nook/` run with the person's approval. Do not edit them to get
   past a failure; report the failure and the log path nk printed.
 
+## Setting up hooks
+
+When asked to set up Nook hooks: if you were started by `nk hooks write
+<agent>`, nk has already generated hooks from CI; finish what its prompt lists
+as not translated. Otherwise run `nk hooks write` first. Follow
+[docs/setup-hooks.md](https://github.com/ree-auz/nook/blob/main/docs/setup-hooks.md),
+run `nk hooks test` in the folder you work in and fix the hooks until it
+passes. Delete the first line of a generated hook you edit. Do not commit or
+push unless asked.
+
 ## Commands
 
 | Command | Use |
@@ -45,7 +55,9 @@ you are in one when your working directory is inside that path.
 | `nk ls --json` | Every workspace of this repository: `name`, `repo`, `path`, `port`, `changes`, `ahead`, `behind`, `pr` (`number`, `state`, `ci`) |
 | `nk rm <name>... -n` | Show what removing would back up and delete, change nothing |
 | `nk clean -n` | Show which workspaces are merged and would be removed |
-| `nk doctor` | Check the setup; exit 1 when something is broken |
+| `nk hooks test` | Run this folder's hooks in a temporary workspace; fails on leftovers |
+| `nk hooks` | The repository's hooks: allowed, tested |
+| `nk doctor` | Check nk's tools; exit 1 when something is broken |
 
 Pass `-y` to `nk rm` or `nk clean` only when the person asked for the
 removal. Both back up uncommitted changes and unpushed commits to

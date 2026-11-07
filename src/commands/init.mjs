@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import spawn from "cross-spawn";
 import { detectAgents, which } from "../agents.mjs";
 import { NookError } from "../errors.mjs";
-import { exists, isInside, samePath } from "../home.mjs";
+import { isInside, samePath } from "../home.mjs";
 import { defaultBranch, listWorktrees, mainWorktree, remoteUrl } from "../git.mjs";
 import { ensureTrusted, findHooks } from "../hooks.mjs";
 import { assertName, suggestRepoName } from "../names.mjs";
@@ -123,7 +123,7 @@ export async function init(ctx, { yes = false, name: nameFlag } = {}) {
   const hooks = findHooks(repoPath);
   await ensureTrusted({ repoName: name, repoConfig: repo, hooks, prompter: hookPrompter, save: () => ctx.save(), ui: ctx });
   if (yes && hooks.length) ctx.info(`Allowed ${hooks.map((h) => `.nook/${h.name}`).join(", ")} (--yes)`);
-  if (!exists(join(repoPath, ".nook"))) ctx.info("No .nook/ hooks in this repository");
+  if (!hooks.length) ctx.info("No .nook/ hooks yet. To have an agent write them: nk hooks write <agent>");
   ctx.save();
   ctx.ok(`Done. Config: ${ctx.paths.config}`);
   ctx.info("Next: nk -b <name> [agent]");

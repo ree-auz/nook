@@ -10,18 +10,29 @@ import { cleanWorkspaces } from "./commands/clean.mjs";
 import { listWorkspaces } from "./commands/ls.mjs";
 import { removeWorkspace } from "./commands/rm.mjs";
 import { createWorkspace, openWorkspace } from "./commands/workspace.mjs";
+import { writeHooks } from "./commands/write-hooks.mjs";
+import { listHooks } from "./commands/hooks.mjs";
+import { testHooks } from "./commands/check-hooks.mjs";
 
 const HELP = `nk - one home for your git worktrees
 
 Usage:
   nk init [--yes] [--name <short-name>]   register this repository (once per repository)
   nk -b <name> [agent] [-p <prompt>] [-y] create a workspace; start the agent if given
-                                         (-y: keep the converted name without asking)
+                                         (-y: keep the converted name without asking;
+                                         --untested: start even if hooks or CI changed
+                                         since nk hooks test last passed)
   nk <name> [agent] [-p <prompt>]         open a workspace; start the agent if given
   nk ls [--json]                          list workspaces: changes, commits, PR and CI
   nk rm <name>... [-n] [-y]               back up and remove workspaces
   nk clean [-n] [-y]                      remove workspaces whose work is merged
-  nk doctor                               check the setup, change nothing
+  nk hooks                                the repository's .nook hooks: allowed? tested?
+  nk hooks write [agent]                  write the hooks from the repository's CI (GitHub Actions);
+                                         with an agent: then starts it in the same folder to
+                                         finish what CI could not tell
+  nk hooks test                           run this folder's hooks in a temporary workspace;
+                                         fails if remove leaves anything behind
+  nk doctor                               check nk's tools: node, git, gh, docker, agents
 
 Options:
   --repo <short-name>   act on another registered repository (otherwise: the one you are in)
@@ -77,6 +88,14 @@ export async function run(argv, io = {}) {
       if (!positionals.length) throw new NookError("Usage: nk rm <name>... [-n] [-y]");
       return removeWorkspace(ctx, { names: positionals, repo: values.repo, dryRun: values["dry-run"], yes: values.yes });
     }
+    case "hooks": {
+      const { values, positionals } = parse(args.slice(1), { repo: { type: "string" }, yes: { type: "boolean", short: "y" } });
+      const [action, agent, ...rest] = positionals;
+      if (!action && !agent) return listHooks(ctx, values);
+      if (action === "write" && !rest.length) return writeHooks(ctx, { repo: values.repo, agent, extra });
+      if (action === "test" && !agent) return testHooks(ctx, { repo: values.repo });
+      throw new NookError("Usage: nk hooks | nk hooks write [agent] | nk hooks test");
+    }
     case "doctor":
       parse(args.slice(1), {});
       return doctor(ctx);
@@ -94,12 +113,13 @@ export async function run(argv, io = {}) {
         prompt: { type: "string", short: "p" },
         repo: { type: "string" },
         yes: { type: "boolean", short: "y" },
+        untested: { type: "boolean" },
       });
       const create = values.b !== undefined;
       const name = create ? values.b : positionals.shift();
       if (!name || positionals.length > 1) throw new NookError("Usage: nk [-b] <name> [agent] [-p <prompt>]");
       const options = { name, repo: values.repo, agent: positionals[0], prompt: values.prompt, extra };
-      return create ? createWorkspace(ctx, { ...options, prompter: createPrompter({ yes: values.yes }) }) : openWorkspace(ctx, options);
+      return create ? createWorkspace(ctx, { ...options, untested: values.untested, prompter: createPrompter({ yes: values.yes }) }) : openWorkspace(ctx, options);
     }
   }
 }

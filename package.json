@@ -10,6 +10,7 @@
   },
   "files": [
     "bin",
+    "docs",
     "integrations",
     "skills",
     "src"
@@ -22,7 +23,8 @@
   },
   "dependencies": {
     "cross-spawn": "7.0.6",
-    "smol-toml": "1.9.1"
+    "smol-toml": "1.9.1",
+    "yaml": "2.8.1"
   },
   "repository": {
     "type": "git",
