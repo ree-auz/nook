@@ -52,9 +52,23 @@ test("reads which Compose services a workspace starts and which ports it chooses
   });
   const plan = planCompose(dir);
   assert.equal(plan.file, "compose.yaml");
-  assert.deepEqual(plan.start, ["db", "queue"]);
+  assert.deepEqual(plan.start, ["db", "queue", "mail"]);
   assert.deepEqual(plan.ports, { WEB_PORT: "8080", ADMIN_PORT: "" });
+  assert.deepEqual(plan.remap, { mail: [{ host: "1025", target: "1025" }] }, "a fixed host port moves to the workspace's own");
   assert.deepEqual(plan.required, ["PG_PASSWORD"]);
-  assert.deepEqual(plan.notStarted.map((s) => s.name), ["web", "admin", "mail"]);
-  assert.match(plan.untranslated[0].why, /fixed host port 1025/);
+  assert.deepEqual(plan.notStarted.map((s) => s.name), ["web", "admin"]);
+  assert.deepEqual(plan.untranslated, []);
+});
+
+test("reads the Compose override file the way docker compose does", (t) => {
+  const dir = tempDir(t);
+  write(dir, {
+    "compose.yml": "services:\n  db: { image: postgres }\n  api: { build: . }\n",
+    "compose.override.yml": "services:\n  db: { ports: ['127.0.0.1:5432:5432'] }\n  mail: { image: mailpit, ports: [{ target: 1025, published: 1025 }] }\n",
+  });
+  const plan = planCompose(dir);
+  assert.equal(plan.file, "compose.yml + compose.override.yml");
+  assert.deepEqual(plan.files, ["compose.yml", "compose.override.yml"]);
+  assert.deepEqual(plan.start, ["db", "mail"]);
+  assert.deepEqual(plan.remap, { db: [{ host: "5432", target: "5432" }], mail: [{ host: "1025", target: "1025" }] });
 });

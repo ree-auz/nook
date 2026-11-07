@@ -133,7 +133,8 @@ What `nk hooks write` takes from the CI job with the most setup in it:
 | checkout, caches, uploads, tests, lint, builds | left out |
 
 When the repository has a Compose file (`compose.yaml`, `docker-compose.yml`...),
-nk also reads it, since many projects start their database there rather than
+nk also reads it, together with its override file (`compose.override.yaml`...)
+as `docker compose` does, since many projects start their database there rather than
 in CI:
 
 | In the Compose file | In the hooks |
@@ -142,7 +143,7 @@ in CI:
 | a host port written as a variable, `${API_PORT:-3001}:3001` | the variable gets one of the workspace's ports in its `.env`, so you can run that service too without a clash |
 | a value it needs, `${POSTGRES_PASSWORD:?...}` | create stops and names it when `.env` does not have it; set it once in the shared `.env` |
 | a service built from the repository (the app), or under a profile | not started; start it yourself when you need it |
-| a fixed host port, `5432:5432` | not started and listed: every workspace would ask for the same port |
+| a fixed host port, `5432:5432` | moved to one of the workspace's ports (`127.0.0.1:<port>:5432`) by a small Compose file nk writes into the worktree's git folder; `COMPOSE_FILE` in `.env` lists it, so a `docker compose` you run there uses it too |
 
 The workspace's `.env` also gets `COMPOSE_PROJECT_NAME` set to the
 workspace's project, replacing whatever the copied file said, so a

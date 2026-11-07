@@ -195,7 +195,7 @@ const composeFile = `services:
 `;
 
 test("hooks write starts the repository's Compose services in each workspace's own project, on its own ports", { skip: !services && "generated hooks call docker without a shell" }, (t) => {
-  const { home, run, state } = setup(t, { "docker-compose.yml": composeFile, ".gitignore": ".env\n" });
+  const { home, repo, run, state } = setup(t, { "docker-compose.yml": composeFile, ".gitignore": ".env\n" });
   // The shared .env every workspace gets, here with the main checkout's own project name in it.
   write(join(home, "shared", "demo"), { ".env": "POSTGRES_PASSWORD=dev\nCOMPOSE_PROJECT_NAME=demo\n" });
   let r = run(["hooks", "write"]);
@@ -204,7 +204,7 @@ test("hooks write starts the repository's Compose services in each workspace's o
   assert.match(r.err, /Starts from docker-compose\.yml in each workspace's own Compose project: db/);
   assert.match(r.err, /own ports in \.env: API_PORT/);
   assert.match(r.err, /api \(built from this repository\)/);
-  assert.match(r.err, /cache: publishes the fixed host port 6379; workspaces would collide/);
+  assert.match(r.err, /Moves fixed host ports to each workspace's own: cache 6379/);
 
   r = run(["hooks", "test"]);
   assert.equal(r.status, 0, r.all);
@@ -219,7 +219,12 @@ test("hooks write starts the repository's Compose services in each workspace's o
   assert.match(env, /^COMPOSE_PROJECT_NAME=nook-demo-feat$/m, "never the main checkout's project");
   assert.doesNotMatch(env, /COMPOSE_PROJECT_NAME=demo/);
   assert.match(env, new RegExp(`^API_PORT=${port}$`, "m"));
-  assert.deepEqual(state().containers.map((c) => c.name), ["nook-demo-feat-db-1"]);
+  assert.deepEqual(state().containers.map((c) => c.name), ["nook-demo-feat-db-1", "nook-demo-feat-cache-1"]);
+  // cache's fixed 6379 moves to this workspace's port, in a file outside the working tree.
+  const moved = join(repo, ".git", "worktrees", "feat", "nook-compose.yaml");
+  assert.match(readFileSync(moved, "utf8"), new RegExp(`"cache":\\n    ports: !override\\n      - "127\\.0\\.0\\.1:${port + 1}:6379"`));
+  assert.ok(env.includes(`COMPOSE_FILE=${join(ws, "docker-compose.yml")}${delimiter}${moved}`), "docker compose run by hand there uses it too");
+  assert.equal(sh("git", ["status", "--porcelain"], ws), "", "nothing new in the working tree");
 
   r = run(["rm", "feat", "-y"]);
   assert.equal(r.status, 0, r.all);

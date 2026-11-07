@@ -17,21 +17,44 @@ export function composeFile(repoPath) {
   return COMPOSE_FILES.find((file) => exists(join(repoPath, file))) ?? null;
 }
 
+/** The override file Compose merges in by default: compose.override.yaml next to compose.yaml, and so on. */
+export function overrideFile(repoPath, file = composeFile(repoPath)) {
+  if (!file) return null;
+  const stem = file.replace(/\.ya?ml$/, "");
+  return [`${stem}.override.yaml`, `${stem}.override.yml`].find((name) => exists(join(repoPath, name))) ?? null;
+}
+
+/** Both files, as `docker compose` reads them with no -f: ports add up, other keys are replaced. */
+function readServices(repoPath, file, override) {
+  const services = { ...(parse(readFileSync(join(repoPath, file), "utf8"))?.services ?? {}) };
+  if (override)
+    for (const [name, extra] of Object.entries(parse(readFileSync(join(repoPath, override), "utf8"))?.services ?? {})) {
+      const base = services[name] ?? {};
+      services[name] = { ...base, ...extra, ports: [...(base.ports ?? []), ...(extra?.ports ?? [])] };
+    }
+  return services;
+}
+
 /** "${PORT:-3001}" → { name: "PORT", fallback: "3001" }; a literal port → null. */
 function portVariable(text) {
   const match = /^\$\{(\w+)(?::?-([^}]*))?\}$/.exec(text.trim());
   return match ? { name: match[1], fallback: match[2] ?? "" } : null;
 }
 
-/** The host side of a ports entry: "127.0.0.1:${P:-80}:80" → "${P:-80}", "5432" → null (Compose picks one). */
-function hostPort(entry) {
-  if (typeof entry === "object" && entry) return entry.published === undefined ? null : String(entry.published);
-  const text = String(entry);
+/**
+ * A ports entry as { host, target }: "127.0.0.1:${P:-80}:80" → { host: "${P:-80}", target: "80" },
+ * "5432:5432/tcp" → { host: "5432", target: "5432/tcp" }. host is null when Compose picks one.
+ */
+function portEntry(entry) {
+  if (typeof entry === "object" && entry) {
+    const target = `${entry.target}${entry.protocol && entry.protocol !== "tcp" ? `/${entry.protocol}` : ""}`;
+    return { host: entry.published === undefined ? null : String(entry.published), target };
+  }
   // Split on ":" outside ${...}.
   const parts = [];
   let depth = 0;
   let current = "";
-  for (const char of text) {
+  for (const char of String(entry)) {
     if (char === "{") depth++;
     if (char === "}") depth--;
     if (char === ":" && depth === 0) {
@@ -40,7 +63,7 @@ function hostPort(entry) {
     } else current += char;
   }
   parts.push(current);
-  return parts.length >= 2 ? parts.at(-2) : null;
+  return { host: parts.length >= 2 ? parts.at(-2) : null, target: parts.at(-1) };
 }
 
 /** Variables a service needs set: ${NAME:?message} or ${NAME?message}. */
@@ -49,45 +72,47 @@ function requiredVariables(service) {
 }
 
 /**
- * { file, start, ports, required, notStarted, untranslated } for the
- * repository's Compose file, or null without one.
+ * { file, files, start, ports, remap, required, notStarted, untranslated } for the
+ * repository's Compose file and its override file, or null without one.
  */
 export function planCompose(repoPath) {
   const file = composeFile(repoPath);
   if (!file) return null;
   const untranslated = [];
-  let doc;
+  const override = overrideFile(repoPath, file);
+  const where = override ? `${file} + ${override}` : file;
+  let services;
   try {
-    doc = parse(readFileSync(join(repoPath, file), "utf8"));
+    services = readServices(repoPath, file, override);
   } catch (error) {
-    untranslated.push({ step: file, why: `could not be read (${error.message.split("\n")[0]})` });
-    return { file, start: [], ports: {}, required: [], notStarted: [], untranslated };
+    untranslated.push({ step: where, why: `could not be read (${error.message.split("\n")[0]})` });
+    return { file: where, files: [file, override].filter(Boolean), start: [], ports: {}, remap: {}, required: [], notStarted: [], untranslated };
   }
   const ports = {};
+  const remap = {};
   const start = [];
   const notStarted = [];
   const required = new Set();
-  for (const [name, service] of Object.entries(doc?.services ?? {})) {
+  for (const [name, service] of Object.entries(services)) {
     if (!service || typeof service !== "object") continue;
     const fixed = [];
     for (const entry of service.ports ?? []) {
-      const host = hostPort(entry);
+      const { host, target } = portEntry(entry);
       if (host === null || host === "") continue;
       const variable = portVariable(host);
       if (variable) ports[variable.name] ??= variable.fallback;
-      else fixed.push(host);
+      else fixed.push({ host, target });
     }
     if (service.build) notStarted.push({ name, why: "built from this repository" });
     else if (service.profiles?.length) notStarted.push({ name, why: `only with the profile ${service.profiles.join(", ")}` });
     else if (!service.image) notStarted.push({ name, why: "no image" });
-    else if (fixed.length) {
-      // Every workspace would ask for the same host port, and the main checkout may hold it.
-      notStarted.push({ name, why: `publishes the fixed host port ${fixed.join(", ")}` });
-      untranslated.push({ step: `${file} › ${name}`, why: `publishes the fixed host port ${fixed.join(", ")}; workspaces would collide. Write it as \${${name.toUpperCase().replace(/\W/g, "_")}_PORT:-${fixed[0]}} so nk can give each workspace its own` });
-    } else {
+    else {
       start.push(name);
       for (const variable of requiredVariables(service)) required.add(variable);
     }
+    // A fixed host port (5432:5432) would be the same for every workspace, and the main checkout may hold it:
+    // each workspace moves it to one of its own ports, for started services and the ones you start yourself.
+    if (fixed.length) remap[name] = fixed;
   }
-  return { file, start, ports, required: [...required], notStarted, untranslated };
+  return { file: where, files: [file, override].filter(Boolean), start, ports, remap, required: [...required], notStarted, untranslated };
 }

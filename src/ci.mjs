@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { gitTry } from "./git.mjs";
-import { composeFile } from "./compose-plan.mjs";
+import { composeFile, overrideFile } from "./compose-plan.mjs";
 
 /**
  * Reads a repository's GitHub Actions workflows and turns the setup part of
@@ -39,7 +39,7 @@ const EXPRESSION = /\$\{\{/;
  * install dependencies into the workspace folder are copied; any other step
  * (a script, docker, a migration) is listed for a person or agent to review.
  */
-const INSTALL = /^(npm (ci|install|i)|pnpm (install|i|fetch)|yarn( install)?|bun install|corepack enable|uv sync|uv pip install|pip install|python3? -m pip install|poetry install|pipenv (install|sync)|bundle install|go mod download|cargo fetch|composer install|deno (cache|install)|(npx|pnpm exec|yarn) playwright install)(\s+[\w@./:=,+-]+)*$/;
+const INSTALL = /^(npm (ci|install|i)|pnpm (install|i|fetch)|yarn( install)?|bun (install|ci)|corepack enable|uv sync|uv pip install|pip install|python3? -m pip install|poetry install|pipenv (install|sync)|bundle install|go mod download|cargo fetch|composer install|deno (cache|install)|(npx|pnpm exec|yarn) playwright install)(\s+[\w@./:=,+-]+)*$/;
 const SHELL_SYNTAX = /[;|&`$<>()\\]|\n/;
 
 export function isInstallCommand(command) {
@@ -60,7 +60,7 @@ export function workflowFiles(repoPath) {
 /** A fingerprint of the CI files and the Compose file, so nk can tell when they changed after the hooks were tested. */
 export function ciHash(repoPath) {
   const compose = composeFile(repoPath);
-  const files = [...workflowFiles(repoPath), ...(compose ? [compose] : [])];
+  const files = [...workflowFiles(repoPath), ...[compose, overrideFile(repoPath, compose)].filter(Boolean)];
   if (!files.length) return null;
   const hash = createHash("sha256");
   for (const file of files) hash.update(`${file}\n`).update(readFileSync(join(repoPath, file), "utf8").replace(/\r\n/g, "\n"));

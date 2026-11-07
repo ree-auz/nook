@@ -87,13 +87,15 @@ export function generateHooks(dir) {
 function report(ctx, result) {
   const { plan } = result;
   ctx.ok(`Wrote ${result.written.map((file) => `.nook/${file}`).join(", ")} from ${sources(plan)}`);
-  if (result.others.length) ctx.info(`Other CI jobs not used: ${result.others.join(", ")}`);
+  if (result.others.length) ctx.info(`Other CI jobs not used: ${result.others.slice(0, 5).join(", ")}${result.others.length > 5 ? ` and ${result.others.length - 5} more` : ""}`);
   if (plan.tools.length) ctx.info(`Checks the tools CI installs: ${plan.tools.map((t) => (t.version ? `${t.name} ${t.version}` : t.name)).join(", ")}`);
   if (plan.services.length) ctx.info(`Starts for each workspace, on its own ports: ${plan.services.map((s) => `${s.name} (${s.image})`).join(", ")}`);
   if (plan.compose) {
     const { file, start, ports, notStarted } = plan.compose;
     if (start.length) ctx.info(`Starts from ${file} in each workspace's own Compose project: ${start.join(", ")}`);
     if (Object.keys(ports).length) ctx.info(`Gives each workspace its own ports in .env: ${Object.keys(ports).join(", ")}`);
+    const moved = Object.entries(plan.compose.remap).map(([name, entries]) => `${name} ${entries.map((e) => e.host).join(", ")}`);
+    if (moved.length) ctx.info(`Moves fixed host ports to each workspace's own: ${moved.join("; ")}`);
     if (notStarted.length) ctx.info(`Not started (start them yourself when needed): ${notStarted.map((s) => `${s.name} (${s.why})`).join(", ")}`);
   }
   if (Object.keys(plan.env).length) ctx.info(`Adds to .env: ${Object.keys(plan.env).join(", ")}`);
