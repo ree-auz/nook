@@ -11,9 +11,11 @@ import { line, useColor } from "./ui.mjs";
 export function createContext({ env = process.env, cwd = process.cwd(), out = process.stdout, err = process.stderr } = {}) {
   const paths = homePaths(nookHome(env));
   const config = loadConfig(paths.config);
-  moveOldWorkspaceFolder(paths, config);
+  const moveFailed = moveOldWorkspaceFolder(paths, config);
   const color = useColor(err, env);
   const say = (kind) => (text) => err.write(`${line(kind, text, color)}\n`);
+  if (moveFailed)
+    say("warn")(`Could not rename ${paths.workspaces} to ${join(paths.home, "workspace")} (${moveFailed}); still using the old folder. Close programs open in it (terminals, editors, dev servers) and run nk again.`);
   return {
     env,
     cwd,
@@ -41,7 +43,7 @@ export function createContext({ env = process.env, cwd = process.cwd(), out = pr
 /**
  * Before 0.1 the folder was called "workspaces". Renames it once and tells git
  * where the workspaces went. When it cannot (a file is open on Windows), keeps
- * using the old folder.
+ * using the old folder and returns why.
  */
 function moveOldWorkspaceFolder(paths, config) {
   const old = join(paths.home, "workspaces");
@@ -52,14 +54,15 @@ function moveOldWorkspaceFolder(paths, config) {
       if (isInside(ws.path, old)) moves.push({ repo, ws, path: join(paths.workspaces, relative(old, ws.path)) });
   try {
     renameSync(old, paths.workspaces);
-  } catch {
+  } catch (error) {
     paths.workspaces = old;
-    return;
+    return error.code ?? error.message;
   }
   for (const move of moves) move.ws.path = move.path;
   for (const repo of new Set(moves.map((move) => move.repo)))
     gitTry(["worktree", "repair", ...moves.filter((move) => move.repo === repo).map((move) => move.path)], { cwd: repo.path });
   if (moves.length) saveConfig(paths.config, config);
+  return null;
 }
 
 /** The registered repository `cwd` belongs to, or null. */
