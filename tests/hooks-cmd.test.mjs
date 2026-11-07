@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import test from "node:test";
 import { parse } from "smol-toml";
@@ -173,6 +173,11 @@ test("hooks write turns CI into hooks that pass hooks test; a CI change then sto
   assert.equal(r.status, 1);
   assert.match(r.err, /the CI configuration changed since nk hooks test last passed/);
   assert.equal(run(["-b", "second", "--untested"]).status, 0);
+  assert.match(run(["hooks"]).all, /CI changed since the hooks were tested; update them with nk hooks write, then nk hooks test/);
+  // nk hooks write leaves hooks written by hand alone, so it is not what nk hooks suggests for them.
+  const create = readdirSync(join(repo, ".nook")).find((file) => file.startsWith("create."));
+  write(repo, { [`.nook/${create}`]: readFileSync(join(repo, ".nook", create), "utf8").split("\n").slice(1).join("\n") });
+  assert.match(run(["hooks"]).all, /CI changed since the hooks were tested; check whether the hooks need the change \(nk hooks write <agent> can help\), then nk hooks test/);
 });
 
 test("generated hooks check go with go version, and tell a broken tool from a missing one", { skip: process.platform === "win32" && "a stand-in go needs sh" }, (t) => {

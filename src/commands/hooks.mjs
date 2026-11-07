@@ -1,7 +1,9 @@
 import { resolveRepo } from "../context.mjs";
 import { useColor, line } from "../ui.mjs";
 import { HOOK_EVENTS, findHook, hookHash, trustState } from "../hooks.mjs";
+import { readFileSync } from "node:fs";
 import { ciChanged } from "./check-hooks.mjs";
+import { GENERATED_MARK } from "../generate-hooks.mjs";
 
 /** nk hooks: each hook of the repository, whether it is allowed, and whether it passed nk hooks test. */
 export function listHooks(ctx, { repo: repoFlag }) {
@@ -21,7 +23,12 @@ export function listHooks(ctx, { repo: repoFlag }) {
     const notes = [trust === "trusted" ? "allowed" : trust === "new" ? "not allowed yet" : "changed, will ask again", tested ? "tested" : "not tested since it changed"];
     ctx.print(`  ${line(tested && trust === "trusted" ? "ok" : "warn", `${hook.event.padEnd(6)} .nook/${hook.name}  ${notes.join(", ")}`, color)}`);
   }
-  if (ciChanged(repo)) ctx.print(`  ${line("warn", "CI changed since the hooks were tested; update them with nk hooks write, then nk hooks test", color)}`);
+  if (ciChanged(repo)) {
+    // nk hooks write only replaces hooks it generated; hooks written by hand are updated by hand (or by an agent).
+    const generated = hooks.every((hook) => readFileSync(hook.file, "utf8").startsWith(GENERATED_MARK));
+    const update = generated ? "update them with nk hooks write" : "check whether the hooks need the change (nk hooks write <agent> can help)";
+    ctx.print(`  ${line("warn", `CI changed since the hooks were tested; ${update}, then nk hooks test`, color)}`);
+  }
   if (untested) ctx.print(`  ${line("info", "Test them: nk hooks test", color)}`);
   return 0;
 }
