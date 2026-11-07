@@ -13,6 +13,27 @@ test("only dependency installs are copied from CI", () => {
     assert.ok(!isInstallCommand(command), command);
 });
 
+test("a step that runs a project package installs dependencies first when CI hides the install in an action (vuetify)", () => {
+  let plan = planJob("ci.yml", "test", { steps: [{ uses: "vuetifyjs/setup-action@v1" }, { run: "pnpm exec playwright install chromium" }] });
+  assert.deepEqual(plan.create.map((step) => step.run), ["pnpm install --frozen-lockfile", "pnpm exec playwright install chromium"]);
+  plan = planJob("ci.yml", "test", { steps: [{ uses: "acme/setup@v1" }, { run: "npm ci" }, { run: "npx playwright install" }] });
+  assert.deepEqual(plan.create.map((step) => step.run), ["npm ci", "npx playwright install"], "CI's own install is enough");
+});
+
+test("run: steps use the job's or workflow's default working directory (firezone)", (t) => {
+  const dir = makeRepo(tempDir(t), {
+    ".github/workflows/ci.yml": `on: pull_request
+defaults: { run: { working-directory: ./rust/gui-client } }
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps: [{ run: pnpm install }, { run: uv sync, working-directory: py }, { run: pnpm test }]
+`,
+  });
+  const { best } = planFromCi(dir);
+  assert.deepEqual(best.create.map((step) => [step.run, step.cwd]), [["pnpm install", "./rust/gui-client"], ["uv sync", "py"]]);
+});
+
 test("CI values that could reach a real database on this machine are left out", () => {
   const plan = planJob("ci.yml", "test", {
     services: { db: { image: "postgres:16", ports: ["5432:5432"] } },
@@ -32,6 +53,20 @@ test("CI values that could reach a real database on this machine are left out", 
   assert.match(why, /URL points at local port 3000, which is not a service nk starts; likely the app's own address/);
   assert.match(why, /REPORTS_DB is a service address outside the workspace/);
   assert.match(plan.untranslated.find((item) => item.step === "docker compose up -d").why, /not a dependency install/);
+});
+
+test("service options keep quoted values whole, as docker run reads them", () => {
+  const plan = planJob("ci.yml", "test", {
+    services: { mysql: { image: "mysql:8", ports: ["3306:3306"], options: `--health-cmd="mysqladmin ping" --health-interval 10s\n  -e TZ='UTC'` } },
+    steps: [{ run: "npm ci" }],
+  });
+  assert.deepEqual(plan.services[0].options, ["--health-cmd=mysqladmin ping", "--health-interval", "10s", "-e", "TZ=UTC"]);
+});
+
+test("service options read backslash escapes as the shell does (gorm's sqlserver health check)", () => {
+  const options = String.raw`--health-cmd="sqlcmd -P \${PASS} -Q \"SELECT 1\" || exit 1" --health-retries 10 -e A=b\ c`;
+  const plan = planJob("ci.yml", "test", { services: { db: { image: "mssql", options } }, steps: [{ run: "go mod download" }] });
+  assert.deepEqual(plan.services[0].options, ['--health-cmd=sqlcmd -P ${PASS} -Q "SELECT 1" || exit 1', "--health-retries", "10", "-e", "A=b c"]);
 });
 
 test("a generated hook refuses to run outside nk", () => {
@@ -58,6 +93,20 @@ test("a setup step whose program is missing says so plainly; corepack is checked
   assert.match(result.stderr, /nook-no-such-program is not installed/);
 });
 
+test("Compose services remember the repository files they mount, such as Sail's init script", (t) => {
+  const dir = tempDir(t);
+  write(dir, {
+    "docker-compose.yml": `services:
+  mariadb:
+    image: mariadb:11
+    volumes: ["sail-mariadb:/var/lib/mysql", "./vendor/laravel/sail/database/mysql/create-testing-database.sh:/docker-entrypoint-initdb.d/10.sh"]
+  redis: { image: redis, volumes: [{ type: bind, source: ./redis.conf, target: /etc/redis.conf }, "\${DATA}:/data"] }
+volumes: { sail-mariadb: {} }
+`,
+  });
+  assert.deepEqual(planCompose(dir).mounts, { mariadb: ["./vendor/laravel/sail/database/mysql/create-testing-database.sh"], redis: ["./redis.conf"] });
+});
+
 test("reads which Compose services a workspace starts and which ports it chooses", (t) => {
   const dir = tempDir(t);
   write(dir, {
@@ -66,10 +115,11 @@ test("reads which Compose services a workspace starts and which ports it chooses
   queue: { image: rabbitmq, ports: ["5672"] }
   web: { build: ., ports: [{ target: 80, published: "\${WEB_PORT:-8080}" }] }
   admin: { image: adminer, profiles: [tools], ports: ["127.0.0.1:\${ADMIN_PORT}:8080"] }
-  mail: { image: mailpit, ports: ["1025:1025"] }
+  mail: { image: mailpit, container_name: app-mail, ports: ["1025:1025"] }
 `,
   });
   const plan = planCompose(dir);
+  assert.deepEqual(plan.named, ["mail"], "a fixed container name, which each workspace replaces with its own");
   assert.equal(plan.file, "compose.yaml");
   assert.deepEqual(plan.start, ["db", "queue", "mail"]);
   assert.deepEqual(plan.ports, { WEB_PORT: "8080", ADMIN_PORT: "" });
@@ -77,6 +127,33 @@ test("reads which Compose services a workspace starts and which ports it chooses
   assert.deepEqual(plan.required, ["PG_PASSWORD"]);
   assert.deepEqual(plan.notStarted.map((s) => s.name), ["web", "admin"]);
   assert.deepEqual(plan.untranslated, []);
+});
+
+test("a service on the host's network moves to the workspace's own network and ports (forem)", (t) => {
+  const dir = tempDir(t);
+  write(dir, {
+    "docker-compose.yml": `services:
+  postgres: { image: "pgvector/pgvector:pg13", network_mode: host, ports: ["5432"] }
+  redis: { image: "redis:7", network_mode: host }
+`,
+  });
+  const plan = planCompose(dir);
+  assert.deepEqual(plan.start, ["postgres"]);
+  assert.deepEqual(plan.ownNetwork, ["postgres"]);
+  assert.deepEqual(plan.remap, { postgres: [{ host: "5432", target: "5432" }] }, "it listened on the host's 5432, the main checkout's");
+  assert.match(plan.notStarted.find((s) => s.name === "redis").why, /host's network and names no ports/);
+});
+
+test("a base Compose file that cannot run alone is read with its development file (coolify)", (t) => {
+  const dir = tempDir(t);
+  write(dir, {
+    "docker-compose.yml": "services:\n  app: { container_name: app, depends_on: [db] }\n  db: { image: 'postgres:15', networks: [net] }\nnetworks:\n  net: { name: coolify }\n  shared: { name: proxy, external: true }\nvolumes:\n  data: { name: app-data }\n",
+    "docker-compose.dev.yml": "services:\n  app: { build: . }\n  db: { ports: ['${FORWARD_DB_PORT:-5432}:5432'] }\n",
+  });
+  const plan = planCompose(dir);
+  assert.deepEqual(plan.files, ["docker-compose.yml", "docker-compose.dev.yml"]);
+  assert.deepEqual(plan.start, ["db"]);
+  assert.deepEqual(plan.fixed, { networks: ["net"], volumes: ["data"] }, "fixed names each workspace replaces; an external network is shared on purpose");
 });
 
 test("reads the Compose override file the way docker compose does", (t) => {

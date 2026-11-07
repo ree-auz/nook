@@ -1,0 +1,8 @@
+source: .github/workflows/test.yml › test
+tools: -
+create: -
+ci service: postgres postgres:14 5432:5432
+env: MIX_ENV=test
+left out: nixbuild/nix-quick-install-action@v35: uses the action nixbuild/nix-quick-install-action@v35
+left out: nix-community/cache-nix-action@v7: uses the action nix-community/cache-nix-action@v7
+left out: Install mix dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

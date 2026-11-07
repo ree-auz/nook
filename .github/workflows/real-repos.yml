@@ -27,8 +27,8 @@ jobs:
     outputs:
       repos: ${{ steps.pick.outputs.repos }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - id: pick
@@ -37,7 +37,7 @@ jobs:
           NEW: ${{ inputs.new || '10' }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          if [ -z "$ONLY" ] && [ "$NEW" != "0" ]; then node scripts/real-explore.mjs "$NEW" > new.json; else echo "[]" > new.json; fi
+          if [ -z "$ONLY" ] && [ "$NEW" != "0" ]; then node scripts/real-explore.mjs "$NEW" > new.json || echo "[]" > new.json; else echo "[]" > new.json; fi
           node -e '
             const only = (process.env.ONLY || "").split(/\s+/).filter(Boolean);
             const all = require("./tests/corpus/repos.json");
@@ -58,37 +58,72 @@ jobs:
     env:
       # Corepack would otherwise ask before downloading the package manager a project pins.
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      # A repository may run another package manager than the one it pins (medusa pins yarn, its CI uses pnpm).
+      COREPACK_ENABLE_STRICT: "0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: nook
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: ${{ matrix.repo }}
           ref: ${{ matrix.commit }}
           path: repos/${{ matrix.name }}
           persist-credentials: false
+      # nk's own packages first: real-versions reads the CI job with nk's code.
+      - run: npm ci
+        working-directory: nook
       # Install what a person working on the repository would: the versions it asks for.
       - id: want
         run: node nook/scripts/real-versions.mjs "repos/${{ matrix.name }}" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: ${{ steps.want.outputs.node }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ steps.want.outputs.python }}
-      - uses: astral-sh/setup-uv@v6
+      - if: steps.want.outputs.go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: repos/${{ matrix.name }}/go.mod
+          cache: false
+      - if: steps.want.outputs.ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ steps.want.outputs.ruby }}
+      - if: steps.want.outputs.java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: ${{ steps.want.outputs.java }}
+      - if: steps.want.outputs.php
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ steps.want.outputs.php }}
+          tools: composer
+      - if: steps.want.outputs.elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: ${{ steps.want.outputs.elixir }}
+          otp-version: ${{ steps.want.outputs.otp }}
+      - if: steps.want.outputs.dotnet
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: repos/${{ matrix.name }}/global.json
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: ${{ steps.want.outputs.uv }}
       - uses: oven-sh/setup-bun@v2
       - name: corepack (Node 25 and later no longer include it)
         run: |
           command -v corepack >/dev/null || npm install -g corepack
           corepack enable
-      - run: npm ci
-        working-directory: nook
+      - if: steps.want.outputs.pnpm
+        run: npm install -g --force "pnpm@${{ steps.want.outputs.pnpm }}"
       - name: nk on ${{ matrix.name }}
         run: node nook/scripts/real-run.mjs "${{ matrix.name }}" --repo "${{ matrix.repo }}" --commit "${{ matrix.commit }}" --dir "repos/${{ matrix.name }}" --out "results/${{ matrix.name }}.json"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: result-${{ matrix.name }}
           path: results/
@@ -99,8 +134,8 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v6
         with:
           pattern: result-*
           merge-multiple: true

@@ -1,0 +1,5 @@
+source: .github/workflows/ci.yml › tests
+tools: ruby
+create: -
+ci service: postgres ankane/pgvector 5432:5432
+env: POSTGRES_URL=postgresql://postgres:postgres@localhost:5432/postgres

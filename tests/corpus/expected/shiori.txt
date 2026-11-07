@@ -1,0 +1,14 @@
+source: .github/workflows/_test.yml › test-linux + docker-compose.yaml
+tools: go
+create: -
+ci service: postgres postgres:13.18 5432:5432
+ci service: mariadb mariadb:10.5.27 3306:3306
+ci service: mysql mysql:8.0.40 3307:3306
+env: CGO_ENABLED=0
+compose start: -
+compose not started: shiori (built from this repository)
+compose not started: nginx (nginx:alpine is not a database or similar service)
+compose not started: postgres (CI starts its own services)
+compose not started: mariadb (CI starts its own services)
+compose not started: mysql (CI starts its own services)
+left out: Set up gotestfmt: uses the action gotesttools/gotestfmt-action@8b4478c7019be847373babde9300210e7de34bfb

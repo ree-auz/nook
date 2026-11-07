@@ -5,11 +5,11 @@
  *
  *   node scripts/real-summary.mjs <results-folder> >> "$GITHUB_STEP_SUMMARY"
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const dir = process.argv[2] ?? "results";
-const results = readdirSync(dir)
+const results = (existsSync(dir) ? readdirSync(dir) : [])
   .filter((file) => file.endsWith(".json"))
   .map((file) => JSON.parse(readFileSync(join(dir, file), "utf8")))
   .sort((a, b) => Number(a.ok) - Number(b.ok) || a.name.localeCompare(b.name));

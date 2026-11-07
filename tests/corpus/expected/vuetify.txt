@@ -1,0 +1,9 @@
+source: .github/workflows/ci.yml › test + docker-compose.yml
+tools: -
+create: pnpm install --frozen-lockfile ; pnpm exec playwright install chromium
+compose start: -
+compose port vars: PORT
+compose not started: docs (caddy:alpine is not a database or similar service)
+left out: workflow env: CROWDIN_PROJECT_ID comes from a CI expression (${{ secrets.CROWDIN_PROJECT_ID }})
+left out: workflow env: CROWDIN_PERSONAL_TOKEN comes from a CI expression (${{ secrets.CROWDIN_PERSONAL_TOKEN }})
+left out: vuetifyjs/setup-action@cb5ac088588387e65433a762de90c0b06d878677: uses the action vuetifyjs/setup-action@cb5ac088588387e65433a762de90c0b06d878677

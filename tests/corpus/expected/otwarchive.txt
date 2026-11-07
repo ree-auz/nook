@@ -1,0 +1,29 @@
+source: .github/workflows/automated-tests.yml › automated-tests + docker-compose.yml
+tools: ruby
+create: -
+ci service: database mariadb:10.5.4-focal 3306:3306
+ci service: elasticsearch docker.elastic.co/elasticsearch/elasticsearch:9.3.0 9200:9200
+ci service: memcached memcached:1.5 11211:11211
+env: CI=true
+env: RAILS_ENV=test
+env: CUCUMBER_RETRY=1
+env: CUCUMBER_FORMAT=Ao3Cucumber::Formatter
+env: CUCUMBER_PUBLISH_QUIET=true
+env: SPEC_OPTS=--force-color
+compose start: -
+compose not started: db (CI starts its own services)
+compose not started: redis (CI starts its own services)
+compose not started: es (CI starts its own services)
+compose not started: mc (CI starts its own services)
+compose not started: web (built from this repository)
+compose not started: resque (built from this repository)
+compose not started: chrome (only with the profile test)
+compose not started: test (built from this repository)
+left out: job automated-tests env: TEST_GROUP comes from a CI expression (${{ matrix.tests.command }} ${{ matrix.tests.arguments }})
+left out: Run apt-get update: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Install and start up redis servers: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Install ebook converters: runs only when ${{ matrix.tests.ebook }}
+left out: Install libvips for image processing: runs only when ${{ matrix.tests.libvips }}
+left out: Copy config files: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Set transaction isolation level: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Make database: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

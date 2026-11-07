@@ -1,0 +1,39 @@
+name: Release
+
+# Publishes the package to npm when a GitHub Release is published. npm trusts
+# this workflow (trusted publishing), so no token is stored: the package's
+# settings on npmjs.com name ree-auz/nook and release.yml as its publisher.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          # npm 11.5.1 or later publishes with trusted publishing.
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: The release tag matches package.json
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="v$(node -p 'require("./package.json").version')"
+          if [ "$TAG" != "$version" ]; then echo "Release $TAG, but package.json says $version" >&2; exit 1; fi
+      - run: npm ci
+      - run: npm test
+      # The very first version is published by hand (npm only lets a package that exists trust a workflow).
+      - name: Publish, unless this version is already on npm
+        run: |
+          name=$(node -p 'require("./package.json").name')
+          version=$(node -p 'require("./package.json").version')
+          if npm view "$name@$version" version >/dev/null 2>&1; then echo "$name@$version is already on npm"; exit 0; fi
+          npm publish --access public

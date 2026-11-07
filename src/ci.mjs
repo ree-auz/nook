@@ -6,6 +6,45 @@ import { gitTry } from "./git.mjs";
 import { composeFile, overrideFile } from "./compose-plan.mjs";
 
 /**
+ * docker run flags from a CI service's options, split as the runner's shell does: quotes keep
+ * values whole (--health-cmd "mysqladmin ping") and a backslash escapes the next character
+ * (\" inside double quotes). Unbalanced quotes give no options.
+ */
+function dockerOptions(text) {
+  const out = [];
+  let current = "";
+  let quote = null;
+  let started = false;
+  const chars = [...text.trim()];
+  for (let i = 0; i < chars.length; i++) {
+    const char = chars[i];
+    if (char === "\\" && quote !== "'" && i + 1 < chars.length) {
+      const next = chars[++i];
+      // Inside double quotes only these are escapes; elsewhere the backslash stays.
+      if (quote === '"' && !'"\\$`'.includes(next)) current += char;
+      current += next;
+      started = true;
+    } else if (quote) {
+      if (char === quote) quote = null;
+      else current += char;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+      started = true;
+    } else if (/\s/.test(char)) {
+      if (started) out.push(current);
+      current = "";
+      started = false;
+    } else {
+      current += char;
+      started = true;
+    }
+  }
+  if (quote) return [];
+  if (started) out.push(current);
+  return out;
+}
+
+/**
  * Reads a repository's GitHub Actions workflows and turns the setup part of
  * one job into a plan for workspace hooks, without AI: CI already says how a
  * clean machine gets the project running. What cannot be translated is
@@ -105,6 +144,9 @@ export function planJob(file, jobName, job, workflowEnv = {}, knownPorts = []) {
   const tools = [];
   const create = [];
   const remove = [];
+  // defaults.run.working-directory (job, or workflow) is where every run: step runs unless it names its own.
+  const defaultDir = job.defaults?.run?.["working-directory"];
+  const where = (step) => step["working-directory"] ?? (EXPRESSION.test(String(defaultDir ?? "")) ? undefined : defaultDir);
   const rawEnv = { ...plainEnv(workflowEnv, untranslated, "workflow env"), ...plainEnv(job.env, untranslated, `job ${jobName} env`) };
 
   const services = [];
@@ -118,7 +160,7 @@ export function planJob(file, jobName, job, workflowEnv = {}, knownPorts = []) {
       image: service.image,
       env: plainEnv(service.env, untranslated, `service ${name}`),
       ports: (service.ports ?? []).map(servicePort).filter(Boolean),
-      options: service.options && !EXPRESSION.test(service.options) ? String(service.options).trim().replace(/\s+/g, " ") : "",
+      options: service.options && !EXPRESSION.test(service.options) ? dockerOptions(String(service.options)) : [],
     });
   }
 
@@ -186,7 +228,7 @@ export function planJob(file, jobName, job, workflowEnv = {}, knownPorts = []) {
     }
     // An install that CI skips on a cache hit or when no files changed: a new workspace has neither.
     if (condition && !cleanup && onlyStepOutputs(condition) && isInstallCommand(step.run)) {
-      create.push({ name, run: String(step.run).trim(), ...(step["working-directory"] && { cwd: step["working-directory"] }) });
+      create.push({ name, run: String(step.run).trim(), ...(where(step) && { cwd: where(step) }) });
       return;
     }
     if (condition && !cleanup) {
@@ -197,8 +239,17 @@ export function planJob(file, jobName, job, workflowEnv = {}, knownPorts = []) {
       untranslated.push({ step: name, why: "not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it" });
       return;
     }
-    target.push({ name, run: String(step.run).trim(), ...(step["working-directory"] && { cwd: step["working-directory"] }), ...(step.env && { env: safeEnv(plainEnv(step.env, untranslated, name), name) }) });
+    target.push({ name, run: String(step.run).trim(), ...(where(step) && { cwd: where(step) }), ...(step.env && { env: safeEnv(plainEnv(step.env, untranslated, name), name) }) });
   });
+
+  // A step that runs a project's own package (pnpm exec playwright) needs its dependencies. When CI installs
+  // them inside an action nk cannot read (vuetify's vuetifyjs/setup-action), install them first, as a person would.
+  const hidden = untranslated.find((entry) => /^uses the action /.test(entry.why));
+  const runner = create.map((step) => /^(pnpm|npx|npm|yarn|bunx|bun)\b/.exec(step.run)?.[1]).find(Boolean);
+  if (hidden && runner && !create.some((step) => /^(pnpm|npm|yarn|bun)\s+(i|ci|install)\b|^yarn\s*$/.test(step.run))) {
+    const install = { pnpm: "pnpm install --frozen-lockfile", npx: "npm ci", npm: "npm ci", yarn: "yarn install", bunx: "bun install", bun: "bun install" }[runner];
+    create.unshift({ name: `${install} (CI installs in ${hidden.step})`, run: install, ...(where({}) && { cwd: where({}) }) });
+  }
 
   // CI machines have corepack; Node 25 and later no longer include it, so check for it before anything starts.
   if (create.some((step) => /^corepack\b/.test(step.run)) && !tools.some((tool) => tool.name === "corepack")) tools.push({ name: "corepack" });
@@ -263,7 +314,7 @@ function onlyRepositoryEvents(on) {
  * downloaded artifact; when it downloads one, their installs and tools are its own.
  */
 function planWithNeeds(repoPath, file, workflow, jobName, job, knownPorts) {
-  const plan = planJob(file, jobName, job, workflow.env, knownPorts);
+  const plan = planJob(file, jobName, { defaults: workflow.defaults, ...job }, workflow.env, knownPorts);
   if (!job.steps.some((step) => /^actions\/download-artifact@/.test(step.uses ?? ""))) return plan;
   const seen = new Set([jobName]);
   const queue = [job.needs ?? []].flat();
@@ -273,7 +324,7 @@ function planWithNeeds(repoPath, file, workflow, jobName, job, knownPorts) {
     if (seen.has(name) || !workflow.jobs[name]?.steps) continue;
     seen.add(name);
     const needed = workflow.jobs[name];
-    before.unshift(planJob(file, name, { ...needed, steps: expandLocalActions(repoPath, needed.steps) }, workflow.env, knownPorts));
+    before.unshift(planJob(file, name, { defaults: workflow.defaults, ...needed, steps: expandLocalActions(repoPath, needed.steps) }, workflow.env, knownPorts));
     queue.push(...[needed.needs ?? []].flat());
   }
   for (const other of before.reverse()) {

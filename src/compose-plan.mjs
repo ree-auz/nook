@@ -21,7 +21,29 @@ export function composeFile(repoPath) {
 export function overrideFile(repoPath, file = composeFile(repoPath)) {
   if (!file) return null;
   const stem = file.replace(/\.ya?ml$/, "");
-  return [`${stem}.override.yaml`, `${stem}.override.yml`].find((name) => exists(join(repoPath, name))) ?? null;
+  const override = [`${stem}.override.yaml`, `${stem}.override.yml`].find((name) => exists(join(repoPath, name)));
+  if (override) return override;
+  // A base file that cannot run alone (a service with neither image nor build, as coolify's) is meant to be
+  // combined with its development file: docker compose -f docker-compose.yml -f docker-compose.dev.yml.
+  let services = {};
+  try {
+    services = parse(readFileSync(join(repoPath, file), "utf8"))?.services ?? {};
+  } catch {}
+  if (!Object.values(services).some((service) => service && typeof service === "object" && !service.image && !service.build && !service.extends)) return null;
+  return [".dev.yaml", ".dev.yml", ".development.yaml", ".development.yml"].map((end) => stem + end).find((name) => exists(join(repoPath, name))) ?? null;
+}
+
+/**
+ * Networks and volumes the files give a fixed name (networks: { coolify: { name: coolify } }): every
+ * workspace and the main checkout would share them, data too. external ones are shared on purpose.
+ */
+function fixedNames(repoPath, files) {
+  const found = { networks: [], volumes: [] };
+  for (const file of files)
+    for (const kind of ["networks", "volumes"])
+      for (const [key, value] of Object.entries(parse(readFileSync(join(repoPath, file), "utf8"))?.[kind] ?? {}))
+        if (value?.name && !value.external && !found[kind].includes(key)) found[kind].push(key);
+  return found;
 }
 
 /** Both files, as `docker compose` reads them with no -f: ports add up, other keys are replaced. */
@@ -84,6 +106,19 @@ function requiredVariables(service) {
  */
 const PORTS = 10;
 
+/**
+ * The repository paths a service mounts (./vendor/x.sh:/docker-entrypoint-initdb.d/x.sh). When one is
+ * missing, docker creates it as a root-owned folder, so the create hook waits for it instead.
+ */
+function bindMounts(service) {
+  const paths = [];
+  for (const volume of service.volumes ?? []) {
+    const source = typeof volume === "string" ? volume.split(":")[0] : volume?.type === "bind" ? volume.source : null;
+    if (typeof source === "string" && /^\.\.?\//.test(source) && !source.includes("$")) paths.push(source);
+  }
+  return paths;
+}
+
 /** startAny false: start nothing (CI has its own services). reserved: ports CI's services take first. */
 export function planCompose(repoPath, { start: startAny = true, reserved = 0 } = {}) {
   const file = composeFile(repoPath);
@@ -103,11 +138,20 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
   const start = [];
   const notStarted = [];
   const required = new Set();
+  const mounts = {};
+  const named = [];
+  const ownNetwork = [];
   for (const [name, service] of Object.entries(services)) {
     if (!service || typeof service !== "object") continue;
+    // A fixed container_name (plane-redis) would clash between workspaces, even for a service you start yourself: each gets its own.
+    if (service.container_name) named.push(name);
     const fixed = [];
+    // On the host's network a service listens on the host's own ports, the main checkout's too (forem's
+    // postgres and redis): a workspace runs it on its project network instead, its ports moved to its own.
+    const hostNetwork = service.network_mode === "host";
     for (const entry of service.ports ?? []) {
       const { host, target } = portEntry(entry);
+      if (hostNetwork && (host === null || host === "")) fixed.push({ host: target.split("/")[0], target });
       if (host === null || host === "") continue;
       const variable = portVariable(host);
       if (variable) ports[variable.name] ??= variable.fallback;
@@ -118,12 +162,16 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
     else if (!service.image) notStarted.push({ name, why: "no image" });
     else if (!BACKING.test(service.image)) notStarted.push({ name, why: `${service.image} is not a database or similar service` });
     else if (!startAny) notStarted.push({ name, why: "CI starts its own services" });
+    else if (hostNetwork && !fixed.length) notStarted.push({ name, why: "uses the host's network and names no ports, so it would share the main checkout's" });
     else {
       start.push(name);
       for (const variable of requiredVariables(service)) required.add(variable);
+      const files = bindMounts(service);
+      if (files.length) mounts[name] = files;
       // A fixed host port (5432:5432) would be the same for every workspace, and the main checkout may hold
       // it: each workspace moves it to one of its own ports.
       if (fixed.length) remap[name] = fixed;
+      if (hostNetwork) ownNetwork.push(name);
     }
   }
   // A workspace has ten ports: services that do not fit are left out, last first.
@@ -131,10 +179,11 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
   while (start.length && used() > PORTS - reserved) {
     const name = start.pop();
     delete remap[name];
+    if (ownNetwork.includes(name)) ownNetwork.splice(ownNetwork.indexOf(name), 1);
     notStarted.push({ name, why: "no port left of the workspace's ten" });
     untranslated.push({ step: `${where} › ${name}`, why: "not started: the workspace's ten ports are taken by the other services" });
   }
-  return { file: where, files: [file, override].filter(Boolean), start, ports, remap, required: [...required], notStarted, untranslated };
+  return { file: where, files: [file, override].filter(Boolean), start, ports, remap, required: [...required], mounts, named, ownNetwork, fixed: fixedNames(repoPath, [file, override].filter(Boolean)), notStarted, untranslated };
 }
 
 /**
