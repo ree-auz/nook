@@ -1,0 +1,4 @@
+source: .github/workflows/unit-frontend.yml › test
+tools: pnpm, node
+create: pnpm install --frozen-lockfile
+env: LARAVEL_BYPASS_ENV_CHECK=1

@@ -1,0 +1,23 @@
+source: .github/workflows/_tauri.yml › screenshots + docker-compose.yml
+tools: pnpm@10.33.0, node@22
+create: pnpm install ; pnpm exec playwright install --with-deps chromium
+env: TSLINK_BUILD=true
+env: FIREZONE_NO_TELEMETRY=true
+compose start: -
+compose not started: portal (built from this repository)
+compose not started: portal-router (no image)
+compose not started: elixir (built from this repository)
+compose not started: primary-client (no image)
+compose not started: primary-client-router (no image)
+compose not started: secnetperf-client (ghcr.io/firezone/secnetperf:v2.6.0 is not a database or similar service)
+compose not started: pool-member (no image)
+compose not started: pool-member-router (no image)
+compose not started: gateway (built from this repository)
+compose not started: gateway-router (no image)
+compose not started: relay-1 (no image)
+compose not started: relay-1-router (no image)
+compose not started: relay-2 (no image)
+compose not started: relay-2-router (no image)
+compose not started: network-config (ghcr.io/firezone/xdp-pass is not a database or similar service)
+compose not started: otel (otel/opentelemetry-collector:latest is not a database or similar service)
+left out: Configure npm auth: uses a CI expression (${{ … }})

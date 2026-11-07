@@ -1,0 +1,19 @@
+source: .github/workflows/ci.yml › test + docker-compose.yml
+tools: go
+create: -
+env: GOTOOLCHAIN=local
+env: GOLANGCI_LINT_VERSION=v2.14.0
+env: STATICCHECK_VERSION=2026.2.2
+env: TPARSE_VERSION=v0.18.0
+env: DEBUG=true
+env: GOFLAGS=-trimpath
+compose start: -
+compose not started: zookeeper-1 (no image)
+compose not started: zookeeper-2 (no image)
+compose not started: zookeeper-3 (no image)
+compose not started: kafka-1 (no image)
+compose not started: kafka-2 (no image)
+compose not started: kafka-3 (no image)
+compose not started: kafka-4 (no image)
+compose not started: kafka-5 (no image)
+compose not started: toxiproxy (ghcr.io/shopify/toxiproxy:2.12.0 is not a database or similar service)

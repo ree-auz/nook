@@ -1,0 +1,22 @@
+source: .github/workflows/ci.yml › cargo-test-kms + docker-compose.yml
+tools: cargo
+create: -
+ci service: localstack localstack/localstack:4.14 4566:4566
+env: AWS_ROLE_ARN=arn:aws:iam::024848458133:role/github_oidc_FuelLabs_fuel-core
+env: AWS_ECR_ORG=fuellabs
+env: CARGO_TERM_COLOR=always
+env: RUST_VERSION=1.95.0
+env: RUST_VERSION_FMT=nightly-2025-09-28
+env: RUST_VERSION_COV=nightly-2025-09-28
+env: RUSTFLAGS=-D warnings
+env: REGISTRY=ghcr.io
+env: SEGMENT_DOWNLOAD_TIMEOUT_MINS=2
+compose start: -
+compose not started: fuel-core (built from this repository)
+left out: workflow env: GIT_BRANCH comes from a CI expression (${{ github.head_ref || github.ref_name }})
+left out: workflow env: GIT_REPO_OWNER comes from a CI expression (${{ github.repository_owner }})
+left out: workflow env: GIT_REPO comes from a CI expression (${{ github.repository }})
+left out: workflow env: GIT_REPO_NAME comes from a CI expression (${{ github.event.repository.name }})
+left out: rui314/setup-mold@v1: uses the action rui314/setup-mold@v1
+left out: Swatinem/rust-cache@v2: uses the action Swatinem/rust-cache@v2
+left out: Provision LocalStack KMS key: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

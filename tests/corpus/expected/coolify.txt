@@ -1,0 +1,12 @@
+source: .github/workflows/build.yaml › plan + docker-compose.yml + docker-compose.dev.yml
+tools: -
+create: -
+compose start: postgres, redis, mailpit
+compose port vars: APP_PORT, FORWARD_PUSHER_PORT, FORWARD_DB_PORT, FORWARD_REDIS_PORT, VITE_PORT, FORWARD_MAILPIT_PORT, FORWARD_MAILPIT_DASHBOARD_PORT, FORWARD_MINIO_PORT, FORWARD_MINIO_PORT_CONSOLE
+compose not started: coolify (built from this repository)
+compose not started: vite (node:24-alpine is not a database or similar service)
+compose not started: coolify-helper (built from this repository)
+compose not started: testing-host (built from this repository)
+compose not started: minio (coollabsio/maxio:latest is not a database or similar service)
+compose not started: minio-init (ghcr.io/coollabsio/mx:0.1.0 is not a database or similar service)
+template addresses: postgres:5432 -> 127.0.0.1:5432, redis:6379 -> 127.0.0.1:6379, mailpit:1025 -> 127.0.0.1:1025, mailpit:8025 -> 127.0.0.1:8025

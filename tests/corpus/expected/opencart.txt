@@ -1,0 +1,12 @@
+source: (no CI) + docker-compose.yml
+tools: -
+create: -
+compose start: mysql
+compose port vars: HTTP_EXPOSE_PORT, PHP_FPM_EXPOSE_PORT, DB_EXPOSE_PORT, CACHE_EXPOSE_PORT, ADMINER_EXPOSE_PORT
+compose not started: apache (built from this repository)
+compose not started: php (built from this repository)
+compose not started: postgres (only with the profile postgres)
+compose not started: redis (only with the profile redis)
+compose not started: memcached (only with the profile memcached)
+compose not started: adminer (only with the profile adminer)
+template addresses: mysql:${DB_PORT:-3306} -> 127.0.0.1:3306
