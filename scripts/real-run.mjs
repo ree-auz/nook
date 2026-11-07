@@ -188,7 +188,10 @@ const makeWorkspace = (ws) =>
   }) &&
   step(`${ws} is clean in git`, () => {
     const status = run("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: workspaces[ws] });
-    return { ok: status.ok && !status.stdout.trim(), output: status.output };
+    // Files the main checkout itself shows as changed (line endings .gitattributes would change) are the repository's.
+    const main = new Set(run("git", ["status", "--porcelain"], { cwd: repoDir }).stdout.split(/\r?\n/));
+    const changed = status.stdout.split(/\r?\n/).filter((line) => line.trim() && !main.has(line));
+    return { ok: status.ok && !changed.length, output: changed.join("\n") || status.output };
   }) &&
   step(`${ws} .env uses its own ports`, () => envOwnPorts(workspaces[ws], ws)) &&
   step(`${ws} services answer`, () => servicesAnswer(ws));

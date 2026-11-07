@@ -61,6 +61,13 @@ export async function testHooks(ctx, { repo: repoFlag, docker = dockerCli, scan 
   const target = { repoName, repo, name: CHECK_NAME, ws: { path, port } };
   copyShared(join(ctx.paths.shared, repoName), path);
 
+  // A file git already shows as changed in a fresh checkout (line endings the repository's .gitattributes
+  // would change, as awesome-kotlin's gradlew.bat) is the repository's, not the hooks'.
+  const status = () => {
+    const result = gitTry(["status", "--porcelain", "--untracked-files=all"], { cwd: path });
+    return result.ok ? result.out.split(/\r?\n/).filter((line) => line.trim()) : [];
+  };
+  const fresh = new Set(status());
   const problems = [];
   const run = async (event, label = event) => {
     const hook = byEvent[event];
@@ -73,9 +80,9 @@ export async function testHooks(ctx, { repo: repoFlag, docker = dockerCli, scan 
   try {
     if (await run("create")) if (await run("open")) await run("open", "open, run a second time,");
     // Hooks set up the workspace; they must not change what git tracks, or every commit would carry it.
-    const changed = gitTry(["status", "--porcelain", "--untracked-files=all"], { cwd: path });
-    if (changed.ok && changed.out.trim())
-      problems.push(`The hooks changed files in the workspace that git would commit (ignore them in .gitignore, or do not write them):\n${changed.out.trim().split(/\r?\n/).slice(0, 10).map((line) => `  ${line.trim()}`).join("\n")}`);
+    const changed = status().filter((line) => !fresh.has(line));
+    if (changed.length)
+      problems.push(`The hooks changed files in the workspace that git would commit (ignore them in .gitignore, or do not write them):\n${changed.slice(0, 10).map((line) => `  ${line.trim()}`).join("\n")}`);
   } finally {
     await run("remove");
     const running = scan(path).processes ?? [];
