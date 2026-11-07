@@ -34,7 +34,7 @@ test("init -> -b -> open -> rm", async (t) => {
   const { home, repo, ws } = setup(t);
   const run = (args, cwd = repo) => nk(args, { cwd, home });
 
-  let r = run(["init", "--yes"]);
+  let r = run(["init", "--yes", "--allow-hooks"]);
   assert.equal(r.status, 0, r.all);
   const config = parse(readFileSync(join(home, "config.toml"), "utf8"));
   assert.equal(config.repos.demo.default_branch, "main");
@@ -110,7 +110,7 @@ test("init -> -b -> open -> rm", async (t) => {
 test("a changed hook needs a new OK; a failing create hook keeps the workspace", (t) => {
   const { home, repo } = setup(t);
   const run = (args, cwd = repo) => nk(args, { cwd, home });
-  assert.equal(run(["init", "--yes"]).status, 0);
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0);
 
   write(repo, { ".nook/create.mjs": "process.exit(4)\n" });
   sh("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", "commit", "-qam", "change hook"], repo);
@@ -118,8 +118,13 @@ test("a changed hook needs a new OK; a failing create hook keeps the workspace",
   assert.equal(r.status, 1);
   assert.match(r.err, /create: \.nook\/create\.mjs \(changed\)/);
   assert.match(r.err, /need your OK/);
+  assert.ok(!existsSync(join(home, "workspace", "demo", "changed")), "nothing is made before the hooks are allowed");
 
-  assert.equal(run(["init", "--yes"]).status, 0, "init allows the new version");
+  r = run(["init", "--yes"]);
+  assert.equal(r.status, 0);
+  assert.match(r.err, /1 hook not allowed yet: \.nook\/create\.mjs/, "--yes alone does not allow hooks");
+  assert.match(run(["-b", "still"]).err, /need your OK/);
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0, "init allows the new version");
   const ws = join(home, "workspace", "demo", "failing");
   r = run(["-b", "failing", "node", "--", "-e", agentScript]);
   assert.equal(r.status, 4, r.all);
@@ -135,7 +140,7 @@ test("a failing remove hook stops the removal", (t) => {
   write(repo, { ".nook/remove.mjs": "process.exit(2)\n" });
   sh("git", ["-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", "commit", "-qam", "fail remove"], repo);
   const run = (args) => nk(args, { cwd: repo, home });
-  assert.equal(run(["init", "--yes"]).status, 0);
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0);
   assert.equal(run(["-b", "keep"]).status, 0);
   const r = run(["rm", "keep", "-y"]);
   assert.equal(r.status, 2, r.all);
@@ -146,7 +151,7 @@ test("a failing remove hook stops the removal", (t) => {
 test("the old workspaces folder is renamed to workspace and git follows", (t) => {
   const { home, repo } = setup(t);
   const run = (args) => nk(args, { cwd: repo, home });
-  assert.equal(run(["init", "--yes"]).status, 0);
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0);
   const made = run(["-b", "old"]);
   assert.equal(made.status, 0, made.all);
   // Put things back the way nk before 0.1 kept them.
@@ -167,7 +172,7 @@ test("the old workspaces folder is renamed to workspace and git follows", (t) =>
 test("-b turns any branch text into a workspace name", (t) => {
   const { home, repo } = setup(t);
   const run = (args) => nk(args, { cwd: repo, home });
-  assert.equal(run(["init", "--yes"]).status, 0);
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0);
   const r = run(["-b", "REE-12-修复登录/Login"]);
   assert.equal(r.status, 0, r.all);
   assert.match(r.err, /Using the name ree-12-login/);
@@ -180,7 +185,7 @@ test("a converted name can be edited before the workspace is created", async (t)
   const { createContext } = await import("../src/context.mjs");
   const { createWorkspace } = await import("../src/commands/workspace.mjs");
   const { home, repo } = setup(t);
-  assert.equal(nk(["init", "--yes"], { cwd: repo, home }).status, 0);
+  assert.equal(nk(["init", "--yes", "--allow-hooks"], { cwd: repo, home }).status, 0);
   const sink = { write() {} };
   const ctx = createContext({ env: { ...process.env, NOOK_HOME: home }, cwd: repo, out: sink, err: sink });
   const offered = [];
@@ -194,8 +199,8 @@ test("a converted name can be edited before the workspace is created", async (t)
 test("init adopts nothing by default and keeps settings on a second run", (t) => {
   const { root, home, repo } = setup(t);
   sh("git", ["worktree", "add", "-q", "-b", "elsewhere", join(root, "elsewhere"), "main"], repo);
-  assert.equal(nk(["init", "--yes", "--name", "demo"], { cwd: repo, home }).status, 0);
-  const second = nk(["init", "--yes"], { cwd: repo, home });
+  assert.equal(nk(["init", "--yes", "--allow-hooks", "--name", "demo"], { cwd: repo, home }).status, 0);
+  const second = nk(["init", "--yes", "--allow-hooks"], { cwd: repo, home });
   assert.equal(second.status, 0, second.all);
   assert.match(second.err, /elsewhere/);
   const config = parse(readFileSync(join(home, "config.toml"), "utf8"));
@@ -211,7 +216,7 @@ test("an old branch without .nook still gets the hooks; a branch with / keeps it
   git(["rm", "-rq", ".nook"]);
   git(["commit", "-qm", "before hooks existed"]);
   git(["checkout", "-q", "main"]);
-  assert.equal(run(["init", "--yes"]).status, 0);
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0);
 
   const r = run(["-b", "feat/Login"]);
   assert.equal(r.status, 0, r.all);
@@ -238,10 +243,10 @@ test("an old branch without .nook still gets the hooks; a branch with / keeps it
 
 test("init again keeps the shared files you filled in", (t) => {
   const { home, repo } = setup(t);
-  assert.equal(nk(["init", "--yes"], { cwd: repo, home }).status, 0);
+  assert.equal(nk(["init", "--yes", "--allow-hooks"], { cwd: repo, home }).status, 0);
   const shared = join(home, "shared", "demo", ".env");
   write(join(home, "shared", "demo"), { ".env": "API_KEY=filled\n" });
-  const r = nk(["init", "--yes"], { cwd: repo, home });
+  const r = nk(["init", "--yes", "--allow-hooks"], { cwd: repo, home });
   assert.equal(r.status, 0, r.all);
   assert.equal(readFileSync(shared, "utf8"), "API_KEY=filled\n");
   assert.match(r.err, /Kept shared files: \.env/);
@@ -250,7 +255,7 @@ test("init again keeps the shared files you filled in", (t) => {
 test("worktrees made by other tools are listed and removable; the main checkout is not", (t) => {
   const { root, home, repo } = setup(t);
   const run = (args) => nk(args, { cwd: repo, home });
-  assert.equal(run(["init", "--yes"]).status, 0);
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0);
   const other = join(root, "orca", "REE-228");
   sh("git", ["worktree", "add", "-q", "-b", "ree-auz/REE-228", other, "main"], repo);
   const locked = join(root, "orca", "kept");
@@ -283,7 +288,7 @@ test("worktrees made by other tools are listed and removable; the main checkout 
 test("a changed remove hook is approved before any program is stopped", async (t) => {
   const { home, repo } = setup(t);
   const run = (args) => nk(args, { cwd: repo, home });
-  assert.equal(run(["init", "--yes"]).status, 0);
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0);
   const created = run(["-b", "busy"]);
   assert.equal(created.status, 0, created.all);
   const ws = created.out.trim();
@@ -310,7 +315,7 @@ test("outside a repository nothing is created or removed unless --repo names one
   const other = makeRepo(join(root, "other"));
   const elsewhere = join(root, "elsewhere");
   write(elsewhere, { "note.txt": "not a repository\n" });
-  assert.equal(nk(["init", "--yes"], { cwd: repo, home }).status, 0);
+  assert.equal(nk(["init", "--yes", "--allow-hooks"], { cwd: repo, home }).status, 0);
 
   let r = nk(["-b", "smoke"], { cwd: elsewhere, home });
   assert.equal(r.status, 1, "even with only one repository registered");
@@ -327,7 +332,7 @@ test("outside a repository nothing is created or removed unless --repo names one
 
 test("-b -y keeps the converted name without asking", (t) => {
   const { home, repo } = setup(t);
-  assert.equal(nk(["init", "--yes"], { cwd: repo, home }).status, 0);
+  assert.equal(nk(["init", "--yes", "--allow-hooks"], { cwd: repo, home }).status, 0);
   const r = nk(["-b", "ree-9-修复：Login", "-y"], { cwd: repo, home });
   assert.equal(r.status, 0, r.all);
   assert.match(r.out, /ree-9-login$/m);
@@ -336,7 +341,7 @@ test("-b -y keeps the converted name without asking", (t) => {
 test("rm removes several workspaces after one check of all of them", (t) => {
   const { home, repo } = setup(t);
   const run = (args) => nk(args, { cwd: repo, home });
-  assert.equal(run(["init", "--yes"]).status, 0);
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0);
   for (const name of ["one", "two", "three"]) assert.equal(run(["-b", name]).status, 0);
 
   let r = run(["rm", "one", "missing", "-y"]);
@@ -344,8 +349,12 @@ test("rm removes several workspaces after one check of all of them", (t) => {
   assert.match(r.err, /No workspace named "missing"/);
   assert.ok(existsSync(join(home, "workspace", "demo", "one")), "nothing removed before every name checked out");
 
+  // agent.txt stands in for a local database: git ignores it, so no backup holds it.
+  write(join(home, "workspace", "demo", "one"), { "agent.txt": "notes", "node_modules/x/index.js": "" });
   r = run(["rm", "one", "two", "-y"]);
   assert.equal(r.status, 0, r.all);
+  assert.match(r.err, /Not backed up, since git ignores them: [^\n]*agent\.txt/);
+  assert.doesNotMatch(r.err, /ignores them: [^\n]*(\.env|node_modules)/, "a shared copy and a rebuilt folder are not worth a warning");
   assert.ok(!existsSync(join(home, "workspace", "demo", "one")));
   assert.ok(!existsSync(join(home, "workspace", "demo", "two")));
   assert.ok(existsSync(join(home, "workspace", "demo", "three")));
@@ -381,7 +390,7 @@ test("forget keeps the repository's workspaces until nk rm, then removes its reg
   assert.ok(!existsSync(join(home, "shared", "demo")), "shared files deleted");
   assert.ok(existsSync(join(repo, "README.md")), "the repository folder stays");
   assert.equal(parse(readFileSync(join(home, "config.toml"), "utf8")).repos?.demo, undefined);
-  assert.equal(run(["init", "--yes"]).status, 0, "it can be registered again");
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0, "it can be registered again");
 });
 
 test("forget a repository whose folder is gone deletes what its workspaces left", (t) => {
@@ -400,7 +409,7 @@ function setupForget(t) {
   const home = join(root, "nook-home");
   const repo = makeRepo(join(root, "demo"), { ".gitignore": ".env\n", ".env.example": "KEY=\n" });
   const run = (args) => nk(args, { cwd: repo, home });
-  assert.equal(run(["init", "--yes"]).status, 0);
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0);
   assert.ok(existsSync(join(home, "shared", "demo")));
   return { root, home, repo, run };
 }
@@ -413,7 +422,7 @@ test("init points a template's Compose service addresses at this machine", (t) =
     "docker-compose.yml": "services:\n  postgres: { image: postgres, ports: ['127.0.0.1:5432:5432'] }\n  redis: { image: redis, ports: ['${REDIS_PORT:-6380}:6379'] }\n  app: { build: ., ports: ['3000:3000'] }\n",
     ".env.sample": "DATABASE_URL=postgres://user:pass@postgres:5432/app\nREDIS_URL=redis://redis:6379\nAPP_URL=http://app:3000\nSECRET_KEY=\n",
   });
-  const r = nk(["init", "--yes"], { cwd: repo, home });
+  const r = nk(["init", "--yes", "--allow-hooks"], { cwd: repo, home });
   assert.equal(r.status, 0, r.all);
   assert.match(r.err, /Pointed DATABASE_URL, REDIS_URL in \.env at the Compose services on this machine/);
   assert.equal(

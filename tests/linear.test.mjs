@@ -13,7 +13,7 @@ test("the Linear launcher creates the workspace once, then reopens it", (t) => {
   const root = tempDir(t);
   const home = join(root, "nook-home");
   const repo = makeRepo(join(root, "demo"), { ".gitignore": "agent.json\n" });
-  assert.equal(nk(["init", "--yes"], { cwd: repo, home }).status, 0);
+  assert.equal(nk(["init", "--yes", "--allow-hooks"], { cwd: repo, home }).status, 0);
   // A stand-in agent that records what it was given.
   const configPath = join(home, "config.toml");
   const config = parse(readFileSync(configPath, "utf8"));

@@ -1,8 +1,8 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { NookError } from "../errors.mjs";
-import { exists, isInside } from "../home.mjs";
-import { baseRef, gitTry, remoteUrl } from "../git.mjs";
+import { exists, isInside, samePath } from "../home.mjs";
+import { baseRef, gitTry, listWorktrees, remoteUrl } from "../git.mjs";
 import { githubPrs } from "../forge.mjs";
 import { findHook } from "../hooks.mjs";
 import { backupDir, createBackup, inspectWorkspace, needsBackup } from "../backup.mjs";
@@ -11,6 +11,7 @@ import { createPrompter } from "../prompt.mjs";
 import { branchOf, resolveWorkspace } from "../context.mjs";
 import { toName } from "../names.mjs";
 import { approveHooks, hook } from "./workspace.mjs";
+import { listFiles } from "../shared.mjs";
 import { setupChanges } from "./check-hooks.mjs";
 import { describeProject, dockerCli, findComposeProjects, removeComposeProject } from "../compose.mjs";
 
@@ -54,17 +55,35 @@ export async function deleteWorkspace(ctx, target, { state, base, backupRoot, pr
   if (state.present) {
     const after = occupants(ctx, ws.path, scan);
     if (after.length) throw new NookError(`Programs started running in ${ws.path}:\n${describeOccupants(after)}\nNothing was deleted`);
-    gitTry(["worktree", "remove", "--force", ws.path], { cwd: repo.path });
+    // Changes are backed up by now, so the folder goes even when git cannot remove the worktree
+    // (a damaged one, say); prune below then drops git's record of it.
+    const removed = gitTry(["worktree", "remove", "--force", ws.path], { cwd: repo.path });
+    if (!removed.ok) ctx.warn(`git worktree remove failed (${removed.err.split("\n")[0]}); deleting the folder instead`);
     // git can leave ignored folders behind on Windows (node_modules, .venv), even when it reports success.
     deleteFolder(ws.path);
   }
   gitTry(["worktree", "prune"], { cwd: repo.path });
+  if (listWorktrees(repo.path).some((tree) => samePath(tree.path, ws.path)))
+    throw new NookError(`git still lists ${ws.path} as a worktree. Run git worktree prune in ${repo.path}, then nk rm ${name} again`);
   if (branchName) {
     const branch = gitTry(["branch", "-D", branchName], { cwd: repo.path });
     if (!branch.ok && !/not found/i.test(branch.err)) ctx.warn(`Branch ${branchName} was kept: ${branch.err}`);
   }
   delete repo.workspaces[name];
   ctx.save();
+}
+
+// Folders a project rebuilds from its own files, and files nobody keeps: losing them loses nothing.
+const REBUILT = new Set(["node_modules", ".venv", "venv", "vendor", "dist", "build", "out", "target", "coverage", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".next", ".nuxt", ".svelte-kit", ".turbo", ".cache", ".parcel-cache", ".gradle", ".tox", "_build", "deps", "tmp", "log", "logs", ".idea", ".vscode", ".DS_Store"]);
+
+/** Ignored files and folders in a workspace that hold more than a rebuild or a shared copy: a local database, say. */
+function ignoredData(path, sharedDir) {
+  const listed = gitTry(["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "--no-empty-directory"], { cwd: path });
+  if (!listed.ok) return [];
+  const shared = new Set(listFiles(sharedDir));
+  return listed.out
+    .split(/\r?\n/)
+    .filter((entry) => entry && !shared.has(entry) && !/\.(log|pyc)$/.test(entry) && !entry.split("/").some((part) => REBUILT.has(part)));
 }
 
 /** Deletes a folder and everything in it, retrying while Windows still holds a file open. */
@@ -106,6 +125,8 @@ async function planRemoval(ctx, input, { repoFlag, scan, prs, docker }) {
   for (const name of compose.shared) ctx.warn(`Compose project ${name} also has containers outside this workspace; it is kept`);
   if (compose.unavailable && compose.unavailable !== "not installed") ctx.warn(`Could not check for Docker containers: ${compose.unavailable}`);
   if (needsBackup(state)) ctx.info(`Backs up changes to ${backupRoot}`);
+  const lost = state.present ? ignoredData(ws.path, join(ctx.paths.shared, target.repoName)) : [];
+  if (lost.length) ctx.warn(`Not backed up, since git ignores them: ${lost.slice(0, 8).join(", ")}${lost.length > 8 ? ` and ${lost.length - 8} more` : ""}`);
   if (state.changes.length) {
     ctx.warn(`${plural(state.changes.length, "uncommitted change")}:`);
     for (const change of state.changes.slice(0, 10)) ctx.item(change);

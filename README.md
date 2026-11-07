@@ -251,7 +251,9 @@ pnpm and npm, uv, and a Docker Compose project per workspace.
 
 Before hooks run for the first time, and again after one changes, Nook lists
 them (event and file, not the contents) and asks once: "Allow and remember?".
-Rerunning `nk init` also asks. Each run's output is saved in `~/nook/logs/`.
+Rerunning `nk init` also asks. `nk init --yes` skips the other questions but
+not this one; `nk init --allow-hooks` allows them without asking, for a person
+who has read them (in a script, say). Each run's output is saved in `~/nook/logs/`.
 
 Output lines start with ◎ (running now), ✓ (done), ▲ (needs attention) or
 ○ (information), as in worktrunk. Colors are used on a terminal unless

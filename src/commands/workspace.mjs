@@ -105,6 +105,8 @@ async function pickName(ctx, input, prompter) {
 export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent, prompt, extra = [], prompter = createPrompter(), untested = false }) {
   const { name: repoName, repo } = resolveRepo(ctx, repoFlag);
   checkSetup(ctx, repo, { stop: true, untested });
+  // Asked before anything is made, so hooks that are not allowed leave no half-made workspace.
+  await approveHooks(ctx, { repoName, repo }, prompter);
   if (remoteUrl(repo.path)) {
     const fetched = gitTry(["fetch", "--quiet", "origin", repo.default_branch], { cwd: repo.path });
     if (!fetched.ok) ctx.warn(`Could not fetch origin/${repo.default_branch}; using what is local`);
@@ -114,17 +116,26 @@ export async function createWorkspace(ctx, { name: input, repo: repoFlag, agent,
   const name = existing ? toName(existing) : await pickName(ctx, input, prompter);
   if (existing && existing !== name) ctx.info(`Using the name ${name} for branch ${existing}`);
   const branch = existing ?? name;
-  if (repo.workspaces[name]) throw new NookError(`Workspace "${name}" already exists. Open it with: nk ${name}`);
   const dir = join(ctx.paths.workspaces, repoName);
   const path = join(dir, name);
-  if (exists(path)) throw new NookError(`${path} already exists`);
+  // The name and ports are taken under the lock, so two nk -b at once never get the same ones.
+  const ws = await ctx.update(async (config) => {
+    const fresh = config.repos[repoName];
+    if (fresh.workspaces[name]) throw new NookError(`Workspace "${name}" already exists. Open it with: nk ${name}`);
+    if (exists(path)) throw new NookError(`${path} already exists`);
+    const port = await allocatePort(config);
+    fresh.workspaces[name] = { path, port, created: new Date().toISOString(), ...(branch !== name && { branch }) };
+    return fresh.workspaces[name];
+  });
+  const { port } = ws;
   mkdirSync(dir, { recursive: true });
-
-  const port = await allocatePort(ctx.config);
-  addWorktree(repo.path, branch, path, repo.default_branch);
-  const ws = { path, port, created: new Date().toISOString(), ...(branch !== name && { branch }) };
-  repo.workspaces[name] = ws;
-  ctx.save();
+  try {
+    addWorktree(repo.path, branch, path, repo.default_branch);
+  } catch (error) {
+    delete repo.workspaces[name];
+    ctx.save();
+    throw error;
+  }
   const target = { repoName, repo, name, ws };
   ctx.ok(`Created workspace ${name} @ ${path} (ports ${port}–${port + 9})`);
 

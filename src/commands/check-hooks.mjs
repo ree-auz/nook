@@ -56,8 +56,19 @@ export async function testHooks(ctx, { repo: repoFlag, docker = dockerCli, scan 
   if (!before) ctx.info("Docker is not available; only the hooks' exit codes are checked");
 
   mkdirSync(join(ctx.paths.workspaces, repoName), { recursive: true });
-  const port = await allocatePort(ctx.config);
-  git(["worktree", "add", "--detach", path, git(["rev-parse", "HEAD"], { cwd: source })], { cwd: repo.path });
+  // Recorded while the check runs, so an nk -b at the same time does not take the same ports.
+  const port = await ctx.update(async (config) => {
+    const taken = await allocatePort(config);
+    config.repos[repoName].workspaces[CHECK_NAME] = { path, port: taken, created: new Date().toISOString() };
+    return taken;
+  });
+  try {
+    git(["worktree", "add", "--detach", path, git(["rev-parse", "HEAD"], { cwd: source })], { cwd: repo.path });
+  } catch (error) {
+    delete repo.workspaces[CHECK_NAME];
+    ctx.save();
+    throw error;
+  }
   const target = { repoName, repo, name: CHECK_NAME, ws: { path, port } };
   copyShared(join(ctx.paths.shared, repoName), path);
 
@@ -96,6 +107,8 @@ export async function testHooks(ctx, { repo: repoFlag, docker = dockerCli, scan 
     // Clean up whatever is left, so the check itself leaves nothing behind.
     for (const project of findComposeProjects(path, docker).projects) removeComposeProject(project, docker);
     gitTry(["worktree", "remove", "--force", path], { cwd: repo.path });
+    delete repo.workspaces[CHECK_NAME];
+    ctx.save();
     try {
       deleteFolder(path);
     } catch (error) {

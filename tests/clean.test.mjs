@@ -40,7 +40,7 @@ function setup(t) {
   sh("git", ["remote", "add", "origin", join(root, "origin.git")], repo);
   sh("git", ["push", "-q", "origin", "main"], repo);
   const run = (args) => nk(args, { cwd: repo, home });
-  assert.equal(run(["init", "--yes"]).status, 0);
+  assert.equal(run(["init", "--yes", "--allow-hooks"]).status, 0);
   const lines = [];
   const sink = { write: (text) => lines.push(text) };
   const ctx = () => createContext({ env: { ...process.env, NOOK_HOME: home }, cwd: repo, out: sink, err: sink });

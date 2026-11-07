@@ -5,13 +5,15 @@ import { detectAgents, which } from "../agents.mjs";
 import { NookError } from "../errors.mjs";
 import { isInside, samePath } from "../home.mjs";
 import { defaultBranch, listWorktrees, mainWorktree, remoteUrl } from "../git.mjs";
-import { ensureTrusted, findHooks } from "../hooks.mjs";
+import { ensureTrusted, findHooks, trustState } from "../hooks.mjs";
 import { assertName, suggestRepoName } from "../names.mjs";
 import { createPrompter, splitArgs } from "../prompt.mjs";
 import { copyFile, includePatterns, knownSecretFiles, listFiles, sharedCandidates, templateFiles } from "../shared.mjs";
 import { toolStatus } from "../tools.mjs";
 import { hostAddresses, pointAtHost } from "../compose-plan.mjs";
 import { planFromCi } from "../ci.mjs";
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 function openEditor(ctx, file, prompter) {
   if (!prompter.interactive || prompter.yes) return false;
@@ -101,7 +103,7 @@ function listOtherWorktrees(ctx, { repoPath, repo }) {
 }
 
 /** nk init: run once per repository; safe to run again. */
-export async function init(ctx, { yes = false, name: nameFlag } = {}) {
+export async function init(ctx, { yes = false, allowHooks = false, name: nameFlag } = {}) {
   const prompter = createPrompter({ yes });
   const repoPath = mainWorktree(ctx.cwd);
   if (isInside(repoPath, ctx.paths.home)) throw new NookError("Run nk init in the main repository, not in a workspace");
@@ -132,10 +134,18 @@ export async function init(ctx, { yes = false, name: nameFlag } = {}) {
   await prepareShared(ctx, { repoPath, sharedDir: join(ctx.paths.shared, name), prompter });
   ctx.save();
 
-  const hookPrompter = yes ? { confirm: async () => true } : prompter;
+  // Allowing hooks lets this repository's scripts run on this machine: --yes skips questions, but
+  // only --allow-hooks (or a person answering in a terminal) gives that.
   const hooks = findHooks(repoPath);
-  await ensureTrusted({ repoName: name, repoConfig: repo, hooks, prompter: hookPrompter, save: () => ctx.save(), ui: ctx });
-  if (yes && hooks.length) ctx.info(`Allowed ${hooks.map((h) => `.nook/${h.name}`).join(", ")} (--yes)`);
+  const pending = hooks.filter((hook) => trustState(repo, hook) !== "trusted");
+  if (pending.length && !allowHooks && (yes || !prompter.interactive)) {
+    ctx.warn(`${plural(pending.length, "hook")} not allowed yet: ${pending.map((h) => `.nook/${h.name}`).join(", ")}`);
+    ctx.info(`Read them in ${join(repoPath, ".nook")}, then run nk init --allow-hooks, or nk init in a terminal`);
+  } else {
+    const hookPrompter = allowHooks ? { confirm: async () => true } : prompter;
+    await ensureTrusted({ repoName: name, repoConfig: repo, hooks, prompter: hookPrompter, save: () => ctx.save(), ui: ctx });
+    if (allowHooks && pending.length) ctx.info(`Allowed ${pending.map((h) => `.nook/${h.name}`).join(", ")} (--allow-hooks)`);
+  }
   if (!hooks.length) ctx.info("No .nook/ hooks yet. To have an agent write them: nk hooks write <agent>");
   ctx.save();
   ctx.ok(`Done. Config: ${ctx.paths.config}`);
