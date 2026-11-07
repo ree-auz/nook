@@ -144,13 +144,19 @@ test("hooks write turns CI into hooks that pass hooks test; a CI change then sto
   if (services) assert.deepEqual(state().containers, [], "remove deleted the service container");
 
   assert.equal(run(["init", "--yes"]).status, 0, "allow the new hooks");
+  // A template's own database user would not match the container started from CI's service.
+  write(join(home, "shared", "demo"), { ".env": "DATABASE_URL=postgres://user:pass@localhost:5432/app\nKEEP=1\n" });
   r = run(["-b", "feat"]);
   assert.equal(r.status, 0, r.all);
   const ws = join(home, "workspaces", "demo", "feat");
   assert.ok(existsSync(join(ws, "package-lock.json")), "create ran npm install in the workspace");
+  assert.match(readFileSync(join(ws, ".env"), "utf8"), /^KEEP=1$/m);
   const port = parse(readFileSync(join(home, "config.toml"), "utf8")).repos.demo.workspaces.feat.port;
   if (services) {
-    assert.match(readFileSync(join(ws, ".env"), "utf8"), new RegExp(`DATABASE_URL=postgres://postgres:postgres@localhost:${port}/app`));
+    assert.match(r.all, /Set DATABASE_URL in \.env from CI/);
+    const env = readFileSync(join(ws, ".env"), "utf8");
+    assert.match(env, new RegExp(`^DATABASE_URL=postgres://postgres:postgres@localhost:${port}/app$`, "m"), "CI's user and password, this workspace's port");
+    assert.doesNotMatch(env, /user:pass/);
     assert.ok(state().containers[0].args.join(" ").includes(`-p 127.0.0.1:${port}:5432`));
   }
 

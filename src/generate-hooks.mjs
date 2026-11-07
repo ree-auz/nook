@@ -214,9 +214,16 @@ const repoint = (line) => {
   repointed.push(key);
   return head + next;
 };
-let text = (existsSync(envFile) ? readFileSync(envFile, "utf8") : "")
+// CI's values for its own services (the containers nk starts) carry those services' users and passwords:
+// they replace what a template says. Its other values only fill gaps.
+const ciPorts = new Set(plan.services.flatMap((service) => service.ports.map((port) => String(port.host))));
+const fromCi = Object.keys(plan.env).filter((key) => [...plan.env[key].matchAll(/\\b(?:localhost|127\\.0\\.0\\.1|0\\.0\\.0\\.0):(\\d+)\\b/g)].some((match) => ciPorts.has(match[1])));
+const original = existsSync(envFile) ? readFileSync(envFile, "utf8") : "";
+const replaced = fromCi.filter((key) => original.split(/\\r?\\n/).some((line) => assignment(key).test(line)));
+if (replaced.length) console.log("Set " + replaced.join(", ") + " in .env from CI, to match the services nk starts for this workspace");
+let text = original
   .split(/\\r?\\n/)
-  .filter((line) => !Object.keys(own).some((key) => assignment(key).test(line)))
+  .filter((line) => ![...Object.keys(own), ...fromCi].some((key) => assignment(key).test(line)))
   .map(repoint)
   .join("\\n")
   .trimEnd();
