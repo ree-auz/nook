@@ -97,7 +97,15 @@ function startCompose() {
     console.error(plan.compose.file + " needs " + missing.join(", ") + " in .env. Set it once in the shared .env (nk copies it into every workspace), then create the workspace again.");
     process.exit(1);
   }
-  compose(["up", "--detach", "--wait", "--quiet-pull", ...plan.compose.start]);
+  // A service that mounts a repository file not there yet (made by composer install and the like) would get a
+  // root-owned folder in its place: leave it for later.
+  const waiting = plan.compose.start.filter((name) => (plan.compose.mounts?.[name] ?? []).some((path) => !existsSync(join(ws, path))));
+  for (const name of waiting) {
+    const path = plan.compose.mounts[name].find((file) => !existsSync(join(ws, file)));
+    console.warn(name + " not started: it mounts " + path + ", which is not in the workspace yet (an install makes it). Start it afterwards with docker compose up -d " + name);
+  }
+  const start = plan.compose.start.filter((name) => !waiting.includes(name));
+  if (start.length) compose(["up", "--detach", "--wait", "--quiet-pull", ...start]);
 }
 
 /** localhost:5432 in a CI value becomes localhost:<this workspace's port>. */
@@ -188,7 +196,7 @@ function header(plan, event, what) {
 }
 
 const planText = (plan) =>
-  `const plan = ${JSON.stringify({ tools: plan.tools, env: plan.env, services: plan.services, compose: plan.compose && { file: plan.compose.file, files: plan.compose.files, start: plan.compose.start, ports: plan.compose.ports, remap: plan.compose.remap, required: plan.compose.required }, create: plan.create, remove: plan.remove }, null, 2)};\n`;
+  `const plan = ${JSON.stringify({ tools: plan.tools, env: plan.env, services: plan.services, compose: plan.compose && { file: plan.compose.file, files: plan.compose.files, start: plan.compose.start, ports: plan.compose.ports, remap: plan.compose.remap, required: plan.compose.required, mounts: plan.compose.mounts ?? {} }, create: plan.create, remove: plan.remove }, null, 2)};\n`;
 
 export function createHook(plan) {
   return `${header(plan, "create", "create: checks the tools CI installs, sets this workspace's ports in .env, starts its services, then runs the setup steps.")}${RUNTIME}

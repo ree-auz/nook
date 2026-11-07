@@ -72,6 +72,20 @@ test("a setup step whose program is missing says so plainly; corepack is checked
   assert.match(result.stderr, /nook-no-such-program is not installed/);
 });
 
+test("Compose services remember the repository files they mount, such as Sail's init script", (t) => {
+  const dir = tempDir(t);
+  write(dir, {
+    "docker-compose.yml": `services:
+  mariadb:
+    image: mariadb:11
+    volumes: ["sail-mariadb:/var/lib/mysql", "./vendor/laravel/sail/database/mysql/create-testing-database.sh:/docker-entrypoint-initdb.d/10.sh"]
+  redis: { image: redis, volumes: [{ type: bind, source: ./redis.conf, target: /etc/redis.conf }, "\${DATA}:/data"] }
+volumes: { sail-mariadb: {} }
+`,
+  });
+  assert.deepEqual(planCompose(dir).mounts, { mariadb: ["./vendor/laravel/sail/database/mysql/create-testing-database.sh"], redis: ["./redis.conf"] });
+});
+
 test("reads which Compose services a workspace starts and which ports it chooses", (t) => {
   const dir = tempDir(t);
   write(dir, {

@@ -84,6 +84,19 @@ function requiredVariables(service) {
  */
 const PORTS = 10;
 
+/**
+ * The repository paths a service mounts (./vendor/x.sh:/docker-entrypoint-initdb.d/x.sh). When one is
+ * missing, docker creates it as a root-owned folder, so the create hook waits for it instead.
+ */
+function bindMounts(service) {
+  const paths = [];
+  for (const volume of service.volumes ?? []) {
+    const source = typeof volume === "string" ? volume.split(":")[0] : volume?.type === "bind" ? volume.source : null;
+    if (typeof source === "string" && /^\.\.?\//.test(source) && !source.includes("$")) paths.push(source);
+  }
+  return paths;
+}
+
 /** startAny false: start nothing (CI has its own services). reserved: ports CI's services take first. */
 export function planCompose(repoPath, { start: startAny = true, reserved = 0 } = {}) {
   const file = composeFile(repoPath);
@@ -103,6 +116,7 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
   const start = [];
   const notStarted = [];
   const required = new Set();
+  const mounts = {};
   for (const [name, service] of Object.entries(services)) {
     if (!service || typeof service !== "object") continue;
     const fixed = [];
@@ -121,6 +135,8 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
     else {
       start.push(name);
       for (const variable of requiredVariables(service)) required.add(variable);
+      const files = bindMounts(service);
+      if (files.length) mounts[name] = files;
       // A fixed host port (5432:5432) would be the same for every workspace, and the main checkout may hold
       // it: each workspace moves it to one of its own ports.
       if (fixed.length) remap[name] = fixed;
@@ -134,7 +150,7 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
     notStarted.push({ name, why: "no port left of the workspace's ten" });
     untranslated.push({ step: `${where} › ${name}`, why: "not started: the workspace's ten ports are taken by the other services" });
   }
-  return { file: where, files: [file, override].filter(Boolean), start, ports, remap, required: [...required], notStarted, untranslated };
+  return { file: where, files: [file, override].filter(Boolean), start, ports, remap, required: [...required], mounts, notStarted, untranslated };
 }
 
 /**
