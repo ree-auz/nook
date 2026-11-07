@@ -343,6 +343,14 @@ volumes, networks and built images started there (Compose projects, and the
 service containers generated hooks start). Their remove hooks cannot run, since
 they were in the deleted folder.
 
+## Uninstalling
+
+`npm uninstall -g @ree-auz/nook` removes the `nk` command. What nk made stays:
+workspaces, backups and `~/nook/`. To remove those too, first run, in each
+repository, `nk rm` for its workspaces (or `nk clean` for the merged ones)
+and then `nk forget`. Then delete `~/nook/`; it holds the backups, so look
+in `~/nook/backup/` first.
+
 ## Linear
 
 To open a Linear issue in a new workspace with one click, see
