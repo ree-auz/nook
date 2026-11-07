@@ -197,8 +197,14 @@ const ports = portMap();
 
 for (const tool of plan.tools) {
   // On Windows a shell finds pnpm.cmd and the like; it takes one command line, not arguments.
-  const result = process.platform === "win32" ? spawnSync(tool.name + " --version", { encoding: "utf8", shell: true }) : spawnSync(tool.name, ["--version"], { encoding: "utf8" });
+  // go takes "version"; the others take --version.
+  const flag = tool.name === "go" ? "version" : "--version";
+  const result = process.platform === "win32" ? spawnSync(tool.name + " " + flag, { encoding: "utf8", shell: true }) : spawnSync(tool.name, [flag], { encoding: "utf8" });
   if (result.status !== 0) {
+    if (!result.error && missingProgram(tool.name) === null) {
+      console.error(tool.name + " " + flag + " failed: " + (result.stderr || result.stdout).trim().split("\\n")[0]);
+      process.exit(1);
+    }
     console.error(tool.name + " is not installed" + (tool.version ? " (CI uses " + tool.version + ")" : "") + (HINTS[tool.name] ? "; " + HINTS[tool.name] : ""));
     process.exit(1);
   }

@@ -170,6 +170,23 @@ test("hooks write turns CI into hooks that pass hooks test; a CI change then sto
   assert.equal(run(["-b", "second", "--untested"]).status, 0);
 });
 
+test("generated hooks check go with go version, and tell a broken tool from a missing one", { skip: process.platform === "win32" && "a stand-in go needs sh" }, (t) => {
+  const goWorkflow = "on: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/setup-go@v5\n        with: { go-version: '1.25' }\n      - run: go test ./...\n";
+  const { root, run } = setup(t, { ".github/workflows/ci.yml": goWorkflow });
+  // Like the real go: "version" works, --version is an unknown flag.
+  write(join(root, "bin"), { go: '#!/bin/sh\nif [ "$1" = version ]; then echo "go version go1.25.3 linux/amd64"; exit 0; fi\necho "flag provided but not defined: -version" >&2; exit 2\n' });
+  chmodSync(join(root, "bin", "go"), 0o755);
+  assert.equal(run(["hooks", "write"]).status, 0);
+  let r = run(["hooks", "test"]);
+  assert.equal(r.status, 0, r.all);
+  assert.doesNotMatch(r.all, /go is not installed/);
+
+  write(join(root, "bin"), { go: "#!/bin/sh\necho 'go: cannot find GOROOT' >&2\nexit 1\n" });
+  r = run(["hooks", "test"]);
+  assert.equal(r.status, 1);
+  assert.match(r.all, /go version failed: go: cannot find GOROOT/);
+});
+
 test("hooks write never replaces hooks written by hand", (t) => {
   const { run } = setup(t, { ".github/workflows/ci.yml": ciWorkflow, ".nook/create.mjs": "console.log('mine')\n" });
   const r = run(["hooks", "write"]);
