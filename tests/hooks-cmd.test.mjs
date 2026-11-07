@@ -223,6 +223,8 @@ const composeFile = `services:
   api:
     build: .
     ports: ["127.0.0.1:\${API_PORT:-3001}:3001"]
+volumes:
+  pgdata: { name: demo-pgdata }
 `;
 
 test("hooks write starts the repository's Compose services in each workspace's own project, on its own ports", { skip: !services && "generated hooks call docker without a shell" }, (t) => {
@@ -259,6 +261,7 @@ test("hooks write starts the repository's Compose services in each workspace's o
   const moved = join(repo, ".git", "worktrees", "feat", "nook-compose.yaml");
   // Its fixed container name gets this workspace's prefix, so a second workspace can start one too (plane).
   assert.match(readFileSync(moved, "utf8"), new RegExp(`"cache":\\n    container_name: "nook-demo-feat-cache"\\n    ports: !override\\n      - "127\\.0\\.0\\.1:${port + 1}:6379"`));
+  assert.match(readFileSync(moved, "utf8"), /^volumes:\n  "pgdata":\n    name: "nook-demo-feat_pgdata"$/m, "a volume with a fixed name gets this workspace's own: no shared data");
   assert.ok(env.includes(`COMPOSE_FILE=${join(ws, "docker-compose.yml")}${delimiter}${moved}`), "docker compose run by hand there uses it too");
   assert.equal(sh("git", ["status", "--porcelain"], ws), "", "nothing new in the working tree");
 

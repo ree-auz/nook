@@ -123,6 +123,18 @@ test("a service on the host's network moves to the workspace's own network and p
   assert.match(plan.notStarted.find((s) => s.name === "redis").why, /host's network and names no ports/);
 });
 
+test("a base Compose file that cannot run alone is read with its development file (coolify)", (t) => {
+  const dir = tempDir(t);
+  write(dir, {
+    "docker-compose.yml": "services:\n  app: { container_name: app, depends_on: [db] }\n  db: { image: 'postgres:15', networks: [net] }\nnetworks:\n  net: { name: coolify }\n  shared: { name: proxy, external: true }\nvolumes:\n  data: { name: app-data }\n",
+    "docker-compose.dev.yml": "services:\n  app: { build: . }\n  db: { ports: ['${FORWARD_DB_PORT:-5432}:5432'] }\n",
+  });
+  const plan = planCompose(dir);
+  assert.deepEqual(plan.files, ["docker-compose.yml", "docker-compose.dev.yml"]);
+  assert.deepEqual(plan.start, ["db"]);
+  assert.deepEqual(plan.fixed, { networks: ["net"], volumes: ["data"] }, "fixed names each workspace replaces; an external network is shared on purpose");
+});
+
 test("reads the Compose override file the way docker compose does", (t) => {
   const dir = tempDir(t);
   write(dir, {

@@ -21,7 +21,29 @@ export function composeFile(repoPath) {
 export function overrideFile(repoPath, file = composeFile(repoPath)) {
   if (!file) return null;
   const stem = file.replace(/\.ya?ml$/, "");
-  return [`${stem}.override.yaml`, `${stem}.override.yml`].find((name) => exists(join(repoPath, name))) ?? null;
+  const override = [`${stem}.override.yaml`, `${stem}.override.yml`].find((name) => exists(join(repoPath, name)));
+  if (override) return override;
+  // A base file that cannot run alone (a service with neither image nor build, as coolify's) is meant to be
+  // combined with its development file: docker compose -f docker-compose.yml -f docker-compose.dev.yml.
+  let services = {};
+  try {
+    services = parse(readFileSync(join(repoPath, file), "utf8"))?.services ?? {};
+  } catch {}
+  if (!Object.values(services).some((service) => service && typeof service === "object" && !service.image && !service.build && !service.extends)) return null;
+  return [".dev.yaml", ".dev.yml", ".development.yaml", ".development.yml"].map((end) => stem + end).find((name) => exists(join(repoPath, name))) ?? null;
+}
+
+/**
+ * Networks and volumes the files give a fixed name (networks: { coolify: { name: coolify } }): every
+ * workspace and the main checkout would share them, data too. external ones are shared on purpose.
+ */
+function fixedNames(repoPath, files) {
+  const found = { networks: [], volumes: [] };
+  for (const file of files)
+    for (const kind of ["networks", "volumes"])
+      for (const [key, value] of Object.entries(parse(readFileSync(join(repoPath, file), "utf8"))?.[kind] ?? {}))
+        if (value?.name && !value.external && !found[kind].includes(key)) found[kind].push(key);
+  return found;
 }
 
 /** Both files, as `docker compose` reads them with no -f: ports add up, other keys are replaced. */
@@ -161,7 +183,7 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
     notStarted.push({ name, why: "no port left of the workspace's ten" });
     untranslated.push({ step: `${where} › ${name}`, why: "not started: the workspace's ten ports are taken by the other services" });
   }
-  return { file: where, files: [file, override].filter(Boolean), start, ports, remap, required: [...required], mounts, named, ownNetwork, notStarted, untranslated };
+  return { file: where, files: [file, override].filter(Boolean), start, ports, remap, required: [...required], mounts, named, ownNetwork, fixed: fixedNames(repoPath, [file, override].filter(Boolean)), notStarted, untranslated };
 }
 
 /**

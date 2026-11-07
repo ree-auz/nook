@@ -68,9 +68,12 @@ function composeFiles(ports) {
   const remap = plan.compose.remap;
   const named = plan.compose.named ?? [];
   const ownNetwork = plan.compose.ownNetwork ?? [];
-  if (!Object.keys(remap).length && !named.length && !ownNetwork.length) return files;
-  const lines = ["# Written by nk: this workspace's own host ports, container names and network.", "services:"];
-  for (const service of [...new Set([...Object.keys(remap), ...named, ...ownNetwork])]) {
+  const fixed = plan.compose.fixed ?? { networks: [], volumes: [] };
+  if (!Object.keys(remap).length && !named.length && !ownNetwork.length && !fixed.networks.length && !fixed.volumes.length) return files;
+  const lines = ["# Written by nk: this workspace's own host ports, container names, networks and volumes."];
+  const services = [...new Set([...Object.keys(remap), ...named, ...ownNetwork])];
+  if (services.length) lines.push("services:");
+  for (const service of services) {
     lines.push("  " + JSON.stringify(service) + ":");
     if (named.includes(service)) lines.push("    container_name: " + JSON.stringify(prefix + "-" + service));
     if (ownNetwork.includes(service)) lines.push("    network_mode: !reset null");
@@ -84,6 +87,12 @@ function composeFiles(ports) {
       }
       lines.push("      - " + JSON.stringify("127.0.0.1:" + port + ":" + entry.target));
     }
+  }
+  // A network or volume with a fixed name gets this workspace's own, as Compose would name it.
+  for (const kind of ["networks", "volumes"]) {
+    if (!fixed[kind].length) continue;
+    lines.push(kind + ":");
+    for (const key of fixed[kind]) lines.push("  " + JSON.stringify(key) + ":", "    name: " + JSON.stringify(prefix + "_" + key));
   }
   const git = spawnSync("git", ["rev-parse", "--absolute-git-dir"], { cwd: ws, encoding: "utf8" });
   const file = join(git.status === 0 ? git.stdout.trim() : ws, "nook-compose.yaml");
@@ -210,7 +219,7 @@ function header(plan, event, what) {
 }
 
 const planText = (plan) =>
-  `const plan = ${JSON.stringify({ tools: plan.tools, env: plan.env, services: plan.services, compose: plan.compose && { file: plan.compose.file, files: plan.compose.files, start: plan.compose.start, ports: plan.compose.ports, remap: plan.compose.remap, named: plan.compose.named ?? [], ownNetwork: plan.compose.ownNetwork ?? [], required: plan.compose.required, mounts: plan.compose.mounts ?? {} }, create: plan.create, remove: plan.remove }, null, 2)};\n`;
+  `const plan = ${JSON.stringify({ tools: plan.tools, env: plan.env, services: plan.services, compose: plan.compose && { file: plan.compose.file, files: plan.compose.files, start: plan.compose.start, ports: plan.compose.ports, remap: plan.compose.remap, named: plan.compose.named ?? [], ownNetwork: plan.compose.ownNetwork ?? [], fixed: plan.compose.fixed ?? { networks: [], volumes: [] }, required: plan.compose.required, mounts: plan.compose.mounts ?? {} }, create: plan.create, remove: plan.remove }, null, 2)};\n`;
 
 export function createHook(plan) {
   return `${header(plan, "create", "create: checks the tools CI installs, sets this workspace's ports in .env, starts its services, then runs the setup steps.")}${RUNTIME}
@@ -244,7 +253,7 @@ const own = plan.compose
   ? {
       COMPOSE_PROJECT_NAME: prefix,
       // So a docker compose you run in the workspace uses its ports too.
-      ...((Object.keys(plan.compose.remap).length || plan.compose.named?.length || plan.compose.ownNetwork?.length) && { COMPOSE_FILE: composeFiles(ports).join(delimiter) }),
+      ...((Object.keys(plan.compose.remap).length || plan.compose.named?.length || plan.compose.ownNetwork?.length || plan.compose.fixed?.networks.length || plan.compose.fixed?.volumes.length) && { COMPOSE_FILE: composeFiles(ports).join(delimiter) }),
       ...Object.fromEntries(Object.keys(plan.compose.ports).map((key) => [key, ports[key]])),
     }
   : {};
