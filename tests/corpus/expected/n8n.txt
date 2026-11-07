@@ -1,0 +1,6 @@
+source: .github/workflows/ci-python.yml › checks
+tools: uv
+create: -
+left out: Install just: uses the action extractions/setup-just@e33e0265a09d6d736e2ee1e0eb685ef1de4669ff
+left out: Install Python: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Install project dependencies: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

@@ -19,7 +19,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test --test-concurrency=1"
+    "test": "node --test --test-concurrency=1",
+    "corpus": "node scripts/corpus.mjs"
   },
   "dependencies": {
     "cross-spawn": "7.0.6",

@@ -1,0 +1,14 @@
+source: .github/workflows/elixir.yml › e2e
+tools: elixir
+create: -
+ci service: postgres postgres:18 5432:5432
+ci service: clickhouse clickhouse/clickhouse-server:25.11.5.8-alpine 8123:8123
+env: CACHE_VERSION=v19
+env: PERSISTENT_CACHE_DIR=cached
+env: npm_config_audit=false
+env: npm_config_fund=false
+env: MIX_ENV=e2e_test
+left out: env: BASE_URL points at local port 8111, which is not a service nk starts; on this machine it may be a real database
+left out: marocchino/tool-versions-action@4219f2e6bfdb4cce482b78f71ad9663e64f4d247: uses the action marocchino/tool-versions-action@4219f2e6bfdb4cce482b78f71ad9663e64f4d247
+left out: Check for changes in tracker/**: uses the action dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+left out: npm install --prefix ./tracker: runs only when steps.changes.outputs.tracker == 'true' || env.HAS_BUILT_TRACKER == 'false'

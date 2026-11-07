@@ -142,9 +142,10 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
  * { "postgres:5432": "127.0.0.1:5432" }. A template written for apps running
  * inside Docker (DATABASE_URL=...@postgres:5432) is rewritten with it, since
  * here the app runs on the machine; each workspace then moves the port to its own.
+ * start false: CI's own services are started instead, so there is nothing to point at.
  */
-export function hostAddresses(repoPath) {
-  const plan = planCompose(repoPath);
+export function hostAddresses(repoPath, { start = true } = {}) {
+  const plan = planCompose(repoPath, { start });
   if (!plan?.start.length) return {};
   const services = readServices(repoPath, plan.files[0], plan.files[1]);
   const addresses = {};

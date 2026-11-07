@@ -31,3 +31,18 @@ jobs:
       - run: npm test
       - name: CLI runs from the bin entry
         run: node bin/nk.mjs --help
+
+  corpus:
+    name: hooks write on real repositories
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Fetches each repository's CI and Compose files at a pinned commit and compares what
+      # nk hooks write makes of them with tests/corpus/expected. Nothing from them is run.
+      - run: npm run corpus

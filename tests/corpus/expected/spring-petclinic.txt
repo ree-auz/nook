@@ -1,0 +1,8 @@
+source: .github/workflows/gradle-build.yml › build + docker-compose.yml
+tools: java
+create: -
+compose start: mysql, postgres
+compose moves: mysql 3306
+compose moves: postgres 5432
+template addresses: mysql:3306 -> 127.0.0.1:3306, postgres:5432 -> 127.0.0.1:5432
+left out: Setup Gradle: uses the action gradle/actions/setup-gradle@v4

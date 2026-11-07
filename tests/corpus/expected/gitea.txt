@@ -1,0 +1,12 @@
+source: .github/workflows/pull-db-tests.yml › test-unit
+tools: go
+create: -
+ci service: elasticsearch elasticsearch:8.19.23 9200:9200
+ci service: meilisearch getmeili/meilisearch:v1 7700:7700
+ci service: redis redis:8 6379:6379
+ci service: minio bitnamilegacy/minio:2025.7.23 9000:9000
+ci service: devstoreaccount1.azurite.local mcr.microsoft.com/azure-storage/azurite:latest 10000:10000
+left out: avail=$(df --output=avail -BG / | tr -dc '0-9'): not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: Add hosts to /etc/hosts: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: make deps-backend: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it
+left out: make generate-go: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

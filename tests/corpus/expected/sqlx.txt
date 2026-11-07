@@ -1,0 +1,5 @@
+source: .github/workflows/examples.yml › postgres
+tools: -
+create: -
+ci service: postgres postgres:latest 5432:5432
+left out: Setup Rust: not a dependency install; CI runs it on a throwaway machine, so check what it touches before adding it

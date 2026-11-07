@@ -11,6 +11,7 @@ import { createPrompter, splitArgs } from "../prompt.mjs";
 import { copyFile, includePatterns, knownSecretFiles, listFiles, sharedCandidates, templateFiles } from "../shared.mjs";
 import { toolStatus } from "../tools.mjs";
 import { hostAddresses, pointAtHost } from "../compose-plan.mjs";
+import { planFromCi } from "../ci.mjs";
 
 function openEditor(ctx, file, prompter) {
   if (!prompter.interactive || prompter.yes) return false;
@@ -57,7 +58,8 @@ async function prepareShared(ctx, { repoPath, sharedDir, prompter }) {
   for (const copy of copies) copyFile(copy.from, join(sharedDir, copy.to));
   // A template for running the app inside Docker names Compose services (postgres:5432); here the app runs on
   // this machine, so point those values at where the services are published.
-  const addresses = fill.length ? hostAddresses(repoPath) : {};
+  // When the CI job has services, those are started instead of Compose's (see nk hooks write).
+  const addresses = fill.length ? hostAddresses(repoPath, { start: !planFromCi(repoPath).best?.services.length }) : {};
   if (Object.keys(addresses).length)
     for (const file of fill) {
       const { text, keys } = pointAtHost(readFileSync(file, "utf8"), addresses);

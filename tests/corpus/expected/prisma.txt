@@ -1,0 +1,11 @@
+source: .github/workflows/ci.yml › test-packages + docker-compose.yaml
+tools: pnpm
+create: pnpm install --frozen-lockfile --ignore-scripts
+ci service: postgres postgres:15 5432:5432
+ci service: mysql mysql:8.4 3306:3306
+env: TEST_TIMEOUT_MULTIPLIER=2
+env: MYSQL_URL=mysql://root:root@127.0.0.1:3306/mysql?allowPublicKeyRetrieval=true
+compose start: -
+compose not started: postgres (CI starts its own services)
+compose not started: mysql (CI starts its own services)
+left out: jdx/mise-action@1648a7812b9aeae629881980618f079932869151: uses the action jdx/mise-action@1648a7812b9aeae629881980618f079932869151

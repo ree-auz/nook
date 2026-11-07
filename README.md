@@ -325,6 +325,13 @@ npm test
 
 CI runs the tests on Linux, macOS and Windows.
 
+`npm run corpus` checks what `nk hooks write` makes of real repositories
+(`tests/corpus/repos.json`, each at a pinned commit; only their CI, Compose and
+env template files are fetched, and nothing in them is run) against the
+reviewed results in `tests/corpus/expected/`. CI runs it too. After a change to
+how hooks are written, review the lines it prints and accept them with
+`npm run corpus -- --update`.
+
 ## License
 
 MIT

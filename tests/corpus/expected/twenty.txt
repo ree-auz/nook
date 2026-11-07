@@ -1,0 +1,8 @@
+source: .github/workflows/ci-e2e-main.yaml › e2e-test
+tools: node@lts/*, node@26
+create: -
+ci service: postgres postgres:18 5432:5432
+ci service: redis redis 6379:6379
+env: NODE_OPTIONS=--max-old-space-size=10240
+left out: Harden runner (egress audit): uses the action step-security/harden-runner@05e31511f85b41b11d1cf0ef85d0992719546e2c
+left out: Install Dependencies: runs only when ${{ steps.cache-node-modules.outputs.cache-hit != 'true' && steps.cache-node-modules.outputs.cache-matched-key == '' }}

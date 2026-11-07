@@ -1,0 +1,21 @@
+[
+  { "name": "analytics", "repo": "plausible/analytics", "commit": "31fc1910fe9be0362b27dacbd2886f16442da20f" },
+  { "name": "bullmq", "repo": "taskforcesh/bullmq", "commit": "f47057634a57b6d28fb4eed24d33322c371b7211" },
+  { "name": "celery", "repo": "celery/celery", "commit": "6fcdbf904d410749ad7676d8ff6b1b25d6e19675" },
+  { "name": "databases", "repo": "encode/databases", "commit": "ae3fb16f40201d9ed0ed31bea31a289127169568" },
+  { "name": "discourse", "repo": "discourse/discourse", "commit": "444e62cc26e96c7da97f08fa45df219f03f60114" },
+  { "name": "laravel-framework", "repo": "laravel/framework", "commit": "3ee9f38b4b840acabe79dbe3212b42e00b9ee4ee" },
+  { "name": "fastapi-template", "repo": "fastapi/full-stack-fastapi-template", "commit": "aabb90126964a164e02aff39e7c385bb0598236d" },
+  { "name": "gitea", "repo": "go-gitea/gitea", "commit": "b8b270bac95f311d019272035d05959f26287ad8" },
+  { "name": "immich", "repo": "immich-app/immich", "commit": "0cb2ab23b8c1669cc0a39e2247c62bdaceb0150d" },
+  { "name": "knex", "repo": "knex/knex", "commit": "e25d54bcb707714a17f5a5744eba5c4246bb4d1d" },
+  { "name": "mastodon", "repo": "mastodon/mastodon", "commit": "4dff13d48694e302d1a161b3d0795284a512b482" },
+  { "name": "n8n", "repo": "n8n-io/n8n", "commit": "3895cb31de5731c8425e56e56ff6f1dad1e2aa50" },
+  { "name": "outline", "repo": "outline/outline", "commit": "a518799e9a4d0adf7790c98ae9709a82c65c113f" },
+  { "name": "prisma", "repo": "prisma/prisma", "commit": "557c0d4c1b1061b8fff954dc96598ff4db95d262" },
+  { "name": "saleor", "repo": "saleor/saleor", "commit": "1d707dcf6127b098c187a181e5ee344017cdb064" },
+  { "name": "spring-petclinic", "repo": "spring-projects/spring-petclinic", "commit": "500158f732419217507c7656904b8e6aa1bcc0d6" },
+  { "name": "sqlx", "repo": "launchbadge/sqlx", "commit": "7908fe79fabc816ce172ac1ac59f6b4bd548ca39" },
+  { "name": "twenty", "repo": "twentyhq/twenty", "commit": "d539d31fee6585fe036c5d9ac998954901be813f" },
+  { "name": "typeorm", "repo": "typeorm/typeorm", "commit": "5bdc67882dee5a02d975d5ed140c9c3f91661116" }
+]
