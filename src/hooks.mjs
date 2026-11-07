@@ -92,7 +92,7 @@ export async function ensureTrusted({ repoName, repoConfig, hooks, prompter, sav
   } catch {
     throw new NookError(`Hooks of ${repoName} need your OK. Run nk in a terminal once, or nk init --allow-hooks after reading them`);
   }
-  if (!ok) throw new NookError("Hooks were not allowed; nothing ran");
+  if (!ok) throw new NookError("Hooks were not allowed; nothing ran. Allow them by answering yes in a terminal, or with nk init --allow-hooks after reading them");
   repoConfig.hooks ??= {};
   for (const hook of pending) repoConfig.hooks[hook.name] = hookHash(hook.file);
   save();
