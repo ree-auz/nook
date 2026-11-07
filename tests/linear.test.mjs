@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -101,4 +101,17 @@ test("for Orca, nk creates the workspace and Orca starts the agent in it", (t) =
   const calls = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
   const launch = ["agent", "launch", "--agent", "codex", "--worktree", `path:${ws}`, "--focus", "--json"];
   assert.deepEqual(calls, [["open", "--json"], [...launch, "--prompt", env.LINEAR_PROMPT], ["open", "--json"], launch]);
+});
+
+test("the launcher runs when started through a linked folder, like fnm's aliases\\default", (t) => {
+  const root = tempDir(t);
+  const linked = join(root, "default");
+  symlinkSync(fileURLToPath(new URL("..", import.meta.url)), linked, "junction");
+  const env = { ...process.env };
+  delete env.LINEAR_ISSUE_BRANCH_NAME;
+  delete env.LINEAR_WORK_DIR;
+  const r = spawnSync(process.execPath, [join(linked, "integrations", "linear", "open-issue.mjs"), "--agent", "codex"], { encoding: "utf8", env });
+  // It ran: it asks for Linear's variables instead of exiting silently.
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /LINEAR_ISSUE_BRANCH_NAME and LINEAR_WORK_DIR are missing/);
 });
