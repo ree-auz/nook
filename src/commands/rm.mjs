@@ -54,14 +54,9 @@ export async function deleteWorkspace(ctx, target, { state, base, backupRoot, pr
   if (state.present) {
     const after = occupants(ctx, ws.path, scan);
     if (after.length) throw new NookError(`Programs started running in ${ws.path}:\n${describeOccupants(after)}\nNothing was deleted`);
-    const removed = gitTry(["worktree", "remove", "--force", ws.path], { cwd: repo.path });
-    if (!removed.ok && exists(ws.path)) {
-      try {
-        rmSync(ws.path, { recursive: true, force: true, maxRetries: 3 });
-      } catch (error) {
-        throw new NookError(`Could not delete ${ws.path}: ${error.message}`);
-      }
-    }
+    gitTry(["worktree", "remove", "--force", ws.path], { cwd: repo.path });
+    // git can leave ignored folders behind on Windows (node_modules, .venv), even when it reports success.
+    deleteFolder(ws.path);
   }
   gitTry(["worktree", "prune"], { cwd: repo.path });
   if (branchName) {
@@ -70,6 +65,17 @@ export async function deleteWorkspace(ctx, target, { state, base, backupRoot, pr
   }
   delete repo.workspaces[name];
   ctx.save();
+}
+
+/** Deletes a folder and everything in it, retrying while Windows still holds a file open. */
+export function deleteFolder(path) {
+  if (!exists(path)) return;
+  try {
+    rmSync(path, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch (error) {
+    throw new NookError(`Could not delete ${path}: ${error.message}\nClose what uses it and run the command again`);
+  }
+  if (exists(path)) throw new NookError(`Could not delete ${path}; close what uses it and run the command again`);
 }
 
 /** What removing one workspace involves, checked before anything changes. */
