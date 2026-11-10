@@ -67,7 +67,9 @@ test("nk shell-init through the command line", (t) => {
 
 // In each shell: load the function the way its comment says, go to a workspace by name,
 // then ask for one that does not exist and see that the shell stayed where it was.
-const POSIX = (name) => `eval "$(nk shell-init ${name})"; nks beta; echo "status=$?"; pwd; nks no-such 2>/dev/null; echo "status=$?"; pwd`;
+// Git Bash on Windows says /c/Users/... for pwd; pwd -W gives the path as Windows writes it.
+const PWD = process.platform === "win32" ? "pwd -W" : "pwd";
+const POSIX = (name) => `eval "$(nk shell-init ${name})"; nks beta; echo "status=$?"; ${PWD}; nks no-such 2>/dev/null; echo "status=$?"; ${PWD}`;
 const SCRIPTS = {
   bash: ["bash", ["-c", POSIX("bash")]],
   zsh: ["zsh", ["-c", POSIX("zsh")]],
