@@ -336,8 +336,18 @@ It also deletes folders left from earlier removals: on Windows, git can
 remove a worktree and still leave ignored folders such as `node_modules` or
 `.venv` behind. Such a folder is neither a workspace nor a git worktree any
 more; `nk clean` deletes it, with any Compose project started in it, unless a
-program is still running there. `nk rm` itself now deletes whatever git leaves
-and stops with the reason when Windows keeps a file open.
+program is still running there. A folder there that holds any other file is
+kept and named, since nk cannot tell where it came from. `nk rm` itself deletes
+whatever git leaves and stops with the reason when Windows keeps a file open.
+
+When a removal stops halfway (another tool killed git, or a program held the
+folder), the folder can remain without its `.git` file. `nk ls` then shows it
+as `unreadable`, and `nk doctor` says why. `nk rm <name>` first restores the
+link to the repository (`git worktree repair`, which touches no file of
+yours), then checks, backs up and removes the workspace as usual. If git has no
+record of the folder any more, `nk rm` deletes nothing and says so: look
+inside, delete the folder when nothing in it is needed, and run `nk rm <name>`
+again to drop the record and the branch.
 
 ## Forgetting a repository
 

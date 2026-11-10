@@ -1,8 +1,9 @@
-import { readdirSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { which } from "../agents.mjs";
 import { exists, samePath } from "../home.mjs";
-import { gitTry, listWorktrees } from "../git.mjs";
+import { gitTry, listWorktrees, readableWorktree } from "../git.mjs";
+import { unknownFile } from "./rm.mjs";
 import { line, useColor } from "../ui.mjs";
 import { dockerCli, leftoverComposeProjects } from "../compose.mjs";
 import { ciChanged, uncheckedHooks } from "./check-hooks.mjs";
@@ -72,7 +73,8 @@ export function doctor(ctx, { docker = dockerCli } = {}) {
     for (const [name, ws] of Object.entries(repo.workspaces)) {
       const known = worktrees.find((w) => samePath(w.path, ws.path));
       if (!exists(ws.path)) bad(`workspace ${name}: ${ws.path} is missing (nk rm ${name} cleans up)`);
-      else if (!known) bad(`workspace ${name}: ${ws.path} is not a git worktree`);
+      else if (!known) bad(`workspace ${name}: ${ws.path} is no longer a git worktree, so nk cannot check or back up what is in it (look inside; delete the folder when nothing is needed, then nk rm ${name})`);
+      else if (known.prunable || !readableWorktree(ws.path)) bad(`workspace ${name}: git cannot read ${ws.path}${known.prunable ? ` (${known.prunable})` : ""}; nk rm ${name} repairs it before removing, or to keep it: git worktree repair ${ws.path}`);
       else if (known.branch !== (ws.branch ?? name)) warn(`workspace ${name}: checked out ${known.branch ?? "detached HEAD"}`);
       else if (inEphemeral(ws.port, range)) warn(`workspace ${name}: ports ${ws.port}-${ws.port + 9} are among those outgoing connections take, so one may be in use by another program`);
       else ok(`workspace ${name}`);
@@ -85,12 +87,12 @@ export function doctor(ctx, { docker = dockerCli } = {}) {
       for (const entry of readdirSync(dir)) {
         if (repo.workspaces[entry]) continue;
         const path = join(dir, entry);
-        // A git worktree nk did not create, or a folder left behind when a removal failed halfway.
-        warn(
-          worktrees.some((w) => samePath(w.path, path))
-            ? `${path} is a git worktree nk did not create (remove it with: git worktree remove)`
-            : `${path} is not a workspace, only a leftover folder (nk clean deletes it)`,
-        );
+        // A git worktree nk did not create, a folder left behind when a removal failed halfway, or one somebody put here.
+        let unknown;
+        if (worktrees.some((w) => samePath(w.path, path))) warn(`${path} is a git worktree nk did not create (remove it with: git worktree remove)`);
+        else if (!statSync(path).isDirectory()) continue;
+        else if ((unknown = unknownFile(path))) warn(`${path} is not a workspace, and it holds files nk does not know (${unknown}); nk clean leaves it, delete it yourself when nothing in it is needed`);
+        else warn(`${path} is not a workspace, only a leftover folder (nk clean deletes it)`);
       }
   }
 

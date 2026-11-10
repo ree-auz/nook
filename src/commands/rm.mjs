@@ -1,8 +1,8 @@
-import { rmSync } from "node:fs";
+import { readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { NookError } from "../errors.mjs";
 import { exists, isInside, samePath } from "../home.mjs";
-import { baseRef, gitTry, listWorktrees, remoteUrl } from "../git.mjs";
+import { baseRef, gitTry, listWorktrees, readableWorktree, remoteUrl, repairWorktree } from "../git.mjs";
 import { githubPrs } from "../forge.mjs";
 import { findHook } from "../hooks.mjs";
 import { backupDir, createBackup, inspectWorkspace, needsBackup } from "../backup.mjs";
@@ -62,8 +62,12 @@ export async function deleteWorkspace(ctx, target, { state, base, backupRoot, pr
     // git can leave ignored folders behind on Windows (node_modules, .venv), even when it reports success.
     deleteFolder(ws.path);
   }
-  gitTry(["worktree", "prune"], { cwd: repo.path });
-  if (listWorktrees(repo.path).some((tree) => samePath(tree.path, ws.path)))
+  // Drop git's record of this worktree alone. A plain prune would also drop the record of every other
+  // worktree git cannot reach, such as a half-removed one whose work is still in its folder.
+  const listed = () => listWorktrees(repo.path).some((tree) => samePath(tree.path, ws.path));
+  if (listed()) gitTry(["worktree", "remove", "--force", ws.path], { cwd: repo.path });
+  if (listed()) gitTry(["worktree", "prune"], { cwd: repo.path });
+  if (listed())
     throw new NookError(`git still lists ${ws.path} as a worktree. Run git worktree prune in ${repo.path}, then nk rm ${name} again`);
   if (branchName) {
     const branch = gitTry(["branch", "-D", branchName], { cwd: repo.path });
@@ -86,6 +90,22 @@ export function ignoredData(path, sharedDir) {
     .filter((entry) => entry && !shared.has(entry) && !/\.(log|pyc)$/.test(entry) && !entry.split("/").some((part) => REBUILT.has(part)));
 }
 
+/**
+ * The first file in a folder that is not something a project rebuilds, as a path
+ * with "/", or null when the folder holds nothing else: what tells a folder a
+ * removal left behind (node_modules, .venv) from one somebody put there.
+ */
+export function unknownFile(dir, prefix = "") {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (REBUILT.has(entry.name)) continue;
+    const path = `${prefix}${entry.name}`;
+    if (!entry.isDirectory()) return path;
+    const inside = unknownFile(join(dir, entry.name), `${path}/`);
+    if (inside) return inside;
+  }
+  return null;
+}
+
 /** Deletes a folder and everything in it, retrying while Windows still holds a file open. */
 export function deleteFolder(path) {
   if (!exists(path)) return;
@@ -101,7 +121,7 @@ export function deleteFolder(path) {
 }
 
 /** What removing one workspace involves, checked before anything changes. */
-async function planRemoval(ctx, input, { repoFlag, scan, prs, docker }) {
+async function planRemoval(ctx, input, { repoFlag, scan, prs, docker, dryRun }) {
   const name = toName(input);
   const target = resolveWorkspace(ctx, name, repoFlag);
   const { repo, ws } = target;
@@ -109,6 +129,24 @@ async function planRemoval(ctx, input, { repoFlag, scan, prs, docker }) {
   if (ws.locked) throw new NookError(`${ws.path} is locked. Unlock it first: git worktree unlock ${ws.path}`);
   if (exists(ws.path) && isInside(ctx.cwd, ws.path))
     throw new NookError(`You are inside ${ws.path}. Change to another folder first, e.g. cd ${repo.path}`);
+
+  if (exists(ws.path) && !readableWorktree(ws.path)) {
+    // A removal that stopped halfway, or a tool that deleted the folder's .git: what is in the folder
+    // cannot be checked or backed up until git reads it again, so nothing is deleted before that.
+    const tree = listWorktrees(repo.path).find((item) => samePath(item.path, ws.path));
+    if (!tree)
+      throw new NookError(
+        `${ws.path} is no longer a git worktree: git has no record of it, so nk cannot tell which files in it are work, or back them up.\nLook inside. When nothing in it is needed, delete the folder, then run nk rm ${target.name} again to drop its record${branchOf(target.name, ws) ? " and branch" : ""}`,
+      );
+    const why = tree.prunable ? ` (${tree.prunable})` : "";
+    if (dryRun) {
+      ctx.warn(`git cannot read ${ws.path}${why}. nk rm repairs the link to the repository first (git worktree repair), then checks and backs up what is inside`);
+      return null;
+    }
+    if (!repairWorktree(repo.path, ws.path))
+      throw new NookError(`git cannot read ${ws.path}${why}, and git worktree repair did not fix it.\nNothing was deleted. Look inside; when nothing in it is needed, delete the folder, then run nk rm ${target.name} again`);
+    ctx.ok(`Repaired the link between ${ws.path} and the repository; its files were not touched`);
+  }
 
   const base = baseRef(repo.path, repo.default_branch);
   const branchName = branchOf(target.name, ws);
@@ -146,7 +184,10 @@ async function planRemoval(ctx, input, { repoFlag, scan, prs, docker }) {
 /** nk rm <name>... [-n] [-y]: checks every workspace first, asks once, then removes them in turn. */
 export async function removeWorkspace(ctx, { name, names = [name], repo: repoFlag, dryRun = false, yes = false, scan = findOccupants, stop = stopProcesses, prompter = createPrompter(), prs = githubPrs, docker = dockerCli }) {
   const plans = [];
-  for (const input of [...new Set(names.map(toName))]) plans.push(await planRemoval(ctx, input, { repoFlag, scan, prs, docker }));
+  for (const input of [...new Set(names.map(toName))]) {
+    const plan = await planRemoval(ctx, input, { repoFlag, scan, prs, docker, dryRun });
+    if (plan) plans.push(plan);
+  }
   if (dryRun) {
     ctx.info("Dry run; nothing was removed");
     return 0;

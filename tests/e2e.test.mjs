@@ -232,7 +232,7 @@ test("an old branch without .nook still gets the hooks; a branch with / keeps it
   write(join(home, "workspace", "demo", "half-removed"), { "left.txt": "x\n" });
   const checked = run(["doctor"]);
   assert.equal(checked.status, 0, "a leftover folder is a warning, not a problem");
-  assert.match(checked.out, /half-removed is not a workspace, only a leftover folder \(nk clean deletes it\)/);
+  assert.match(checked.out, /half-removed is not a workspace, and it holds files nk does not know \(left\.txt\); nk clean leaves it/);
   assert.match(checked.out, /No problems found, \d+ warning/);
 
   const removed = run(["rm", "feat-login", "-y"]);

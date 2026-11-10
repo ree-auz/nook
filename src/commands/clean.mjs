@@ -10,7 +10,7 @@ import { createPrompter } from "../prompt.mjs";
 import { branchTip, contains } from "../status.mjs";
 import { resolveRepo } from "../context.mjs";
 import { collect } from "./ls.mjs";
-import { deleteFolder, deleteWorkspace, ignoredData } from "./rm.mjs";
+import { deleteFolder, deleteWorkspace, ignoredData, unknownFile } from "./rm.mjs";
 import { dockerCli, findComposeProjects, removeComposeProject } from "../compose.mjs";
 import { approveHooks } from "./workspace.mjs";
 import { findHook } from "../hooks.mjs";
@@ -51,8 +51,10 @@ function createdAt(path) {
 
 /**
  * Folders in the repository's workspaces folder that are neither a workspace
- * nor a git worktree: what a removal left halfway, such as node_modules that
- * Windows would not let go of.
+ * nor a git worktree, as { path, unknown }. One that holds only what a project
+ * rebuilds (unknown: null) is what a removal left halfway, such as node_modules
+ * that Windows would not let go of. Any other file means nk cannot tell where
+ * the folder came from; `unknown` names the first such file.
  */
 export function leftoverFolders(ctx, repoName, repo) {
   const dir = join(ctx.paths.workspaces, repoName);
@@ -61,7 +63,8 @@ export function leftoverFolders(ctx, repoName, repo) {
   return readdirSync(dir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && !repo.workspaces[entry.name])
     .map((entry) => join(dir, entry.name))
-    .filter((path) => !worktrees.some((w) => samePath(w.path, path)));
+    .filter((path) => !worktrees.some((w) => samePath(w.path, path)))
+    .map((path) => ({ path, unknown: unknownFile(path) }));
 }
 
 /** nk clean [-n] [-y]: remove workspaces whose work is merged. */
@@ -87,7 +90,7 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
     else if (item.changes) skipped.push(`${label}: ${plural(item.changes, "uncommitted change")}`);
     // A folder git cannot read may hold changes nobody can count; unknown is not clean.
     else if (item.changes === null && exists(item.ws.path))
-      skipped.push(`${label}: git cannot read the folder, so changes in it are unknown (look inside ${item.ws.path}; git worktree repair may fix it)`);
+      skipped.push(`${label}: git cannot read the folder, so changes in it are unknown (nk rm ${item.name} repairs it first, or says what to do)`);
     else {
       // Files git ignores (a local database, a test report) are not backed up. In a workspace Nook made
       // they are development data that goes with it. A worktree made elsewhere is left to nk rm, which lists them.
@@ -99,8 +102,10 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
   }
 
   const leftovers = [];
-  for (const path of leftoverFolders(ctx, name, repo)) {
-    if (isInside(ctx.cwd, path)) skipped.push(`${path}: you are inside it`);
+  for (const { path, unknown } of leftoverFolders(ctx, name, repo)) {
+    // Being in the workspaces folder does not make a folder nk's to delete.
+    if (unknown) skipped.push(`${path}: not a workspace, and it holds files nk does not know (${unknown}); delete it yourself when nothing in it is needed`);
+    else if (isInside(ctx.cwd, path)) skipped.push(`${path}: you are inside it`);
     else if (scan(path).processes?.length) skipped.push(`${path}: programs are running in it`);
     else leftovers.push(path);
   }
