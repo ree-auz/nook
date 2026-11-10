@@ -59,6 +59,7 @@ push unless asked.
 | `nk hooks test` | Run this folder's hooks in a temporary workspace; fails on leftovers |
 | `nk hooks` | The repository's hooks: allowed, tested |
 | `nk doctor` | Check nk's tools; exit 1 when something is broken |
+| `nk doctor --workspace <name>` | Check one workspace, read-only: why `nk clean` keeps or removes it, what `nk rm` would touch |
 
 Pass `-y` to `nk rm` or `nk clean` only when the person asked for the
 removal. Both back up uncommitted changes and unpushed commits to

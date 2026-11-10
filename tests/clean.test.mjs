@@ -6,6 +6,7 @@ import test from "node:test";
 import { createContext } from "../src/context.mjs";
 import { cleanWorkspaces } from "../src/commands/clean.mjs";
 import { listWorkspaces } from "../src/commands/ls.mjs";
+import { doctorWorkspace } from "../src/commands/doctor-workspace.mjs";
 import { ciState, parsePrList } from "../src/forge.mjs";
 import { makeRepo, nk, sh, tempDir, write } from "./helpers.mjs";
 
@@ -263,4 +264,64 @@ test("rm stops at a folder git has no record of", (t) => {
   assert.equal(run(["rm", "orphan", "-y"]).status, 0);
   assert.equal(sh("git", ["branch", "--list", "orphan"], repo), "");
   assert.match(run(["doctor"]).out, /No problems found/);
+});
+
+test("doctor --workspace says what a removal touches and what clean would do", async (t) => {
+  const { run, lines, ctx, ws } = setup(t);
+  for (const name of ["merged", "dirty", "open", "broken"]) {
+    assert.equal(run(["-b", name]).status, 0);
+    write(ws(name), { ".gitignore": "*.log\nlocal.db\n" });
+    sh("git", ["add", ".gitignore"], ws(name));
+    commit(ws(name), "ignore the database");
+  }
+  write(ws("merged"), { "local.db": "rows\n" });
+  write(ws("dirty"), { "new.js": "export {};\n" });
+  const prs = mergedPrs(ws, ["merged", "dirty"]);
+  prs.set("open", { number: 7, state: "open", head: sh("git", ["rev-parse", "HEAD"], ws("open")), ci: "running" });
+  rmSync(join(ws("broken"), ".git"));
+  const noDocker = () => ({ ok: false, out: "", err: "not installed" });
+  const check = async (name, options = {}) => {
+    lines.length = 0;
+    const status = await doctorWorkspace(ctx(), { name, prs: async () => ({ prs }), docker: noDocker, ...options });
+    return { status, text: lines.join("") };
+  };
+
+  let r = await check("merged");
+  assert.equal(r.status, 0);
+  assert.match(r.text, /Workspace merged \(demo\)/);
+  assert.match(r.text, /made by nk/);
+  assert.match(r.text, /changes: none/);
+  assert.match(r.text, /PR #1 merged/);
+  assert.match(r.text, /programs: none running in it/);
+  assert.match(r.text, /deleted with the workspace, not backed up \(git ignores them\): local\.db/);
+  assert.match(r.text, /nk clean removes it: PR #1 merged/);
+
+  r = await check("dirty");
+  assert.match(r.text, /changes: 1 uncommitted change/);
+  assert.match(r.text, /nk clean keeps it: 1 uncommitted change/);
+
+  r = await check("open");
+  assert.match(r.text, /PR #7 open, CI running/);
+  assert.match(r.text, /nk clean leaves it: PR #7 is open/);
+
+  // Docker that answers: a project of this workspace alone, and one shared with another folder.
+  const docker = (args) => {
+    if (args[0] === "container") return { ok: true, out: `c1\tmerged\t${ws("merged")}\nc2\tprod\t${ws("merged")}\nc3\tprod\t/srv/app\n`, err: "" };
+    return { ok: true, out: args[0] === "volume" ? "v1\n" : "", err: "" };
+  };
+  r = await check("merged", { docker });
+  assert.match(r.text, /Compose project merged: 1 container, 1 volume; it belongs to this workspace alone and is removed with it/);
+  assert.match(r.text, /Compose project prod also has containers outside this workspace; it is kept/);
+
+  r = await check("broken");
+  assert.equal(r.status, 1);
+  assert.match(r.text, /git cannot read [^\n]*broken \(gitdir file points to non-existent location\)/);
+  assert.match(r.text, /Next: nk rm broken repairs the link first/);
+  assert.ok(!existsSync(join(ws("broken"), ".git")), "doctor repairs nothing");
+
+  const cli = run(["doctor", "--workspace", "dirty"]);
+  assert.equal(cli.status, 0, cli.all);
+  assert.match(cli.out, /Workspace dirty \(demo\)/);
+  assert.equal(run(["doctor", "--workspace", "nope"]).status, 1);
+  for (const name of ["merged", "dirty", "open", "broken"]) assert.ok(existsSync(ws(name)), "doctor removes nothing");
 });
