@@ -5,6 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 import { createContext } from "../src/context.mjs";
 import { cleanWorkspaces } from "../src/commands/clean.mjs";
+import { deleteWorkspace } from "../src/commands/rm.mjs";
+import { NookError } from "../src/errors.mjs";
+import { inspectWorkspace } from "../src/backup.mjs";
 import { listWorkspaces } from "../src/commands/ls.mjs";
 import { doctorWorkspace } from "../src/commands/doctor-workspace.mjs";
 import { ciState, parsePrList } from "../src/forge.mjs";
@@ -324,4 +327,44 @@ test("doctor --workspace says what a removal touches and what clean would do", a
   assert.match(cli.out, /Workspace dirty \(demo\)/);
   assert.equal(run(["doctor", "--workspace", "nope"]).status, 1);
   for (const name of ["merged", "dirty", "open", "broken"]) assert.ok(existsSync(ws(name)), "doctor removes nothing");
+});
+
+test("a removal that cannot delete the folder says where it stands", async (t) => {
+  const { home, repo, run, ctx, ws } = setup(t);
+  assert.equal(run(["-b", "held"]).status, 0);
+  write(ws("held"), { "wip.txt": "work\n" });
+  const c = ctx();
+  const target = { repoName: "demo", repo: c.config.repos.demo, name: "held", ws: c.config.repos.demo.workspaces.held };
+  const state = inspectWorkspace({ repo, path: ws("held"), branch: "held", base: "origin/main" });
+  // What Windows does while a program holds the folder: git removes its record, the folder stays.
+  // A scan that finds nobody the first time (before deleting) and a holder afterwards.
+  // A scan that finds nobody before deleting, and a holder afterwards.
+  let calls = 0;
+  const scan = () => (calls++ ? { processes: [{ pid: 4242, name: "pwsh", reasons: ["working directory"] }], inaccessible: 3 } : { processes: [] });
+  const remove = (path) => {
+    throw new NookError(`Could not delete ${path}: EBUSY\nClose what uses it and run the command again`);
+  };
+  await assert.rejects(
+    deleteWorkspace(c, target, { state, base: "origin/main", backupRoot: join(home, "backup", "demo"), prompter: {}, scan, remove, docker: () => ({ ok: false, out: "", err: "not installed" }) }),
+    (error) => {
+      assert.match(error.message, /Could not delete/);
+      assert.match(error.message, /Running in it:\n\s+pwsh \(PID 4242\)/);
+      assert.match(error.message, /sees working directories only, not open files; 3 processes could not be looked at/);
+      assert.match(error.message, /Already done: changes backed up to [^;]+; git no longer lists the worktree\./);
+      assert.match(error.message, /Not done: the folder, branch held and nk's record are still there, so nk rm held can finish/);
+      return true;
+    },
+  );
+  const kept = ctx().config.repos.demo.workspaces.held;
+  assert.ok(kept, "nk still knows the workspace, so nk rm can finish");
+  assert.equal(sh("git", ["branch", "--list", "held"], repo).trim(), "held");
+});
+
+test("clean says when it cannot check for running programs", async (t) => {
+  const { run, lines, ctx } = setup(t);
+  for (const name of ["one", "two"]) assert.equal(run(["-b", name]).status, 0);
+  const now = Date.now() + 2 * 24 * 60 * 60 * 1000;
+  const scan = () => ({ processes: [], unsupported: "lsof not found" });
+  assert.equal(await cleanWorkspaces(ctx(), { dryRun: true, prs: async () => ({ prs: new Map() }), now, scan }), 0);
+  assert.equal(lines.join("").match(/Could not check for running programs: lsof not found/g)?.length, 1, "said once, not per workspace");
 });

@@ -350,6 +350,14 @@ record of the folder any more, `nk rm` deletes nothing and says so: look
 inside, delete the folder when nothing in it is needed, and run `nk rm <name>`
 again to drop the record and the branch.
 
+Programs are found by their working directory: a terminal, dev server or agent
+started in the workspace. A program started elsewhere that holds a file open
+there (an editor, a scanner) is not found, and on Windows some processes cannot
+be looked at. So when the folder cannot be deleted, `nk rm` names the programs
+it can see, says what the check cannot see, and lists what is already done
+(backup, remove hook, Compose project, git's record) and what is not; running
+`nk rm <name>` again finishes the removal.
+
 To see why a workspace was kept, or what removing it would touch, run
 `nk doctor --workspace <name>`. It shows whether git can read the folder, its
 uncommitted changes, unpushed commits and pull request, the programs running

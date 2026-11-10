@@ -104,12 +104,20 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
 
   const remove = [];
   const skipped = [];
+  // As nk rm does: when programs cannot be listed, say so once instead of reporting none.
+  let unchecked = false;
+  const programsIn = (path) => {
+    const result = scan(path);
+    if (result.unsupported && !unchecked) ctx.warn(`Could not check for running programs: ${result.unsupported}`);
+    unchecked ||= Boolean(result.unsupported);
+    return result.processes;
+  };
   for (const item of items) {
     const verdict = cleanVerdict(ctx, item, now);
     if (!verdict) continue;
     const label = `${item.name} (${item.repoName})`;
     if (verdict.keep) skipped.push(`${label}: ${verdict.keep}`);
-    else remove.push({ item, label, reason: verdict.remove, ignored: verdict.ignored, running: item.changes === null ? [] : scan(item.ws.path).processes });
+    else remove.push({ item, label, reason: verdict.remove, ignored: verdict.ignored, running: item.changes === null ? [] : programsIn(item.ws.path) });
   }
 
   const leftovers = [];
@@ -117,7 +125,7 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
     // Being in the workspaces folder does not make a folder nk's to delete.
     if (unknown) skipped.push(`${path}: not a workspace, and it holds files nk does not know (${unknown}); delete it yourself when nothing in it is needed`);
     else if (isInside(ctx.cwd, path)) skipped.push(`${path}: you are inside it`);
-    else if (scan(path).processes?.length) skipped.push(`${path}: programs are running in it`);
+    else if (programsIn(path)?.length) skipped.push(`${path}: programs are running in it`);
     else leftovers.push(path);
   }
 
