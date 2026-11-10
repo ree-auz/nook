@@ -391,6 +391,25 @@ To load it yourself instead, `nk shell-init <shell>` prints the function:
 | zsh | `eval "$(nk shell-init zsh)"` |
 | fish | `nk shell-init fish \| source` |
 
+### Tab completion
+
+The same lines bring Tab completion, so there is nothing more to set up.
+After `nks`, Tab completes the names of your workspaces. After `nk` it
+completes commands, workspace names, agents, repositories after `--repo`, and
+the options of the command once the word starts with `-`:
+
+```
+$ nks re<Tab>        ree-281  ree-284
+$ nk rm <Tab>        fix-login  ree-281  ree-284
+$ nk ls --<Tab>      --json  --no-pr  --timing  --repo
+```
+
+The names come from nk itself at the moment you press Tab, so a workspace
+made a second ago is there. If `nks` was added by an earlier version, run
+`nk shell-init --install` once more: it replaces its own lines with the new
+ones. In zsh, completion needs `compinit` to have run before nk's lines; a
+profile from a framework such as oh-my-zsh already does that.
+
 ## Listing and cleaning up
 
 `nk ls` shows each workspace's uncommitted changes, its commits ahead (↑) and
