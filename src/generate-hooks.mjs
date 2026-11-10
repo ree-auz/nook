@@ -309,7 +309,7 @@ if (text) {
 }
 // Files such as .env.development or .env.test override .env in many projects: point them at this workspace's ports too.
 // Templates (.env.example, .env.sample) are left as they are.
-for (const name of readdirSync(ws).filter((file) => /^\.env\..+/.test(file) && !/example|sample|template|dist/i.test(file)).sort()) {
+for (const name of readdirSync(ws).filter((file) => /^\\.env\\..+/.test(file) && !/example|sample|template|dist/i.test(file)).sort()) {
   const file = join(ws, name);
   if (!statSync(file).isFile()) continue;
   const before = readFileSync(file, "utf8");

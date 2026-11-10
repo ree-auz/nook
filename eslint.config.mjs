@@ -16,10 +16,4 @@ export default [
       "no-regex-spaces": "off",
     },
   },
-  {
-    // The text of the generated hooks is a template here, so an escape is read twice. Fixing one changes
-    // every hook nk writes, which is a change of its own, not a lint fix.
-    files: ["src/generate-hooks.mjs"],
-    rules: { "no-useless-escape": "off" },
-  },
 ];
