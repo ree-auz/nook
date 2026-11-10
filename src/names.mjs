@@ -1,7 +1,7 @@
 // @ts-check
 import { NookError } from "./errors.mjs";
 
-export const SUBCOMMANDS = ["init", "ls", "rm", "clean", "hooks", "forget", "doctor", "help", "version"];
+export const SUBCOMMANDS = ["init", "ls", "switch", "rm", "clean", "hooks", "forget", "doctor", "help", "version"];
 
 /**
  * Workspace name = branch name = folder name.
