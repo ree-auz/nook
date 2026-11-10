@@ -10,6 +10,7 @@ import { line, useColor } from "./ui.mjs";
 import { cleanWorkspaces } from "./commands/clean.mjs";
 import { listWorkspaces } from "./commands/ls.mjs";
 import { removeWorkspace } from "./commands/rm.mjs";
+import { switchWorkspace } from "./commands/switch.mjs";
 import { createWorkspace, openWorkspace } from "./commands/workspace.mjs";
 import { writeHooks } from "./commands/write-hooks.mjs";
 import { listHooks } from "./commands/hooks.mjs";
@@ -28,6 +29,10 @@ Usage:
   nk ls [--json] [--no-pr] [--timing]     list workspaces: changes, commits, PR and CI
                                          (--no-pr: do not ask GitHub, for a quick local list;
                                          --timing: also say how long git and GitHub took)
+  nk switch [<name>]                      print a workspace's folder and do nothing else: no hook
+                                         runs, nothing starts. Without a name: choose from a
+                                         list (arrows, type to filter). To go there:
+                                         cd "$(nk switch)"   PowerShell: Set-Location (nk switch)
   nk rm <name>... [-n] [-y]               remove workspaces: saves uncommitted changes and unpushed
                                          commits to ~/nook/backup first, then deletes the folder
                                          and the branch (-n: only show what would happen;
@@ -91,6 +96,11 @@ export async function run(argv, io = {}) {
     case "ls": {
       const { values } = parse(args.slice(1), { repo: { type: "string" }, json: { type: "boolean" }, "no-pr": { type: "boolean" }, timing: { type: "boolean" } });
       return listWorkspaces(ctx, values);
+    }
+    case "switch": {
+      const { values, positionals } = parse(args.slice(1), { repo: { type: "string" } });
+      if (positionals.length > 1) throw new NookError("Usage: nk switch [<name>] [--repo <short-name>]");
+      return switchWorkspace(ctx, { name: positionals[0], repo: values.repo, input: io.in ?? process.stdin });
     }
     case "rm": {
       const { values, positionals } = parse(args.slice(1), {

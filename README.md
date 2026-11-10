@@ -69,6 +69,7 @@ nk clean                    remove every workspace whose work is merged
 | `nk init` | Register the current repository (once per repository; safe to rerun) |
 | `nk -b <name> [agent] [-p <prompt>] [-y]` | Create a workspace; start the agent if given (`-y` keeps a converted name without asking) |
 | `nk <name> [agent] [-p <prompt>]` | Open a workspace; start the agent if given |
+| `nk switch [<name>]` | Print a workspace's folder and do nothing else; without a name, choose it from a list (arrows, or type to filter) |
 | `nk ls [--json] [--no-pr] [--timing]` | List workspaces: uncommitted changes, commits ahead of and behind the default branch, PR and CI (`--no-pr` does not ask GitHub; `--timing` says how long git and GitHub took) |
 | `nk rm <name>... [-n] [-y]` | Remove one or more workspaces, asking once: uncommitted changes and unpushed commits are saved to `~/nook/backup/` first, then the folder and the branch are deleted (`-n` shows what would happen, `-y` skips the question) |
 | `nk clean [-n] [-y]` | Remove every workspace whose work is merged, the way `nk rm` does, and folders left from earlier removals; the rest is kept, each with its reason (`-n` only shows the list, `-y` skips the question) |
@@ -106,7 +107,7 @@ arguments to one agent, set `args` under `[agents.<name>]` in `config.toml`.
 
 A workspace name is also its branch name and folder name. It uses lowercase
 letters, digits, `-` and `.` only, and cannot be a command name (`init`, `ls`,
-`rm`, `clean`, `hooks`, `forget`, `doctor`, `help`, `version`).
+`switch`, `rm`, `clean`, `hooks`, `forget`, `doctor`, `help`, `version`).
 
 You can pass any branch text; `nk` turns it into a valid name and says so:
 uppercase becomes lowercase, and `/`, spaces, non-ASCII and other characters
@@ -318,6 +319,42 @@ longer exist.
 
 This is a safety net: the `remove` hook should still undo everything `create`
 did, and `nk hooks test` checks that it does.
+
+## Switching between workspaces
+
+`nk switch` shows the workspaces of the repository you are in and prints the
+folder of the one you choose:
+
+```
+nk switch · my-app
+
+  @  main       clean
+> +  fix-login  2 changed · ↑1 · #12 open passed
+  +  ree-284    clean · #9 merged
+
+↑↓ move · type to filter · Enter choose · Esc cancel
+```
+
+Arrows (or Ctrl+P and Ctrl+N) move, typing filters by name, Enter chooses, Esc
+or Ctrl+C leaves. The list comes from git, so it is there at once; PR and CI
+are added to the rows when GitHub answers, and a choice never waits for them.
+Outside a repository it lists the workspaces of all of them.
+
+A program cannot change the folder of the shell that started it, so the shell
+does that with the path:
+
+```
+cd "$(nk switch)"                # bash, zsh
+Set-Location (nk switch)         # PowerShell
+```
+
+The list is drawn on stderr and only the folder goes to stdout, which is why
+this works. Leaving the list prints nothing and exits with 1 (130 after
+Ctrl+C). `nk switch <name>` prints the folder without the list, for scripts;
+without a terminal, `nk switch` needs the name.
+
+Unlike `nk <name>`, `nk switch` only tells where the workspace is: the open
+hook does not run, and no service or agent starts.
 
 ## Listing and cleaning up
 

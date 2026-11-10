@@ -87,6 +87,25 @@ test("githubPrs gives the error when one of its requests fails", async (t) => {
   assert.deepEqual(result, { error: "gh is not logged in (run gh auth login)" });
 });
 
+test("githubPrs stops when its caller no longer needs the answer", async (t) => {
+  const dir = tempDir(t);
+  write(dir, {
+    "gh.mjs": `setTimeout(() => console.log("[]"), 2000);\n`,
+    gh: '#!/bin/sh\nexec node "$(dirname "$0")/gh.mjs" "$@"\n',
+    "gh.cmd": '@ECHO off\r\nnode "%~dp0\\gh.mjs" %*\r\n',
+  });
+  if (process.platform !== "win32") chmodSync(join(dir, "gh"), 0o755);
+  const stop = new AbortController();
+  const started = Date.now();
+  // Run from a folder that stays: on Windows the stand-in outlives the stop for a moment,
+  // and a folder a program runs in cannot be deleted.
+  const asked = githubPrs(process.cwd(), { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}` }, { signal: stop.signal });
+  setTimeout(() => stop.abort(), 100);
+  const result = await asked;
+  assert.match(result.error, /^gh failed: /);
+  assert.ok(Date.now() - started < 1500, `took ${Date.now() - started} ms`);
+});
+
 test("gitRun and localState read a workspace without blocking", async (t) => {
   const { repo, run, ws } = setup(t);
   assert.equal(run(["-b", "work"]).status, 0);

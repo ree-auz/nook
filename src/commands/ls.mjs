@@ -34,6 +34,9 @@ async function each(list, limit, fn) {
  * Every workspace with its local state and, when gh can tell, its PR.
  * GitHub is asked first and git reads the workspaces while it answers.
  * `prs: false` leaves GitHub out. `timing` is how long each took, in ms.
+ *
+ * @param {any} ctx
+ * @param {{ repo?: string, prs?: Function | false }} [options]
  */
 export async function collect(ctx, { repo: repoFlag, prs: lookup = githubPrs } = {}) {
   const only = repoFlag ?? repoFromCwd(ctx);
@@ -63,20 +66,26 @@ export async function collect(ctx, { repo: repoFlag, prs: lookup = githubPrs } =
 
 const portsText = (ws) => (Number.isInteger(ws.port) ? `${ws.port}-${ws.port + 9}` : "-");
 
-function changesText(n, path) {
+export function changesText(n, path) {
   // No count: the folder is gone, or it is there and git cannot read it (a removal that stopped halfway).
   if (n === null) return exists(path) ? "unreadable" : "missing";
   return n ? `${n} changed` : "clean";
 }
 
-function commitsText(c) {
+export function commitsText(c) {
   if (!c) return "";
   return [c.ahead && `↑${c.ahead}`, c.behind && `↓${c.behind}`].filter(Boolean).join(" ");
 }
 
-function prText(pr) {
+export function prText(pr) {
   if (!pr) return "";
   return `#${pr.number} ${pr.state}${pr.ci ? ` ${pr.ci}` : ""}`;
+}
+
+/** The gutter, as in worktrunk: ^ main checkout, @ where you are, + another worktree. */
+export function markOf(ctx, items, item) {
+  const here = isInside(ctx.cwd, item.ws.path) && !items.some((o) => o !== item && o.ws.path.length > item.ws.path.length && isInside(ctx.cwd, o.ws.path));
+  return here ? "@" : item.main ? "^" : "+";
 }
 
 /** nk ls [--json] [--no-pr] [--timing] */
@@ -108,8 +117,7 @@ export async function listWorkspaces(ctx, { repo: repoFlag, json = false, prs, "
     ctx.info("No repositories yet. Run nk init inside one");
     return 0;
   }
-  // Gutter as in worktrunk: ^ main checkout, @ where you are, + another worktree.
-  const mark = (item) => (isInside(ctx.cwd, item.ws.path) && !items.some((o) => o !== item && o.ws.path.length > item.ws.path.length && isInside(ctx.cwd, o.ws.path)) ? "@" : item.main ? "^" : "+");
+  const mark = (item) => markOf(ctx, items, item);
   const rows = [["", "NAME", "REPO", "PORTS", "CHANGES", "BASE", "PR", "PATH"]];
   for (const item of items) {
     const name = item.ws.locked ? `${item.name} (locked)` : item.name;

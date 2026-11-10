@@ -45,16 +45,23 @@ function explain(output) {
 }
 
 /** One gh call. Resolves to { out } or { error }. */
-function gh(bin, args, repoPath, env) {
+function gh(bin, args, repoPath, env, signal) {
   return new Promise((done) => {
     const child = spawn(bin, args, {
       cwd: repoPath,
       env: { ...env, GH_PROMPT_DISABLED: "1", NO_COLOR: "1" },
       windowsHide: true,
+      signal,
     });
     let out = "";
     let err = "";
     const timer = setTimeout(() => child.kill(), 20000);
+    // Stopped by the caller: its output is let go too, so that a process gh started
+    // and that still holds the pipe does not keep nk waiting.
+    signal?.addEventListener("abort", () => {
+      child.stdout.destroy();
+      child.stderr.destroy();
+    });
     child.stdout.on("data", (chunk) => (out += chunk));
     child.stderr.on("data", (chunk) => (err += chunk));
     child.on("error", (error) => {
@@ -78,14 +85,20 @@ function gh(bin, args, repoPath, env) {
  * PRs of any state without checks. Checks are what makes GitHub slow to
  * answer, and only an open PR shows them, so they are not asked for the
  * merged and closed ones.
+ *
+ * `signal` stops both requests, for a caller that no longer needs the answer.
+ *
+ * @param {string} repoPath
+ * @param {NodeJS.ProcessEnv} [env]
+ * @param {{ signal?: AbortSignal }} [options]
  */
-export async function githubPrs(repoPath, env = process.env) {
+export async function githubPrs(repoPath, env = process.env, { signal } = {}) {
   const bin = which("gh", env);
   if (!bin) return { error: "gh is not installed" };
   const fields = "number,state,headRefName,headRefOid,url";
   const [open, all] = await Promise.all([
-    gh(bin, ["pr", "list", "--state", "open", "--limit", "100", "--json", `${fields},statusCheckRollup`], repoPath, env),
-    gh(bin, ["pr", "list", "--state", "all", "--limit", "200", "--json", fields], repoPath, env),
+    gh(bin, ["pr", "list", "--state", "open", "--limit", "100", "--json", `${fields},statusCheckRollup`], repoPath, env, signal),
+    gh(bin, ["pr", "list", "--state", "all", "--limit", "200", "--json", fields], repoPath, env, signal),
   ]);
   const failed = [open, all].find((result) => "error" in result);
   if (failed) return { error: failed.error };
