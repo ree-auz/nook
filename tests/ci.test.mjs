@@ -76,6 +76,16 @@ test("a generated hook refuses to run outside nk", () => {
   assert.match(result.stderr, /Run by nk only/);
 });
 
+test("a generated hook takes only .env.<name> files for env files", () => {
+  const text = createHook(planJob("ci.yml", "test", { steps: [{ run: "npm ci" }] }));
+  // The hook's text is a template in generate-hooks.mjs, where a backslash has to be written twice to reach the file.
+  const source = /readdirSync\(ws\)\.filter\(\(file\) => \/(.+?)\/\.test\(file\)/.exec(text)?.[1];
+  assert.equal(source, String.raw`^\.env\..+`);
+  const envFile = new RegExp(source);
+  for (const name of [".env.development", ".env.test", ".env.local"]) assert.equal(envFile.test(name), true, name);
+  for (const name of [".env", ".envrc", "Xenv.ab", "my.env.txt", "aenvbcd"]) assert.equal(envFile.test(name), false, name);
+});
+
 test("a setup step whose program is missing says so plainly; corepack is checked first", (t) => {
   const ws = tempDir(t);
   const env = { PATH: process.env.PATH, NOOK_PATH: ws, NOOK_WORKSPACE: "w", NOOK_PORT: "40000", NOOK_REPO: ws };
