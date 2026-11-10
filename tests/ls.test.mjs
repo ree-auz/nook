@@ -97,7 +97,9 @@ test("githubPrs stops when its caller no longer needs the answer", async (t) => 
   if (process.platform !== "win32") chmodSync(join(dir, "gh"), 0o755);
   const stop = new AbortController();
   const started = Date.now();
-  const asked = githubPrs(dir, { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}` }, { signal: stop.signal });
+  // Run from a folder that stays: on Windows the stand-in outlives the stop for a moment,
+  // and a folder a program runs in cannot be deleted.
+  const asked = githubPrs(process.cwd(), { ...process.env, PATH: `${dir}${delimiter}${process.env.PATH}` }, { signal: stop.signal });
   setTimeout(() => stop.abort(), 100);
   const result = await asked;
   assert.match(result.error, /^gh failed: /);
