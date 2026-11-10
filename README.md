@@ -286,6 +286,10 @@ again for a CI or Compose change, then `nk hooks test`.
 
 [docs/setup-hooks.md](docs/setup-hooks.md) has the rules and examples for
 pnpm and npm, uv, and a Docker Compose project per workspace.
+[docs/examples/](docs/examples/README.md) walks through six real repositories
+(a front end, Node with PostgreSQL and Compose, Python with uv, CI services
+only, Go and Rust, a large mixed one): what the report means for each, what
+is left for you, and how to check that a workspace is on its own.
 
 Before hooks run for the first time, and again after one changes, Nook lists
 them (event and file, not the contents) and asks once: "Allow and remember?".
