@@ -12,6 +12,7 @@ import { listWorkspaces } from "./commands/ls.mjs";
 import { removeWorkspace } from "./commands/rm.mjs";
 import { switchWorkspace } from "./commands/switch.mjs";
 import { printShellInit } from "./commands/shell-init.mjs";
+import { complete } from "./commands/complete.mjs";
 import { createWorkspace, openWorkspace } from "./commands/workspace.mjs";
 import { writeHooks } from "./commands/write-hooks.mjs";
 import { listHooks } from "./commands/hooks.mjs";
@@ -91,6 +92,8 @@ export async function run(argv, io = {}) {
     (io.out ?? process.stdout).write(`${version()}\n`);
     return 0;
   }
+  // What the shell functions of nk shell-init call on Tab. Its words are not options of nk.
+  if (first === "__complete") return complete(createContext({ ...io, err: { write() {} } }), argv.slice(1));
   const ctx = createContext(io);
 
   switch (first) {

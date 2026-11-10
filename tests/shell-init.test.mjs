@@ -43,7 +43,7 @@ test("nk shell-init prints a function for each shell and the line that loads it"
     assert.match(text, /nks/);
     assert.match(text, new RegExp(`nk shell-init ${name}`));
     // Loading it must not print anything: every line before the function is a comment.
-    assert.ok(text.split("\n").slice(0, 4).every((line) => line.startsWith("#")), text);
+    assert.ok(text.split("\n").slice(0, 5).every((line) => line.startsWith("#")), text);
   }
   // PowerShell reads this text in the console's encoding, so it keeps to ASCII.
   assert.ok([...shellInit("powershell")].every((char) => char.charCodeAt(0) < 128));
@@ -209,3 +209,31 @@ test("nk init offers nks in a terminal, once; with --yes it only says how", asyn
   assert.equal(profileState(other, "powershell"), "missing");
   assert.match(run.err(), /To go to a workspace from your shell \(nks\): nk shell-init --install/);
 });
+
+// Tab in each shell, asked the way the shell itself asks: a command, a workspace for nks,
+// and what follows a finished word (the current word is then empty).
+const BASH_TAB = (words) => `COMP_WORDS=(${words.map((word) => `"${word}"`).join(" ")}); COMP_CWORD=${words.length - 1}; _${words[0]}_complete; printf '%s\\n' "\${COMPREPLY[@]}"; echo --`;
+const ZSH_TAB = (words) => `words=(${words.map((word) => `"${word}"`).join(" ")}); CURRENT=${words.length}; _${words[0]}_complete; echo --`;
+const PS_TAB = (line) => `(TabExpansion2 '${line}' ${line.length}).CompletionMatches | ForEach-Object { $_.CompletionText }; Write-Output '--'`;
+const QUERIES = [["nk", "sw"], ["nks", "b"], ["nk", "rm", ""]];
+const POWERSHELL_TAB = ["Invoke-Expression (& nk shell-init powershell | Out-String)", ...QUERIES.map((words) => PS_TAB(words.join(" ")))].join("; ");
+const TABS = {
+  bash: ["bash", ["-c", `eval "$(nk shell-init bash)"; ${QUERIES.map(BASH_TAB).join("; ")}`]],
+  // Outside the line editor zsh has no compadd; a stand-in prints what it was given.
+  zsh: ["zsh", ["-c", `eval "$(nk shell-init zsh)"; compadd() { print -l -- \${(P)2} }; ${QUERIES.map(ZSH_TAB).join("; ")}`]],
+  // fish's echo takes a lone -- as the end of its options, so the divider is given behind one.
+  fish: ["fish", ["-c", `nk shell-init fish | source; ${QUERIES.map((words) => `complete -C "${words.join(" ")}"; echo -- --`).join("; ")}`]],
+  pwsh: ["pwsh", ["-NoProfile", "-NonInteractive", "-Command", POWERSHELL_TAB]],
+  powershell: ["powershell", ["-NoProfile", "-NonInteractive", "-Command", POWERSHELL_TAB]],
+};
+
+for (const [name, [program, args]] of Object.entries(TABS)) {
+  const skip = (name === "powershell" && process.platform !== "win32") || !has(program) ? `${program} is not installed` : false;
+  test(`Tab in ${name}: commands and workspace names for nk, workspace names for nks`, { skip }, (t) => {
+    const { run } = setup(t);
+    const result = run(program, args);
+    // fish puts a description after a tab; only the word counts.
+    const groups = result.lines.join("\n").split("--").map((group) => group.split("\n").map((line) => line.split("\t")[0].trim()).filter(Boolean));
+    assert.deepEqual(groups.slice(0, 3), [["switch"], ["beta"], ["beta"]], `${result.lines.join("\n")}\n${result.err}`);
+  });
+}

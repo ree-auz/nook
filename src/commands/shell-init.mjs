@@ -24,16 +24,34 @@ const SHELLS = {
     // nk prints the folder as UTF-8. PowerShell reads a program's output in the console's
     // encoding, which on Windows is often another one, so it is set for this one call:
     // otherwise a folder with letters outside ASCII would come back garbled.
+    // Completion: nk tells what can come next (nk __complete). The current word goes first
+    // behind "=", since PowerShell drops an empty argument to a program.
     code: `function nks {
+    param([string]$NookName)
+    $nookArgs = @(@($NookName) + $args | Where-Object { $_ })
     $nookEncoding = [Console]::OutputEncoding
     try {
         [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
-        $nookPath = & nk switch @args
+        $nookPath = & nk switch @nookArgs
     } finally {
         [Console]::OutputEncoding = $nookEncoding
     }
     if ($LASTEXITCODE -eq 0 -and $nookPath) {
         Set-Location -LiteralPath $nookPath
+    }
+}
+Register-ArgumentCompleter -CommandName nks -ParameterName NookName -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete)
+    & nk __complete "=$wordToComplete" switch 2>$null | ForEach-Object {
+        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    }
+}
+Register-ArgumentCompleter -Native -CommandName nk -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+    $nookBefore = @($commandAst.CommandElements | Select-Object -Skip 1 |
+        Where-Object { $_.Extent.EndOffset -lt $cursorPosition } | ForEach-Object { $_.ToString() })
+    & nk __complete "=$wordToComplete" @nookBefore 2>$null | ForEach-Object {
+        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
     }
 }`,
   },
@@ -44,7 +62,17 @@ const SHELLS = {
   local nook_path
   nook_path="$(command nk switch "$@")" || return
   [ -n "$nook_path" ] && cd -- "$nook_path"
-}`,
+}
+_nk_complete() {
+  local IFS=$'\\n'
+  COMPREPLY=($(command nk __complete "=\${COMP_WORDS[COMP_CWORD]}" "\${COMP_WORDS[@]:1:COMP_CWORD-1}" 2>/dev/null))
+}
+_nks_complete() {
+  local IFS=$'\\n'
+  COMPREPLY=($(command nk __complete "=\${COMP_WORDS[COMP_CWORD]}" switch "\${COMP_WORDS[@]:1:COMP_CWORD-1}" 2>/dev/null))
+}
+complete -F _nk_complete nk
+complete -F _nks_complete nks`,
   },
   zsh: {
     load: 'eval "$(nk shell-init zsh)"',
@@ -53,7 +81,22 @@ const SHELLS = {
   local nook_path
   nook_path="$(command nk switch "$@")" || return
   [ -n "$nook_path" ] && cd -- "$nook_path"
-}`,
+}
+_nk_complete() {
+  local -a nook_found
+  nook_found=(\${(f)"$(command nk __complete "=\${words[CURRENT]}" "\${(@)words[2,CURRENT-1]}" 2>/dev/null)"})
+  compadd -a nook_found
+}
+_nks_complete() {
+  local -a nook_found
+  nook_found=(\${(f)"$(command nk __complete "=\${words[CURRENT]}" switch "\${(@)words[2,CURRENT-1]}" 2>/dev/null)"})
+  compadd -a nook_found
+}
+# compdef exists once compinit has run; put nk's lines after it in ~/.zshrc for completion.
+if (( $+functions[compdef] )); then
+  compdef _nk_complete nk
+  compdef _nks_complete nks
+fi`,
   },
   fish: {
     load: "nk shell-init fish | source",
@@ -62,7 +105,13 @@ const SHELLS = {
     set -l nook_path (command nk switch $argv)
     or return
     test -n "$nook_path"; and cd -- $nook_path
-end`,
+end
+function __nk_complete
+    set -l nook_before (commandline -opc)
+    command nk __complete "="(commandline -ct) $argv $nook_before[2..-1] 2>/dev/null
+end
+complete -c nk -f -a '(__nk_complete)'
+complete -c nks -f -a '(__nk_complete switch)'`,
   },
 };
 
@@ -76,6 +125,7 @@ export function shellInit(name) {
   const key = resolve(name);
   const shell = SHELLS[key];
   return `# nks: choose a nk workspace and go to its folder (nks <name> goes there without the list).
+# Tab completes workspace names for nks, and commands, names and options for nk.
 # To have it in every new ${key} session: nk shell-init --install
 # Or add this line to ${shell.profile} yourself:
 #   ${shell.load}
@@ -127,7 +177,7 @@ const END = "# <<< nk shell-init <<<";
 
 /** The lines nk keeps in a profile, between its two markers. */
 export function profileBlock(shell) {
-  return [BEGIN, "# nks: choose a nk workspace and go to its folder. Written by nk shell-init --install;", "# remove these lines, markers included, to remove it.", SHELLS[resolve(shell)].code, END].join("\n");
+  return [BEGIN, "# nks: choose a nk workspace and go to its folder; Tab completion for nk and nks. Written by nk shell-init --install;", "# remove these lines, markers included, to remove it.", SHELLS[resolve(shell)].code, END].join("\n");
 }
 
 /** A profile as text and how to write it back: Windows PowerShell profiles made in Notepad can be UTF-16. */
