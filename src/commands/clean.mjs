@@ -17,6 +17,7 @@ import { findHook } from "../hooks.mjs";
 
 const DAY = 24 * 60 * 60 * 1000;
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const shortList = (entries, max) => `${entries.slice(0, max).join(", ")}${entries.length > max ? ` and ${entries.length - max} more` : ""}`;
 
 /**
  * Why a workspace can go, or null. A merged PR counts when the local branch
@@ -75,7 +76,6 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
 
   const remove = [];
   const skipped = [];
-  let lost;
   for (const item of items) {
     if (item.main || !item.branch) continue;
     const reason = mergedReason(item, now);
@@ -85,10 +85,17 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
     else if (reason.skip) skipped.push(`${label}: ${reason.skip}`);
     else if (isInside(ctx.cwd, item.ws.path)) skipped.push(`${label}: you are inside it`);
     else if (item.changes) skipped.push(`${label}: ${plural(item.changes, "uncommitted change")}`);
-    // Files git ignores (a local database, say) are not backed up, so clean leaves them to nk rm, which lists them.
-    else if ((lost = item.changes === null ? [] : ignoredData(item.ws.path, join(ctx.paths.shared, item.repoName))).length)
-      skipped.push(`${label}: files git ignores would be lost: ${lost.slice(0, 3).join(", ")}${lost.length > 3 ? ` and ${lost.length - 3} more` : ""} (nk rm ${item.name} to remove anyway)`);
-    else remove.push({ item, label, reason: reason.ok, running: item.changes === null ? [] : scan(item.ws.path).processes });
+    // A folder git cannot read may hold changes nobody can count; unknown is not clean.
+    else if (item.changes === null && exists(item.ws.path))
+      skipped.push(`${label}: git cannot read the folder, so changes in it are unknown (look inside ${item.ws.path}; git worktree repair may fix it)`);
+    else {
+      // Files git ignores (a local database, a test report) are not backed up. In a workspace Nook made
+      // they are development data that goes with it. A worktree made elsewhere is left to nk rm, which lists them.
+      const ignored = item.changes === null ? [] : ignoredData(item.ws.path, join(ctx.paths.shared, item.repoName));
+      if (ignored.length && !item.managed)
+        skipped.push(`${label}: not made by nk, and files git ignores would be lost: ${shortList(ignored, 3)} (nk rm ${item.name} to remove anyway)`);
+      else remove.push({ item, label, reason: reason.ok, ignored, running: item.changes === null ? [] : scan(item.ws.path).processes });
+    }
   }
 
   const leftovers = [];
@@ -110,6 +117,11 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
     ctx.info(`${remove.length === 1 ? "1 workspace is" : `${remove.length} workspaces are`} merged:`);
     const width = Math.max(...remove.map((entry) => entry.label.length));
     for (const entry of remove) ctx.item(`${entry.label.padEnd(width)}  ${entry.reason}`);
+  }
+  const withData = remove.filter((entry) => entry.ignored.length);
+  if (withData.length) {
+    ctx.warn("Deleted with them, not backed up (development files git ignores):");
+    for (const entry of withData) ctx.item(`${entry.item.name}: ${shortList(entry.ignored, 5)}`);
   }
   if (leftovers.length) {
     ctx.info(`Left from earlier removals (not workspaces any more):`);
