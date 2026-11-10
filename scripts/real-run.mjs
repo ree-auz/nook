@@ -47,7 +47,7 @@ const tail = (text, lines = 40) => text.trim().split(/\r?\n/).slice(-lines).join
 function step(label, fn) {
   const started = Date.now();
   let ok = false;
-  let output = "";
+  let output;
   try {
     const result = fn();
     ok = result.ok;

@@ -1,3 +1,4 @@
+// @ts-check
 import spawn from "cross-spawn";
 import { which } from "./agents.mjs";
 

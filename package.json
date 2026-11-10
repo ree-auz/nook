@@ -38,6 +38,8 @@
   },
   "scripts": {
     "test": "node --test --test-concurrency=1",
+    "lint": "eslint .",
+    "typecheck": "tsc -p jsconfig.json",
     "corpus": "node scripts/corpus.mjs"
   },
   "dependencies": {
@@ -48,5 +50,12 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ree-auz/nook.git"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "26.6.6",
+    "eslint": "9.39.5",
+    "globals": "17.14.0",
+    "typescript": "7.0.2"
   }
 }

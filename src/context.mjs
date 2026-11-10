@@ -1,3 +1,4 @@
+// @ts-check
 import { existsSync, renameSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import { applyChanges, loadConfig, saveConfig, syncInPlace, withLock, withLockSync } from "./config.mjs";

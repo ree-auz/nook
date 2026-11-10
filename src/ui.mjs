@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Line prefixes in the style of worktrunk: ◎ a step that runs now, ✓ done,
  * ▲ needs attention, ✗ failed, ○ information, ┃ an item under the line above,

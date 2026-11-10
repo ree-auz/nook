@@ -1,3 +1,4 @@
+// @ts-check
 import { copyFileSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { gitTry, ignoredPaths } from "./git.mjs";

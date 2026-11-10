@@ -1,3 +1,4 @@
+// @ts-check
 import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { which } from "../agents.mjs";

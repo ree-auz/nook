@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Writes workspace hooks from a CI plan (see ci.mjs). Each hook is one
  * self-contained .mjs file, so it runs the same on Windows, macOS and Linux

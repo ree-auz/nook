@@ -1,3 +1,4 @@
+// @ts-check
 import { exists } from "./home.mjs";
 import { gitRun, gitTry } from "./git.mjs";
 

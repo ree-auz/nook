@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The rules `nk hooks write` reads CI and Compose files by, as lists: one
  * entry per tool, command or service, so that a new case is one line, and so
