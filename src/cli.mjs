@@ -25,7 +25,9 @@ Usage:
                                          --untested: start even if hooks or CI changed
                                          since nk hooks test last passed)
   nk <name> [agent] [-p <prompt>]         open a workspace; start the agent if given
-  nk ls [--json]                          list workspaces: changes, commits, PR and CI
+  nk ls [--json] [--no-pr] [--timing]     list workspaces: changes, commits, PR and CI
+                                         (--no-pr: do not ask GitHub, for a quick local list;
+                                         --timing: also say how long git and GitHub took)
   nk rm <name>... [-n] [-y]               remove workspaces: saves uncommitted changes and unpushed
                                          commits to ~/nook/backup first, then deletes the folder
                                          and the branch (-n: only show what would happen;
@@ -87,7 +89,7 @@ export async function run(argv, io = {}) {
       return init(ctx, { yes: values.yes, allowHooks: values["allow-hooks"], name: values.name });
     }
     case "ls": {
-      const { values } = parse(args.slice(1), { repo: { type: "string" }, json: { type: "boolean" } });
+      const { values } = parse(args.slice(1), { repo: { type: "string" }, json: { type: "boolean" }, "no-pr": { type: "boolean" }, timing: { type: "boolean" } });
       return listWorkspaces(ctx, values);
     }
     case "rm": {

@@ -1,21 +1,28 @@
 import { exists } from "./home.mjs";
-import { gitTry, refExists } from "./git.mjs";
+import { gitRun, gitTry } from "./git.mjs";
 
-/** Uncommitted changes, or null when the folder is missing or not readable. */
-export function changeCount(path) {
-  if (!exists(path)) return null;
-  const status = gitTry(["status", "--porcelain", "--untracked-files=normal"], { cwd: path });
-  if (!status.ok) return null;
-  return status.out ? status.out.split(/\r?\n/).length : 0;
-}
+const AHEAD_BEHIND = (base, branch) => ["rev-list", "--left-right", "--count", `${base}...refs/heads/${branch}`];
 
-/** Commits the branch has that `base` lacks (ahead), and the reverse (behind). */
-export function aheadBehind(repo, branch, base) {
-  if (!refExists(repo, `refs/heads/${branch}`)) return null;
-  const result = gitTry(["rev-list", "--left-right", "--count", `${base}...refs/heads/${branch}`], { cwd: repo });
+function counts(result) {
   if (!result.ok) return null;
   const [behind, ahead] = result.out.split(/\s+/).map(Number);
-  return { ahead, behind };
+  return Number.isInteger(ahead) && Number.isInteger(behind) ? { ahead, behind } : null;
+}
+
+/**
+ * What nk ls shows of a workspace from git alone, read without blocking so
+ * that several workspaces are read at the same time.
+ * changes: uncommitted changes, or null when the folder is missing or not readable.
+ * commits: what the branch has that `base` lacks (ahead) and the reverse (behind);
+ * null without a branch, or when the branch does not exist.
+ */
+export async function localState(repo, path, branch, base) {
+  const [status, commits] = await Promise.all([
+    exists(path) ? gitRun(["status", "--porcelain", "--untracked-files=normal"], { cwd: path }) : null,
+    branch ? gitRun(AHEAD_BEHIND(base, branch), { cwd: repo }) : null,
+  ]);
+  const changes = status?.ok ? (status.out ? status.out.split(/\r?\n/).length : 0) : null;
+  return { changes, commits: commits ? counts(commits) : null };
 }
 
 export function branchTip(repo, branch) {

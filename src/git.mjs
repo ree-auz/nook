@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { NookError } from "./errors.mjs";
 import { samePath } from "./home.mjs";
@@ -13,6 +13,28 @@ export function gitTry(args, { cwd, input } = {}) {
   });
   if (result.error) throw new NookError(`Cannot run git: ${result.error.message}`);
   return { ok: result.status === 0, status: result.status, out: result.stdout.trimEnd(), err: result.stderr.trim() };
+}
+
+/**
+ * gitTry without blocking: several of these run at the same time, which is
+ * what makes nk ls quick with many workspaces. Resolves to the same shape;
+ * a git that cannot be started resolves as not ok.
+ */
+export function gitRun(args, { cwd } = {}) {
+  return new Promise((done) => {
+    let child;
+    try {
+      child = spawn("git", args, { cwd, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    } catch (error) {
+      return done({ ok: false, status: null, out: "", err: error.message });
+    }
+    let out = "";
+    let err = "";
+    child.stdout.setEncoding("utf8").on("data", (chunk) => (out += chunk));
+    child.stderr.setEncoding("utf8").on("data", (chunk) => (err += chunk));
+    child.on("error", (error) => done({ ok: false, status: null, out: "", err: error.message }));
+    child.on("close", (status) => done({ ok: status === 0, status, out: out.trimEnd(), err: err.trim() }));
+  });
 }
 
 export function git(args, options) {

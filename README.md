@@ -69,7 +69,7 @@ nk clean                    remove every workspace whose work is merged
 | `nk init` | Register the current repository (once per repository; safe to rerun) |
 | `nk -b <name> [agent] [-p <prompt>] [-y]` | Create a workspace; start the agent if given (`-y` keeps a converted name without asking) |
 | `nk <name> [agent] [-p <prompt>]` | Open a workspace; start the agent if given |
-| `nk ls [--json]` | List workspaces: uncommitted changes, commits ahead of and behind the default branch, PR and CI |
+| `nk ls [--json] [--no-pr] [--timing]` | List workspaces: uncommitted changes, commits ahead of and behind the default branch, PR and CI (`--no-pr` does not ask GitHub; `--timing` says how long git and GitHub took) |
 | `nk rm <name>... [-n] [-y]` | Remove one or more workspaces, asking once: uncommitted changes and unpushed commits are saved to `~/nook/backup/` first, then the folder and the branch are deleted (`-n` shows what would happen, `-y` skips the question) |
 | `nk clean [-n] [-y]` | Remove every workspace whose work is merged, the way `nk rm` does, and folders left from earlier removals; the rest is kept, each with its reason (`-n` only shows the list, `-y` skips the question) |
 | `nk hooks` | The repository's `.nook` hooks: allowed, and tested since they last changed |
@@ -328,6 +328,12 @@ behind (↓) the default branch, and its pull request with the CI result
 `gh` is missing or not logged in, the PR column stays empty and a ▲ line says
 why. Merged rows are dimmed. `nk ls --json` prints the same data for scripts
 and agents.
+
+git reads the workspaces several at a time, while GitHub answers. GitHub is
+usually the slower of the two: `nk ls --no-pr` leaves it out and shows the
+local columns at once, and `nk ls --timing` adds a line with how long git and
+GitHub each took. PR data is asked for on every run and never kept, so
+`nk clean` always decides on what GitHub says now.
 
 Git is the source of truth, as in worktrunk: `nk ls` shows every worktree of
 the repository, including ones made by other tools (Orca, Conductor, plain
