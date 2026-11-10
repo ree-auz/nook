@@ -21,15 +21,45 @@ checks them and changes nothing.
 
 ## Quick start
 
+Five commands, about 30 seconds in a repository that has a CI workflow:
+
 ```
-cd ~/code/my-app            any git repository
-nk init                     register it (once)
-nk hooks write              setup hooks from its CI and Compose file
-nk hooks test               try them in a temporary workspace
-nk -b fix-login codex       new workspace on branch fix-login, with an agent
-cd "$(nk fix-login)"        or just go there
-nk ls                       every workspace, with its PR and CI
-nk rm fix-login             back up and remove it when you are done
+$ cd ~/code/my-app
+$ nk init                    register the repository (once)
+√ Registered my-app @ ~/code/my-app
+√ Shared files in ~/nook/shared/my-app: .env
+
+$ nk hooks write             setup hooks from its CI and Compose file
+√ Wrote .nook/create.mjs from .github/workflows/ci.yml (job test)
+○ Setup steps (create):
+   ┃ npm ci
+
+$ nk -b fix-login codex      new workspace on branch fix-login, with an agent
+√ Created workspace fix-login @ ~/nook/workspace/my-app/fix-login (ports 20000–20009)
+○ Copied shared files: .env
+◎ Running create hook .nook/create.mjs
+  > npm ci
+
+$ nk ls                      every workspace, with its PR and CI
+   NAME       REPO    PORTS        CHANGES  BASE  PR  PATH
+@  main       my-app  -            clean              ~/code/my-app
++  fix-login  my-app  20000-20009  clean              ~/nook/workspace/my-app/fix-login
+
+$ nk rm fix-login            back up and remove it when you are done
+√ Removed fix-login
+```
+
+The output is shortened here. Each workspace is its own folder, branch, `.env`
+and block of ten ports, so several agents can work on one repository at the
+same time without touching each other or the main checkout.
+
+Also useful:
+
+```
+nk hooks test               try the hooks in a temporary workspace
+cd "$(nk fix-login)"        go to a workspace without starting an agent
+nk rm fix-login -n          show what a removal would touch, change nothing
+nk clean                    remove every workspace whose work is merged
 ```
 
 ## Commands
@@ -40,8 +70,8 @@ nk rm fix-login             back up and remove it when you are done
 | `nk -b <name> [agent] [-p <prompt>] [-y]` | Create a workspace; start the agent if given (`-y` keeps a converted name without asking) |
 | `nk <name> [agent] [-p <prompt>]` | Open a workspace; start the agent if given |
 | `nk ls [--json]` | List workspaces: uncommitted changes, commits ahead of and behind the default branch, PR and CI |
-| `nk rm <name>... [-n] [-y]` | Back up and remove one or more workspaces, asking once (`-n` shows what would happen, `-y` skips the question) |
-| `nk clean [-n] [-y]` | Remove every workspace whose work is merged, and folders left from earlier removals |
+| `nk rm <name>... [-n] [-y]` | Remove one or more workspaces, asking once: uncommitted changes and unpushed commits are saved to `~/nook/backup/` first, then the folder and the branch are deleted (`-n` shows what would happen, `-y` skips the question) |
+| `nk clean [-n] [-y]` | Remove every workspace whose work is merged, the way `nk rm` does, and folders left from earlier removals; the rest is kept, each with its reason (`-n` only shows the list, `-y` skips the question) |
 | `nk hooks` | The repository's `.nook` hooks: allowed, and tested since they last changed |
 | `nk hooks write [agent]` | Write the hooks from the repository's CI; with an agent, also starts it in the same folder to finish what CI could not tell |
 | `nk hooks test` | Run the hooks of the folder you are in, in a temporary workspace; fails if remove leaves anything behind |
