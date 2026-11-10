@@ -11,7 +11,10 @@
  * --dir uses a checkout of the pinned commit made beforehand (actions/checkout);
  * without it the script fetches the commit itself.
  *
- * Prints each step and writes a JSON result: { name, ok, failedAt, steps: [...] }.
+ * Prints each step and writes a JSON result: { name, ok, failedAt, cause, why, steps: [...] }.
+ * `cause` says whose failure it is (scripts/real-cause.mjs). The exit code is 1 for every
+ * failure but one: a repository nk has not seen before whose own setup command failed is
+ * reported and does not fail the run, since nothing says nk is at fault.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -19,6 +22,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dockerSnapshot, snapshotDiff } from "../src/compose.mjs";
+import { failureCause } from "./real-cause.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const [name] = process.argv.slice(2).filter((arg) => !arg.startsWith("-"));
@@ -52,7 +56,8 @@ function step(label, fn) {
     output = error.stack ?? String(error);
   }
   const seconds = Math.round((Date.now() - started) / 1000);
-  steps.push({ step: label, ok, seconds, output: tail(output) });
+  // The whole output decides whose failure it is; the result keeps its last lines.
+  steps.push({ step: label, ok, seconds, output: tail(output), ...(ok ? {} : { blame: failureCause(label, output) }) });
   console.log(`\n${ok ? "PASS" : "FAIL"} ${label} (${seconds}s)`);
   if (output.trim()) console.log(tail(output, ok ? 15 : 80));
   return ok;
@@ -301,10 +306,14 @@ if (mainUp) {
 }
 
 const ok = passed && removed && clean;
-const result = { name: entry.name, repo: entry.repo, commit: entry.commit, new: listed?.repo !== entry.repo, ok, failedAt: steps.find((s) => !s.ok)?.step ?? null, steps };
+const failed = steps.find((s) => !s.ok);
+// A later step that breaks one of nk's promises (something left behind, say) outweighs an earlier setup failure.
+const blame = steps.find((s) => s.blame?.cause === "nk")?.blame ?? failed?.blame ?? null;
+const fresh = listed?.repo !== entry.repo;
+const result = { name: entry.name, repo: entry.repo, commit: entry.commit, new: fresh, ok, failedAt: failed?.step ?? null, cause: blame?.cause ?? null, why: blame?.why ?? null, steps: steps.map(({ blame: _, ...rest }) => rest) };
 if (out) {
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, `${JSON.stringify(result, null, 2)}\n`);
 }
-console.log(`\n${ok ? "PASSED" : `FAILED at ${result.failedAt}`}: ${entry.name}`);
-process.exit(ok ? 0 : 1);
+console.log(`\n${ok ? "PASSED" : `FAILED at ${result.failedAt} (${result.cause}: ${result.why})`}: ${entry.name}`);
+process.exit(ok || (fresh && result.cause === "repository") ? 0 : 1);
