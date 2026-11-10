@@ -24,15 +24,34 @@ function occupants(ctx, path, scan) {
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
+ * Who may keep a folder from being deleted, as far as the scan can tell. It sees
+ * working directories only, and not every process: a program started elsewhere
+ * with a file open inside (an editor, an antivirus scan) is not found.
+ */
+function holders(path, scan) {
+  const result = scan(path);
+  const limits = [
+    "the check sees working directories only, not open files",
+    result.inaccessible ? `${result.inaccessible} process${result.inaccessible === 1 ? "" : "es"} could not be looked at` : "",
+  ].filter(Boolean);
+  if (result.unsupported) return `Could not check which programs use it: ${result.unsupported}`;
+  if (result.processes.length) return `Running in it:\n${describeOccupants(result.processes)}\n(${limits.join("; ")})`;
+  return `No program has it as its working directory; an editor, terminal or scanner may still hold a file open (${limits.join("; ")})`;
+}
+
+/**
  * Backs up what would be lost, runs the remove hook, deletes the folder and
  * the branch, and forgets the workspace. Programs must already be stopped.
  */
-export async function deleteWorkspace(ctx, target, { state, base, backupRoot, prompter, scan = findOccupants, docker = dockerCli }) {
+export async function deleteWorkspace(ctx, target, { state, base, backupRoot, prompter, scan = findOccupants, docker = dockerCli, remove = deleteFolder }) {
   const { repo, ws, name } = target;
   const branchName = branchOf(name, ws);
+  // What is already done, for the message when a later step fails: a removal that stops halfway must say where it stands.
+  const done = [];
   if (needsBackup(state)) {
     const dir = createBackup({ repo: repo.path, path: ws.path, branch: branchName, base, state, dir: backupDir(backupRoot, name) });
     ctx.ok(`Backed up changes to ${dir}`);
+    done.push(`changes backed up to ${dir}`);
   }
   if (state.present) {
     try {
@@ -41,6 +60,7 @@ export async function deleteWorkspace(ctx, target, { state, base, backupRoot, pr
       if (error instanceof NookError) error.message += "\nStopped; nothing was deleted";
       throw error;
     }
+    if (findHook(repo.path, "remove")) done.push("remove hook ran");
   }
   // What the workspace started with Docker Compose goes too, so no remove hook is needed for it.
   // Checked again after the hook, which may have removed some of it already.
@@ -51,6 +71,7 @@ export async function deleteWorkspace(ctx, target, { state, base, backupRoot, pr
       throw new NookError(`${error.message}\nStopped; the folder was not deleted`);
     }
     ctx.ok(`Removed ${describeProject(project)}`);
+    done.push(`${describeProject(project)} removed`);
   }
   if (state.present) {
     const after = occupants(ctx, ws.path, scan);
@@ -60,7 +81,13 @@ export async function deleteWorkspace(ctx, target, { state, base, backupRoot, pr
     const removed = gitTry(["worktree", "remove", "--force", ws.path], { cwd: repo.path });
     if (!removed.ok) ctx.warn(`git worktree remove failed (${removed.err.split("\n")[0]}); deleting the folder instead`);
     // git can leave ignored folders behind on Windows (node_modules, .venv), even when it reports success.
-    deleteFolder(ws.path);
+    try {
+      remove(ws.path);
+    } catch (error) {
+      if (!(error instanceof NookError)) throw error;
+      if (removed.ok) done.push("git no longer lists the worktree");
+      throw new NookError(`${error.message}\n${holders(ws.path, scan)}\n${done.length ? `Already done: ${done.join("; ")}. ` : ""}Not done: the folder${branchName ? `, branch ${branchName}` : ""} and nk's record are still there, so nk rm ${name} can finish the removal`);
+    }
   }
   // Drop git's record of this worktree alone. A plain prune would also drop the record of every other
   // worktree git cannot reach, such as a half-removed one whose work is still in its folder.
