@@ -11,6 +11,7 @@ import { cleanWorkspaces } from "./commands/clean.mjs";
 import { listWorkspaces } from "./commands/ls.mjs";
 import { removeWorkspace } from "./commands/rm.mjs";
 import { switchWorkspace } from "./commands/switch.mjs";
+import { printShellInit } from "./commands/shell-init.mjs";
 import { createWorkspace, openWorkspace } from "./commands/workspace.mjs";
 import { writeHooks } from "./commands/write-hooks.mjs";
 import { listHooks } from "./commands/hooks.mjs";
@@ -33,6 +34,10 @@ Usage:
                                          runs, nothing starts. Without a name: choose from a
                                          list (arrows, type to filter). To go there:
                                          cd "$(nk switch)"   PowerShell: Set-Location (nk switch)
+  nk shell-init --install                 add nks to your shell's profile: nks chooses a workspace
+                                         and goes to its folder (nk init offers this too)
+  nk shell-init <shell>                   only print the nks function, for powershell, bash, zsh
+                                         or fish
   nk rm <name>... [-n] [-y]               remove workspaces: saves uncommitted changes and unpushed
                                          commits to ~/nook/backup first, then deletes the folder
                                          and the branch (-n: only show what would happen;
@@ -101,6 +106,11 @@ export async function run(argv, io = {}) {
       const { values, positionals } = parse(args.slice(1), { repo: { type: "string" } });
       if (positionals.length > 1) throw new NookError("Usage: nk switch [<name>] [--repo <short-name>]");
       return switchWorkspace(ctx, { name: positionals[0], repo: values.repo, input: io.in ?? process.stdin });
+    }
+    case "shell-init": {
+      const { values, positionals } = parse(args.slice(1), { install: { type: "boolean" } });
+      if (positionals.length > 1) throw new NookError("Usage: nk shell-init <shell> | nk shell-init --install [shell]");
+      return printShellInit(ctx, { shell: positionals[0], install: values.install });
     }
     case "rm": {
       const { values, positionals } = parse(args.slice(1), {

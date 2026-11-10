@@ -12,6 +12,7 @@ import { copyFile, includePatterns, knownSecretFiles, listFiles, sharedCandidate
 import { toolStatus } from "../tools.mjs";
 import { hostAddresses, pointAtHost } from "../compose-plan.mjs";
 import { planFromCi } from "../ci.mjs";
+import { installInto, profileState, profiles } from "./shell-init.mjs";
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -102,9 +103,26 @@ function listOtherWorktrees(ctx, { repoPath, repo }) {
   for (const w of others) ctx.item(`${w.branch ?? "(detached)"}  ${w.path}`);
 }
 
+/**
+ * nks, the shell function that goes to a workspace, has to be in the shell's
+ * profile. In a terminal, init offers to put it there once; it is not asked
+ * again once it is in. With --yes or without a terminal nothing is written to
+ * a profile: an agent or a script running init has no say over the user's shell.
+ */
+async function offerNks(ctx, prompter, find) {
+  if (!prompter.interactive || prompter.yes) {
+    ctx.info("To go to a workspace from your shell (nks): nk shell-init --install");
+    return;
+  }
+  const targets = find({ env: ctx.env }).filter((target) => profileState(target.file, target.shell) !== "current");
+  if (!targets.length) return;
+  const files = targets.map((target) => target.file).join(" and ");
+  if (await prompter.confirm(`Add nks to ${files}? (nks shows your workspaces and goes to the one you choose)`, true)) installInto(ctx, targets);
+  else ctx.info("Later, if you want it: nk shell-init --install");
+}
+
 /** nk init: run once per repository; safe to run again. */
-export async function init(ctx, { yes = false, allowHooks = false, name: nameFlag } = {}) {
-  const prompter = createPrompter({ yes });
+export async function init(ctx, { yes = false, allowHooks = false, name: nameFlag, prompter = createPrompter({ yes }), shellProfiles = profiles } = {}) {
   const repoPath = mainWorktree(ctx.cwd);
   if (isInside(repoPath, ctx.paths.home)) throw new NookError("Run nk init in the main repository, not in a workspace");
   const registered = Object.entries(ctx.config.repos).find(([, repo]) => samePath(repo.path, repoPath));
@@ -148,6 +166,7 @@ export async function init(ctx, { yes = false, allowHooks = false, name: nameFla
   }
   if (!hooks.length) ctx.info("No .nook/ hooks yet. To have an agent write them: nk hooks write <agent>");
   ctx.save();
+  await offerNks(ctx, prompter, shellProfiles);
   ctx.ok(`Done. Config: ${ctx.paths.config}`);
   ctx.info("Next: nk -b <name> [agent]");
   return 0;
