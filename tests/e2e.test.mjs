@@ -353,8 +353,8 @@ test("rm removes several workspaces after one check of all of them", (t) => {
   write(join(home, "workspace", "demo", "one"), { "agent.txt": "notes", "node_modules/x/index.js": "" });
   r = run(["rm", "one", "two", "-y"]);
   assert.equal(r.status, 0, r.all);
-  assert.match(r.err, /Not backed up, since git ignores them: [^\n]*agent\.txt/);
-  assert.doesNotMatch(r.err, /ignores them: [^\n]*(\.env|node_modules)/, "a shared copy and a rebuilt folder are not worth a warning");
+  assert.match(r.err, /Deleted with the workspace, not backed up \(git ignores them\): [^\n]*agent\.txt/);
+  assert.doesNotMatch(r.err, /ignores them\): [^\n]*(\.env|node_modules)/, "a shared copy and a rebuilt folder are not worth a warning");
   assert.ok(!existsSync(join(home, "workspace", "demo", "one")));
   assert.ok(!existsSync(join(home, "workspace", "demo", "two")));
   assert.ok(existsSync(join(home, "workspace", "demo", "three")));

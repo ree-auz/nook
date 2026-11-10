@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { createContext } from "../src/context.mjs";
@@ -136,14 +136,71 @@ test("clean deletes folders a removal left behind, and nothing else", async (t) 
   assert.match(run(["doctor"]).out, /No problems found/);
 });
 
-test("clean keeps a merged workspace whose ignored files would be lost", async (t) => {
-  const { run, lines, ctx, ws } = setup(t);
-  assert.equal(run(["-b", "data"]).status, 0);
-  write(ws("data"), { ".gitignore": "*.log\nlocal.db\n", "local.db": "rows\n", "debug.log": "x\n" });
-  sh("git", ["add", ".gitignore"], ws("data"));
-  commit(ws("data"), "ignore the database");
-  const prs = new Map([["data", { number: 5, state: "merged", head: sh("git", ["rev-parse", "HEAD"], ws("data")), ci: null }]]);
+/** A merged PR for each workspace, at its current HEAD. */
+const mergedPrs = (ws, names) => new Map(names.map((name, i) => [name, { number: i + 1, state: "merged", head: sh("git", ["rev-parse", "HEAD"], ws(name)), ci: null }]));
+
+test("clean removes a merged workspace nk made together with the files git ignores", async (t) => {
+  const { repo, run, lines, ctx, ws } = setup(t);
+  for (const name of ["generated", "data", "source"]) {
+    assert.equal(run(["-b", name]).status, 0);
+    write(ws(name), { ".gitignore": "*.log\nlocal.db\ndata/\nnext-env.d.ts\nplaywright-report/\n", "apps/web/page.js": "export {};\n" });
+    sh("git", ["add", "-A"], ws(name));
+    commit(ws(name), "ignore development files");
+  }
+  write(ws("generated"), { "apps/web/next-env.d.ts": "// generated\n" });
+  write(ws("data"), { "local.db": "rows\n", "data/rows.json": "{}\n", "playwright-report/index.html": "x\n", "next-env.d.ts": "// generated\n", "debug.log": "x\n" });
+  // A new file git does not ignore is work, whatever else is in the folder.
+  write(ws("source"), { "local.db": "rows\n", "src/new.js": "export {};\n" });
+  const prs = mergedPrs(ws, ["generated", "data", "source"]);
+  const lookup = async () => ({ prs });
+
+  assert.equal(await cleanWorkspaces(ctx(), { dryRun: true, prs: lookup }), 0);
+  let text = lines.join("");
+  assert.match(text, /Deleted with them, not backed up \(development files git ignores\):/);
+  assert.match(text, /generated: apps\/web\/next-env\.d\.ts/);
+  assert.match(text, /data: data\/, local\.db, next-env\.d\.ts, playwright-report\//);
+  assert.match(text, /source \(demo\): 1 uncommitted change/);
+  for (const name of ["generated", "data", "source"]) assert.ok(existsSync(ws(name)), "dry run removes nothing");
+
+  lines.length = 0;
+  assert.equal(await cleanWorkspaces(ctx(), { yes: true, prs: lookup }), 0);
+  for (const name of ["generated", "data"]) {
+    assert.ok(!existsSync(ws(name)), `${name} removed`);
+    assert.equal(sh("git", ["branch", "--list", name], repo), "");
+  }
+  assert.ok(existsSync(join(ws("source"), "src", "new.js")), "-y does not remove a workspace with new work");
+});
+
+test("clean keeps a merged worktree nk did not make when ignored files would be lost", async (t) => {
+  const { repo, lines, ctx, home } = setup(t);
+  const other = join(home, "..", "elsewhere");
+  const tree = (name) => join(other, name);
+  for (const name of ["with-data", "plain"]) {
+    sh("git", ["worktree", "add", "-q", "-b", name, tree(name)], repo);
+    write(tree(name), { ".gitignore": "*.log\nlocal.db\n" });
+    sh("git", ["add", ".gitignore"], tree(name));
+    commit(tree(name), "ignore the database");
+  }
+  write(tree("with-data"), { "local.db": "rows\n" });
+  const prs = mergedPrs(tree, ["with-data", "plain"]);
   assert.equal(await cleanWorkspaces(ctx(), { yes: true, prs: async () => ({ prs }) }), 0);
-  assert.match(lines.join(""), /data \(demo\): files git ignores would be lost: local\.db \(nk rm data to remove anyway\)/);
-  assert.ok(existsSync(ws("data")));
+  assert.match(lines.join(""), /with-data \(demo\): not made by nk, and files git ignores would be lost: local\.db \(nk rm with-data to remove anyway\)/);
+  assert.ok(existsSync(join(tree("with-data"), "local.db")));
+  assert.ok(!existsSync(tree("plain")), "a merged worktree with nothing to lose is removed as before");
+});
+
+test("clean keeps a workspace whose folder git cannot read", async (t) => {
+  const { run, lines, ctx, ws } = setup(t);
+  for (const name of ["broken", "fine"]) assert.equal(run(["-b", name]).status, 0);
+  // A removal that stopped halfway: the folder and the work in it remain, its .git is gone.
+  write(ws("broken"), { "wip.txt": "not committed\n" });
+  rmSync(join(ws("broken"), ".git"));
+  const now = Date.now() + 2 * 24 * 60 * 60 * 1000;
+  const lookup = async () => ({ prs: new Map() });
+
+  assert.equal(await cleanWorkspaces(ctx(), { yes: true, prs: lookup, now }), 0);
+  const text = lines.join("");
+  assert.match(text, /broken \(demo\): git cannot read the folder, so changes in it are unknown/);
+  assert.ok(existsSync(join(ws("broken"), "wip.txt")), "the work is still there");
+  assert.ok(!existsSync(ws("fine")), "the other merged workspace is still removed");
 });

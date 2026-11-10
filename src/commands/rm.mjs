@@ -126,7 +126,7 @@ async function planRemoval(ctx, input, { repoFlag, scan, prs, docker }) {
   if (compose.unavailable && compose.unavailable !== "not installed") ctx.warn(`Could not check for Docker containers: ${compose.unavailable}`);
   if (needsBackup(state)) ctx.info(`Backs up changes to ${backupRoot}`);
   const lost = state.present ? ignoredData(ws.path, join(ctx.paths.shared, target.repoName)) : [];
-  if (lost.length) ctx.warn(`Not backed up, since git ignores them: ${lost.slice(0, 8).join(", ")}${lost.length > 8 ? ` and ${lost.length - 8} more` : ""}`);
+  if (lost.length) ctx.warn(`Deleted with the workspace, not backed up (git ignores them): ${lost.slice(0, 8).join(", ")}${lost.length > 8 ? ` and ${lost.length - 8} more` : ""}`);
   if (state.changes.length) {
     ctx.warn(`${plural(state.changes.length, "uncommitted change")}:`);
     for (const change of state.changes.slice(0, 10)) ctx.item(change);

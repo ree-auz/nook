@@ -318,12 +318,19 @@ workspace as merged when:
   is at least a day old (so a workspace you just created is kept).
 
 It keeps locked worktrees, workspaces with uncommitted changes, with commits made after the PR
-was merged, with files git ignores that are not rebuilt or shared (a local
-database, say; `nk rm` removes them after listing them), and the one you are inside. It lists what it would remove, what it
+was merged, the one you are inside, and any whose folder git cannot read (its
+changes are unknown, so it is not counted as clean). It lists what it would remove, what it
 keeps, and the programs running in the ones it removes, asks once, then stops
 those programs and removes each workspace the way `nk rm` does (backup,
 `remove` hook, folder and branch). `-n` only shows
-the list; `-y` removes without asking.
+the list; `-y` removes without asking, and skips none of these checks.
+
+A workspace `nk -b` made is a development environment that goes as a whole:
+files git ignores in it (a local database, `data/`, test reports,
+`next-env.d.ts`) are deleted with it and not backed up; `nk clean` lists them
+first. Work git does not ignore still keeps the workspace. A worktree another
+tool made is kept when it holds such files, since nk cannot tell what they
+are; `nk rm` removes it after listing them.
 
 It also deletes folders left from earlier removals: on Windows, git can
 remove a worktree and still leave ignored folders such as `node_modules` or
