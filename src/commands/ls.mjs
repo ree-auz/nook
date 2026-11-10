@@ -1,7 +1,7 @@
 import { NookError } from "../errors.mjs";
 import { baseRef, remoteUrl } from "../git.mjs";
 import { githubPrs } from "../forge.mjs";
-import { aheadBehind, changeCount } from "../status.mjs";
+import { localState } from "../status.mjs";
 import { useColor } from "../ui.mjs";
 import { branchOf, repoFromCwd, repoWorkspaces } from "../context.mjs";
 import { exists, isInside } from "../home.mjs";
@@ -13,26 +13,52 @@ function table(rows) {
   return rows.map((row) => row.map((cell, i) => (i === row.length - 1 ? cell : cell.padEnd(widths[i]))).join("  "));
 }
 
-/** Every workspace with its local state and, when gh can tell, its PR. */
+/** How many workspaces git reads at the same time: more gains little and loads the disk. */
+const AT_ONCE = 6;
+
+/** Runs `fn` on every item, at most `limit` at a time, keeping the order. */
+async function each(list, limit, fn) {
+  const results = new Array(list.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < list.length) {
+      const i = next++;
+      results[i] = await fn(list[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, worker));
+  return results;
+}
+
+/**
+ * Every workspace with its local state and, when gh can tell, its PR.
+ * GitHub is asked first and git reads the workspaces while it answers.
+ * `prs: false` leaves GitHub out. `timing` is how long each took, in ms.
+ */
 export async function collect(ctx, { repo: repoFlag, prs: lookup = githubPrs } = {}) {
   const only = repoFlag ?? repoFromCwd(ctx);
   if (only && !ctx.config.repos[only]) throw new NookError(`Unknown repository "${only}"`);
   const repos = Object.entries(ctx.config.repos).filter(([name]) => !only || name === only);
-  const fetched = await Promise.all(repos.map(([, repo]) => (remoteUrl(repo.path) ? lookup(repo.path, ctx.env) : { prs: null })));
-  const items = [];
-  const problems = new Set();
-  repos.forEach(([repoName, repo], i) => {
-    const { prs, error } = fetched[i];
-    if (error) problems.add(error);
-    const base = baseRef(repo.path, repo.default_branch);
-    for (const item of repoWorkspaces(repoName, repo)) {
-      const branch = branchOf(item.name, item.ws);
-      const pr = item.main || !branch ? null : (prs?.get(branch) ?? null);
-      const commits = item.main || !branch ? null : aheadBehind(repo.path, branch, base);
-      items.push({ ...item, branch, base, changes: changeCount(item.ws.path), commits, pr });
-    }
+  const started = Date.now();
+  let ghDone = started;
+  const asked = Promise.all(repos.map(([, repo]) => (lookup && remoteUrl(repo.path) ? lookup(repo.path, ctx.env) : { prs: null }))).then((result) => {
+    ghDone = Date.now();
+    return result;
   });
-  return { items, problems: [...problems] };
+  const rows = repos.flatMap(([repoName, repo], i) => {
+    const base = baseRef(repo.path, repo.default_branch);
+    return repoWorkspaces(repoName, repo).map((item) => ({ ...item, branch: branchOf(item.name, item.ws), base, repoIndex: i }));
+  });
+  const local = await each(rows, AT_ONCE, (row) => localState(row.repo.path, row.ws.path, row.main ? null : row.branch, row.base));
+  const gitDone = Date.now();
+  const fetched = await asked;
+  const problems = new Set();
+  for (const { error } of fetched) if (error) problems.add(error);
+  const items = rows.map(({ repoIndex, ...row }, i) => {
+    const pr = row.main || !row.branch ? null : (fetched[repoIndex].prs?.get(row.branch) ?? null);
+    return { ...row, changes: local[i].changes, commits: local[i].commits, pr };
+  });
+  return { items, problems: [...problems], timing: { git: gitDone - started, gh: lookup ? ghDone - started : null, total: Date.now() - started } };
 }
 
 const portsText = (ws) => (Number.isInteger(ws.port) ? `${ws.port}-${ws.port + 9}` : "-");
@@ -53,9 +79,11 @@ function prText(pr) {
   return `#${pr.number} ${pr.state}${pr.ci ? ` ${pr.ci}` : ""}`;
 }
 
-/** nk ls [--json] */
-export async function listWorkspaces(ctx, { repo: repoFlag, json = false, prs } = {}) {
-  const { items, problems } = await collect(ctx, { repo: repoFlag, prs });
+/** nk ls [--json] [--no-pr] [--timing] */
+export async function listWorkspaces(ctx, { repo: repoFlag, json = false, prs, "no-pr": noPr = false, timing: showTiming = false } = {}) {
+  const { items, problems, timing } = await collect(ctx, { repo: repoFlag, prs: noPr ? false : prs });
+  // On stderr, so --json output stays as it is.
+  const timed = () => showTiming && ctx.info(`Took ${timing.total} ms: git ${timing.git} ms${timing.gh === null ? "" : `, GitHub ${timing.gh} ms (at the same time)`}`);
   if (json) {
     const data = items.map(({ name, branch, repoName, ws, base, changes, commits, pr, main, managed }) => ({
       name,
@@ -73,6 +101,7 @@ export async function listWorkspaces(ctx, { repo: repoFlag, json = false, prs } 
       pr,
     }));
     ctx.print(JSON.stringify(data, null, 2));
+    timed();
     return 0;
   }
   if (!items.length) {
@@ -104,5 +133,6 @@ export async function listWorkspaces(ctx, { repo: repoFlag, json = false, prs } 
   if (merged) parts.push(`${merged} merged (nk clean removes them)`);
   ctx.info(parts.join(", "));
   for (const problem of problems) ctx.warn(`No PR status: ${problem}`);
+  timed();
   return 0;
 }
