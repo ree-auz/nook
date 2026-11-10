@@ -4,6 +4,9 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import { gitTry } from "./git.mjs";
 import { composeFile, overrideFile } from "./compose-plan.mjs";
+import { isInstallCommand, toolAction } from "./rules.mjs";
+
+export { isInstallCommand };
 
 /**
  * docker run flags from a CI service's options, split as the runner's shell does: quotes keep
@@ -56,37 +59,7 @@ const WORKFLOW = /^\.github\/workflows\/[^/]+\.ya?ml$/;
 const CHECK_STEP = /\b(test|tests|unittest|pytest|vitest|jest|e2e|lint|eslint|ruff|typecheck|tsc|mypy|format|prettier|check|knip|build|coverage|deploy|publish|release|audit)\b/i;
 /** Actions that only matter on a CI machine. */
 const CI_ONLY = /^(actions\/(checkout|cache|upload-artifact|download-artifact|github-script|labeler|stale)|codecov\/|docker\/(login|setup-buildx|setup-qemu|build-push|metadata)-action)/;
-/** Actions that install a tool: on a developer machine they become a check. */
-const TOOL_ACTIONS = [
-  { match: /^actions\/setup-node@/, tool: "node", version: (w) => w["node-version"] },
-  { match: /^actions\/setup-python@/, tool: "python", version: (w) => w["python-version"] },
-  { match: /^actions\/setup-go@/, tool: "go", version: (w) => w["go-version"] },
-  { match: /^actions\/setup-java@/, tool: "java", version: (w) => w["java-version"] },
-  { match: /^pnpm\/action-setup@/, tool: "pnpm", version: (w) => w.version },
-  { match: /^oven-sh\/setup-bun@/, tool: "bun", version: (w) => w["bun-version"] },
-  { match: /^astral-sh\/setup-uv@/, tool: "uv", version: (w) => w.version, also: (w) => (w["python-version"] ? [{ name: "python", version: String(w["python-version"]) }] : []) },
-  { match: /^denoland\/setup-deno@/, tool: "deno", version: (w) => w["deno-version"] },
-  { match: /^dtolnay\/rust-toolchain@|^actions-rs\/toolchain@/, tool: "cargo" },
-  { match: /^ruby\/setup-ruby@/, tool: "ruby", version: (w) => w["ruby-version"] },
-  { match: /^erlef\/setup-beam@/, tool: "elixir", version: (w) => w["elixir-version"] },
-  { match: /^shivammathur\/setup-php@/, tool: "php", version: (w) => w["php-version"] },
-];
-
 const EXPRESSION = /\$\{\{/;
-
-/**
- * CI runs in a throwaway machine, so its steps may assume nothing else is
- * there. On a developer machine the real database may be. Only commands that
- * install dependencies into the workspace folder are copied; any other step
- * (a script, docker, a migration) is listed for a person or agent to review.
- */
-const INSTALL = /^(yarn( install)?(\s+--?[\w-]+(=\S+)?)*$|npm (ci|install|i)|pnpm (install|i|fetch)|bun (install|ci)|corepack enable|uv sync|uv pip install|pip install|python3? -m pip install|poetry install|pipenv (install|sync)|bundle install|go mod download|cargo fetch|composer install|deno (cache|install)|(npx|pnpm exec|yarn) playwright install)(\s+[\w@./:=,+-]+)*$/;
-const SHELL_SYNTAX = /[;|&`$<>()\\]|\n/;
-
-export function isInstallCommand(command) {
-  const text = String(command).trim();
-  return !SHELL_SYNTAX.test(text) && INSTALL.test(text);
-}
 
 /** A database or queue address that is not one of CI's services: on this machine it may be a real one. */
 const SERVICE_URL = /\b(postgres(ql)?|mysql|mariadb|mongodb(\+srv)?|redis|rediss|amqp|nats|kafka):\/\//i;
@@ -199,7 +172,7 @@ export function planJob(file, jobName, job, workflowEnv = {}, knownPorts = []) {
     const condition = step.if === undefined ? "" : String(step.if);
     const cleanup = /\balways\(\)/.test(condition);
     if (step.uses) {
-      const tool = TOOL_ACTIONS.find((entry) => entry.match.test(step.uses));
+      const tool = toolAction(step.uses);
       if (tool) {
         const version = tool.version?.(step.with ?? {});
         tools.push({ name: tool.tool, ...(version !== undefined && !EXPRESSION.test(String(version)) && { version: String(version) }) });

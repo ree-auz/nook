@@ -8,6 +8,8 @@
  *   npm run corpus              compare
  *   npm run corpus -- --update  write the new results
  *   npm run corpus -- outline   only some repositories
+ *   npm run corpus -- --rules   also list how many repositories use each rule of src/rules.mjs,
+ *                               and the rules none of them uses
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -16,6 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { generateHooks } from "../src/commands/write-hooks.mjs";
 import { hostAddresses } from "../src/compose-plan.mjs";
+import { BACKING_SERVICES, INSTALL_COMMANDS, TOOL_ACTIONS, countRuleHits } from "../src/rules.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const expectedDir = join(root, "tests", "corpus", "expected");
@@ -71,12 +74,18 @@ function summarize(dir) {
   return `${lines.join("\n")}\n`;
 }
 
+/** Per rule ("install npm"), the repositories that used it. */
+const usedBy = new Map();
+const showRules = args.includes("--rules");
+
 mkdirSync(expectedDir, { recursive: true });
 let changed = 0;
 for (const entry of repos) {
   let text;
   try {
+    const hits = showRules ? countRuleHits() : null;
     text = summarize(fetchRepo(entry));
+    for (const rule of hits?.keys() ?? []) usedBy.set(rule, [...(usedBy.get(rule) ?? []), entry.name]);
   } catch (error) {
     text = `error: ${error.message.split("\n")[0]}\n`;
   }
@@ -97,6 +106,21 @@ for (const entry of repos) {
   const now = new Set(text.split("\n"));
   for (const line of old) if (line && !now.has(line)) console.log(`    - ${line}`);
   for (const line of now) if (line && !old.has(line)) console.log(`    + ${line}`);
+}
+if (showRules) {
+  const all = [
+    ...TOOL_ACTIONS.map((rule) => `tool ${rule.tool}`),
+    ...INSTALL_COMMANDS.map((rule) => `install ${rule.id}`),
+    ...BACKING_SERVICES.map((name) => `service ${name}`),
+  ];
+  const width = Math.max(...all.map((rule) => rule.length));
+  console.log(`\nRules of src/rules.mjs, by how many of these ${repos.length} repositories use them:`);
+  for (const rule of [...all].sort((a, b) => (usedBy.get(b)?.length ?? 0) - (usedBy.get(a)?.length ?? 0))) {
+    const names = usedBy.get(rule) ?? [];
+    if (names.length) console.log(`  ${rule.padEnd(width)}  ${String(names.length).padStart(3)}  ${names.slice(0, 4).join(", ")}${names.length > 4 ? ", …" : ""}`);
+  }
+  const unused = all.filter((rule) => !usedBy.has(rule));
+  console.log(`\nUsed by none (${unused.length} of ${all.length}); not a reason to remove one, see src/rules.mjs:\n  ${unused.join(", ") || "-"}`);
 }
 if (changed && !update) {
   console.log(`\n${changed} of ${repos.length} changed. Review the lines above; if they are right: npm run corpus -- --update`);

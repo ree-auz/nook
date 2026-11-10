@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { exists } from "./home.mjs";
+import { isBackingService } from "./rules.mjs";
 
 /**
  * Reads the repository's Docker Compose file for what a workspace needs from
@@ -88,13 +89,6 @@ function portEntry(entry) {
   return { host: parts.length >= 2 ? parts.at(-2) : null, target: parts.at(-1) };
 }
 
-/**
- * Images a project uses as they are, beside its own code: databases, caches,
- * queues, search, object storage, mail catchers, cloud emulators. An image the
- * project publishes itself (its app) is not one of them.
- */
-const BACKING = /(^|[/:_-])(postgres|postgis|pgvector|timescale(db)?|mysql|mariadb|percona|mongo(db)?|redis|valkey|keydb|dragonfly(db)?|memcached|rabbitmq|kafka|redpanda|zookeeper|nats|elasticsearch|opensearch|meilisearch|typesense|minio|clickhouse(-server)?|cassandra|scylla|neo4j|couchdb|cockroach(db)?|mssql(-server)?|azure-sql-edge|localstack|dynamodb-local|azurite|mailpit|mailhog|maildev|smtp4dev|qdrant|weaviate|milvus|chroma|influxdb|questdb|surrealdb|etcd|pubsub-emulator|firebase-emulator|spanner-emulator|garage|seaweedfs|valkey-bundle)($|[/:._@-]|\d)/i;
-
 /** Variables a service needs set: ${NAME:?message} or ${NAME?message}. */
 function requiredVariables(service) {
   return [...JSON.stringify(service).matchAll(/\$\{(\w+):?\?/g)].map((match) => match[1]);
@@ -160,7 +154,7 @@ export function planCompose(repoPath, { start: startAny = true, reserved = 0 } =
     if (service.build) notStarted.push({ name, why: "built from this repository" });
     else if (service.profiles?.length) notStarted.push({ name, why: `only with the profile ${service.profiles.join(", ")}` });
     else if (!service.image) notStarted.push({ name, why: "no image" });
-    else if (!BACKING.test(service.image)) notStarted.push({ name, why: `${service.image} is not a database or similar service` });
+    else if (!isBackingService(service.image)) notStarted.push({ name, why: `${service.image} is not a database or similar service` });
     else if (!startAny) notStarted.push({ name, why: "CI starts its own services" });
     else if (hostNetwork && !fixed.length) notStarted.push({ name, why: "uses the host's network and names no ports, so it would share the main checkout's" });
     else {
