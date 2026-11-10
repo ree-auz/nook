@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { createContext } from "./context.mjs";
 import { NookError } from "./errors.mjs";
 import { doctor } from "./commands/doctor.mjs";
+import { doctorWorkspace } from "./commands/doctor-workspace.mjs";
 import { init } from "./commands/init.mjs";
 import { createPrompter } from "./prompt.mjs";
 import { line, useColor } from "./ui.mjs";
@@ -36,6 +37,8 @@ Usage:
   nk forget [<short-name>] [-y]           stop knowing a repository: its registration and shared
                                          files go; the repository folder and backups stay
   nk doctor                               check nk's tools: node, git, gh, docker, agents
+  nk doctor --workspace <name>            check one workspace: what a removal would touch, and
+                                         what nk clean would do with it and why
 
 Options:
   --repo <short-name>   act on another registered repository (otherwise: the one you are in)
@@ -104,9 +107,11 @@ export async function run(argv, io = {}) {
       if (positionals.length > 1) throw new NookError("Usage: nk forget [<short-name>] [-y]");
       return forgetRepo(ctx, { name: positionals[0] ?? values.repo, yes: values.yes });
     }
-    case "doctor":
-      parse(args.slice(1), {});
+    case "doctor": {
+      const { values } = parse(args.slice(1), { workspace: { type: "string" }, repo: { type: "string" } });
+      if (values.workspace) return doctorWorkspace(ctx, { name: values.workspace, repo: values.repo });
       return doctor(ctx);
+    }
     case "clean": {
       const { values } = parse(args.slice(1), {
         "dry-run": { type: "boolean", short: "n" },

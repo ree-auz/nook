@@ -47,6 +47,7 @@ nk rm fix-login             back up and remove it when you are done
 | `nk hooks test` | Run the hooks of the folder you are in, in a temporary workspace; fails if remove leaves anything behind |
 | `nk forget [<short-name>]` | Stop knowing a repository: remove its registration and shared files; its folder and backups stay |
 | `nk doctor` | Check nk's tools (node, git, gh, docker, agents) without changing anything |
+| `nk doctor --workspace <name>` | Check one workspace: what a removal would touch, and what `nk clean` would do with it and why |
 
 Like git, every command acts on the repository you are in: its main
 checkout or one of its workspaces. Outside a repository, `nk -b`, opening,
@@ -348,6 +349,14 @@ yours), then checks, backs up and removes the workspace as usual. If git has no
 record of the folder any more, `nk rm` deletes nothing and says so: look
 inside, delete the folder when nothing in it is needed, and run `nk rm <name>`
 again to drop the record and the branch.
+
+To see why a workspace was kept, or what removing it would touch, run
+`nk doctor --workspace <name>`. It shows whether git can read the folder, its
+uncommitted changes, unpushed commits and pull request, the programs running
+in it, its Compose projects (its own, which are removed with it, and shared
+ones, which are kept), the files git ignores that would be deleted with it,
+and the answer `nk clean` would give with its reason. It only reads: nothing
+is repaired, stopped or deleted.
 
 ## Forgetting a repository
 

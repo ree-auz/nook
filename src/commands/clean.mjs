@@ -39,6 +39,31 @@ export function mergedReason(item, now = Date.now()) {
   return null;
 }
 
+/**
+ * What nk clean does with one workspace from `collect`: null when its work is not
+ * merged (clean does not mention it), { keep } with the reason it stays, or
+ * { remove, ignored } with why it can go and the ignored files that go with it.
+ * nk doctor --workspace shows the same answer.
+ */
+export function cleanVerdict(ctx, item, now = Date.now()) {
+  if (item.main || !item.branch) return null;
+  const reason = mergedReason(item, now);
+  if (!reason) return null;
+  if (item.ws.locked) return { keep: "locked (git worktree unlock to allow)" };
+  if (reason.skip) return { keep: reason.skip };
+  if (isInside(ctx.cwd, item.ws.path)) return { keep: "you are inside it" };
+  if (item.changes) return { keep: plural(item.changes, "uncommitted change") };
+  // A folder git cannot read may hold changes nobody can count; unknown is not clean.
+  if (item.changes === null && exists(item.ws.path))
+    return { keep: `git cannot read the folder, so changes in it are unknown (nk rm ${item.name} repairs it first, or says what to do)` };
+  // Files git ignores (a local database, a test report) are not backed up. In a workspace Nook made
+  // they are development data that goes with it. A worktree made elsewhere is left to nk rm, which lists them.
+  const ignored = item.changes === null ? [] : ignoredData(item.ws.path, join(ctx.paths.shared, item.repoName));
+  if (ignored.length && !item.managed)
+    return { keep: `not made by nk, and files git ignores would be lost: ${shortList(ignored, 3)} (nk rm ${item.name} to remove anyway)` };
+  return { remove: reason.ok, ignored };
+}
+
 /** When a folder was made, for worktrees Nook did not record; NaN when unknown. */
 function createdAt(path) {
   try {
@@ -80,25 +105,11 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
   const remove = [];
   const skipped = [];
   for (const item of items) {
-    if (item.main || !item.branch) continue;
-    const reason = mergedReason(item, now);
-    if (!reason) continue;
+    const verdict = cleanVerdict(ctx, item, now);
+    if (!verdict) continue;
     const label = `${item.name} (${item.repoName})`;
-    if (item.ws.locked) skipped.push(`${label}: locked (git worktree unlock to allow)`);
-    else if (reason.skip) skipped.push(`${label}: ${reason.skip}`);
-    else if (isInside(ctx.cwd, item.ws.path)) skipped.push(`${label}: you are inside it`);
-    else if (item.changes) skipped.push(`${label}: ${plural(item.changes, "uncommitted change")}`);
-    // A folder git cannot read may hold changes nobody can count; unknown is not clean.
-    else if (item.changes === null && exists(item.ws.path))
-      skipped.push(`${label}: git cannot read the folder, so changes in it are unknown (nk rm ${item.name} repairs it first, or says what to do)`);
-    else {
-      // Files git ignores (a local database, a test report) are not backed up. In a workspace Nook made
-      // they are development data that goes with it. A worktree made elsewhere is left to nk rm, which lists them.
-      const ignored = item.changes === null ? [] : ignoredData(item.ws.path, join(ctx.paths.shared, item.repoName));
-      if (ignored.length && !item.managed)
-        skipped.push(`${label}: not made by nk, and files git ignores would be lost: ${shortList(ignored, 3)} (nk rm ${item.name} to remove anyway)`);
-      else remove.push({ item, label, reason: reason.ok, ignored, running: item.changes === null ? [] : scan(item.ws.path).processes });
-    }
+    if (verdict.keep) skipped.push(`${label}: ${verdict.keep}`);
+    else remove.push({ item, label, reason: verdict.remove, ignored: verdict.ignored, running: item.changes === null ? [] : scan(item.ws.path).processes });
   }
 
   const leftovers = [];
