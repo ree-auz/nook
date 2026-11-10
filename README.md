@@ -447,8 +447,22 @@ and have its own services answering. Then:
   container and volume untouched;
 - after `nk rm try2`, no container, volume, network or folder is left.
 
-The run's summary is one table: each repository, the step it failed at, and
-that step's last lines. New repositories that failed are added to
+The run's summary groups the failures by whose they are
+(`scripts/real-cause.mjs`), nk's own first:
+
+- **nk**: one of the checks above failed, or nk crashed. Always a defect,
+  in a repository from the list and in a new one.
+- **not told apart**: nothing names a failed setup command; read the output.
+- **repository**: a command of the repository's own setup failed inside a hook
+  (an install, a build, a service that did not become healthy), which is the
+  pinned commit against today's runner and registries. The command is named,
+  since nk may still have picked one it should not have.
+- **runner**: the checkout failed before nk ran.
+
+Each row has the step, the reason and the step's last lines. A repository from
+the list that fails makes the run fail whatever the cause, since it passed
+before. A new repository makes the run fail unless the cause is the
+repository's own setup. New repositories that failed are added to
 `tests/corpus/repos.json` once fixed, so the fixed list keeps growing.
 
 ## License
