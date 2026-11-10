@@ -105,12 +105,13 @@ export function isInstallCommand(command) {
  * itself (its app) is not one of them, and is not started.
  *
  * Each entry is the name as it appears in an image (a regular expression),
- * matched as a whole word of the image: postgres, bitnami/mysql:8,
+ * matched as a whole word of the image: postgres, bitnami/postgresql:16,
  * ghcr.io/x/postgres-ci, but not postgrest or redisinsight.
  */
 export const BACKING_SERVICES = [
   // SQL and analytics databases
-  "postgres",
+  // postgresql: the name Bitnami and some registries publish it under (bitnami/postgresql).
+  "postgres(ql)?",
   "postgis",
   "pgvector",
   "timescale(db)?",

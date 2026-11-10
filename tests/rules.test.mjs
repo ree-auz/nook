@@ -59,7 +59,7 @@ test("a tool action is found by its uses:, with the version it asks for", () => 
 });
 
 test("a backing service is a whole word of the image; the project's own image is not one", () => {
-  for (const image of ["postgres", "postgres:16-alpine", "bitnami/mysql:8", "ghcr.io/x/postgres-ci", "redis@sha256:abc", "mcr.microsoft.com/mssql/server:2022", "cockroachdb/cockroach:v23", "axllent/mailpit", "valkey/valkey-bundle:8"])
+  for (const image of ["postgres", "postgres:16-alpine", "bitnami/postgresql:16", "docker.io/bitnami/postgresql-repmgr", "bitnami/mysql:8", "ghcr.io/x/postgres-ci", "redis@sha256:abc", "mcr.microsoft.com/mssql/server:2022", "cockroachdb/cockroach:v23", "axllent/mailpit", "valkey/valkey-bundle:8"])
     assert.equal(isBackingService(image), true, image);
   for (const image of ["nginx", "ghcr.io/acme/app:latest", "postgrest/postgrest", "redisinsight", "mypostgres", "node:22", "provectuslabs/kafkaui"]) assert.equal(isBackingService(image), false, image);
   const hits = countRuleHits();
