@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { createContext } from "../src/context.mjs";
@@ -134,6 +134,15 @@ test("clean deletes folders a removal left behind, and nothing else", async (t) 
   assert.ok(!existsSync(ws("half-removed")), "the leftover folder is deleted");
   assert.ok(existsSync(ws("keep")), "a workspace is not a leftover");
   assert.match(run(["doctor"]).out, /No problems found/);
+
+  // A folder somebody put there holds files nk does not know: it is named and kept.
+  write(ws("my-notes"), { "docs/todo.md": "important\n", "node_modules/pkg/index.js": "x\n" });
+  lines.length = 0;
+  assert.equal(await cleanWorkspaces(ctx(), { yes: true, prs: lookup, docker: noDocker }), 0);
+  assert.match(lines.join(""), /my-notes: not a workspace, and it holds files nk does not know \(docs\/todo\.md\)/);
+  assert.doesNotMatch(lines.join(""), /Left from earlier removals/);
+  assert.ok(existsSync(join(ws("my-notes"), "docs", "todo.md")));
+  assert.match(run(["doctor"]).out, /my-notes is not a workspace, and it holds files nk does not know \(docs\/todo\.md\); nk clean leaves it/);
 });
 
 /** A merged PR for each workspace, at its current HEAD. */
@@ -203,4 +212,55 @@ test("clean keeps a workspace whose folder git cannot read", async (t) => {
   assert.match(text, /broken \(demo\): git cannot read the folder, so changes in it are unknown/);
   assert.ok(existsSync(join(ws("broken"), "wip.txt")), "the work is still there");
   assert.ok(!existsSync(ws("fine")), "the other merged workspace is still removed");
+});
+
+test("rm repairs a workspace git cannot read, then backs up and removes it", (t) => {
+  const { home, repo, run, ws } = setup(t);
+  for (const name of ["broken", "other"]) assert.equal(run(["-b", name]).status, 0);
+  // A removal that stopped halfway: the folders and the work in them remain, their .git files are gone.
+  for (const name of ["broken", "other"]) {
+    write(ws(name), { "wip.txt": `${name} work\n` });
+    rmSync(join(ws(name), ".git"));
+  }
+  assert.match(run(["ls"]).out, /broken\s+demo\s+\d+-\d+\s+unreadable/);
+  const checked = run(["doctor"]);
+  assert.equal(checked.status, 1);
+  assert.match(checked.out, /workspace broken: git cannot read [^\n]*gitdir file points to non-existent location[^\n]*nk rm broken repairs it/);
+
+  let r = run(["rm", "broken", "-n"]);
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.err, /git cannot read [^\n]*broken[^\n]*nk rm repairs the link/);
+  assert.ok(!existsSync(join(ws("broken"), ".git")), "a dry run repairs nothing");
+
+  r = run(["rm", "broken", "-y"]);
+  assert.equal(r.status, 0, r.all);
+  assert.match(r.err, /Repaired the link between/);
+  assert.ok(!existsSync(ws("broken")));
+  const backups = join(home, "backup", "demo");
+  const [saved] = readdirSync(backups);
+  assert.equal(readFileSync(join(backups, saved, "untracked", "wip.txt"), "utf8"), "broken work\n");
+  // Removing one workspace does not drop git's record of the other, which was as unreadable.
+  assert.match(sh("git", ["worktree", "list", "--porcelain"], repo), /branch refs\/heads\/other(\n|$)/);
+  assert.equal(readFileSync(join(ws("other"), "wip.txt"), "utf8"), "other work\n");
+});
+
+test("rm stops at a folder git has no record of", (t) => {
+  const { repo, run, ws } = setup(t);
+  assert.equal(run(["-b", "orphan"]).status, 0);
+  write(ws("orphan"), { "wip.txt": "work\n" });
+  rmSync(join(ws("orphan"), ".git"));
+  sh("git", ["worktree", "prune"], repo);
+
+  const r = run(["rm", "orphan", "-y"]);
+  assert.equal(r.status, 1);
+  assert.match(r.err, /is no longer a git worktree: git has no record of it/);
+  assert.match(r.err, /delete the folder, then run nk rm orphan again/);
+  assert.ok(existsSync(join(ws("orphan"), "wip.txt")), "nothing was deleted");
+  assert.match(run(["doctor"]).out, /workspace orphan: [^\n]*is no longer a git worktree/);
+
+  // Once the person has deleted the folder, rm drops the record and the branch.
+  rmSync(ws("orphan"), { recursive: true });
+  assert.equal(run(["rm", "orphan", "-y"]).status, 0);
+  assert.equal(sh("git", ["branch", "--list", "orphan"], repo), "");
+  assert.match(run(["doctor"]).out, /No problems found/);
 });

@@ -4,7 +4,7 @@ import { githubPrs } from "../forge.mjs";
 import { aheadBehind, changeCount } from "../status.mjs";
 import { useColor } from "../ui.mjs";
 import { branchOf, repoFromCwd, repoWorkspaces } from "../context.mjs";
-import { isInside } from "../home.mjs";
+import { exists, isInside } from "../home.mjs";
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
@@ -37,8 +37,9 @@ export async function collect(ctx, { repo: repoFlag, prs: lookup = githubPrs } =
 
 const portsText = (ws) => (Number.isInteger(ws.port) ? `${ws.port}-${ws.port + 9}` : "-");
 
-function changesText(n) {
-  if (n === null) return "missing";
+function changesText(n, path) {
+  // No count: the folder is gone, or it is there and git cannot read it (a removal that stopped halfway).
+  if (n === null) return exists(path) ? "unreadable" : "missing";
   return n ? `${n} changed` : "clean";
 }
 
@@ -83,7 +84,7 @@ export async function listWorkspaces(ctx, { repo: repoFlag, json = false, prs } 
   const rows = [["", "NAME", "REPO", "PORTS", "CHANGES", "BASE", "PR", "PATH"]];
   for (const item of items) {
     const name = item.ws.locked ? `${item.name} (locked)` : item.name;
-    rows.push([mark(item), name, item.repoName, portsText(item.ws), changesText(item.changes), commitsText(item.commits), prText(item.pr), item.ws.path]);
+    rows.push([mark(item), name, item.repoName, portsText(item.ws), changesText(item.changes, item.ws.path), commitsText(item.commits), prText(item.pr), item.ws.path]);
   }
   const lines = table(rows);
   // Merged rows are dimmed, as worktrunk does for branches that are safe to delete.

@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { NookError } from "./errors.mjs";
+import { samePath } from "./home.mjs";
 
 export function gitTry(args, { cwd, input } = {}) {
   const result = spawnSync("git", args, {
@@ -27,12 +28,14 @@ export function listWorktrees(repo) {
   let current = null;
   for (const line of out.split(/\r?\n/)) {
     if (line.startsWith("worktree ")) {
-      current = { path: resolve(line.slice(9)), branch: null, head: null, bare: false, locked: false };
+      current = { path: resolve(line.slice(9)), branch: null, head: null, bare: false, locked: false, prunable: null };
       items.push(current);
     } else if (current && line.startsWith("HEAD ")) current.head = line.slice(5);
     else if (current && line.startsWith("branch ")) current.branch = line.slice(7).replace(/^refs\/heads\//, "");
     else if (current && line === "bare") current.bare = true;
     else if (current && (line === "locked" || line.startsWith("locked "))) current.locked = true;
+    // git's word for a worktree whose folder it can no longer reach, with its reason.
+    else if (current && (line === "prunable" || line.startsWith("prunable "))) current.prunable = line.slice(9) || "git cannot reach it";
   }
   return items;
 }
@@ -66,6 +69,24 @@ export function defaultBranch(repo) {
 /** The ref new workspaces start from: origin/<default> when it exists, else <default>. */
 export function baseRef(repo, branch) {
   return refExists(repo, `refs/remotes/origin/${branch}`) ? `origin/${branch}` : branch;
+}
+
+/** Whether git can read `path` as a work tree of its own (not just as a folder inside some other repository). */
+export function readableWorktree(path) {
+  const top = gitTry(["rev-parse", "--show-toplevel"], { cwd: path });
+  return top.ok && samePath(top.out, path);
+}
+
+/**
+ * Restores the link between a repository and one of its worktrees, as when the
+ * folder's .git file is gone after a removal that stopped halfway. Only that
+ * link is written; files in the folder are not touched. Returns whether git
+ * can read the folder afterwards.
+ */
+export function repairWorktree(repo, path) {
+  // git reports problems here even when it repairs, so the result is judged by reading the folder.
+  gitTry(["worktree", "repair", path], { cwd: repo });
+  return readableWorktree(path);
 }
 
 export function statusLines(path) {
