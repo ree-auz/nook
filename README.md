@@ -70,6 +70,7 @@ nk clean                    remove every workspace whose work is merged
 | `nk -b <name> [agent] [-p <prompt>] [-y]` | Create a workspace; start the agent if given (`-y` keeps a converted name without asking) |
 | `nk <name> [agent] [-p <prompt>]` | Open a workspace; start the agent if given |
 | `nk switch [<name>]` | Print a workspace's folder and do nothing else; without a name, choose it from a list (arrows, or type to filter) |
+| `nk shell-init <shell>` | Print the `nks` function for PowerShell, bash, zsh or fish: `nks` chooses a workspace and goes to its folder |
 | `nk ls [--json] [--no-pr] [--timing]` | List workspaces: uncommitted changes, commits ahead of and behind the default branch, PR and CI (`--no-pr` does not ask GitHub; `--timing` says how long git and GitHub took) |
 | `nk rm <name>... [-n] [-y]` | Remove one or more workspaces, asking once: uncommitted changes and unpushed commits are saved to `~/nook/backup/` first, then the folder and the branch are deleted (`-n` shows what would happen, `-y` skips the question) |
 | `nk clean [-n] [-y]` | Remove every workspace whose work is merged, the way `nk rm` does, and folders left from earlier removals; the rest is kept, each with its reason (`-n` only shows the list, `-y` skips the question) |
@@ -107,7 +108,8 @@ arguments to one agent, set `args` under `[agents.<name>]` in `config.toml`.
 
 A workspace name is also its branch name and folder name. It uses lowercase
 letters, digits, `-` and `.` only, and cannot be a command name (`init`, `ls`,
-`switch`, `rm`, `clean`, `hooks`, `forget`, `doctor`, `help`, `version`).
+`switch`, `shell-init`, `rm`, `clean`, `hooks`, `forget`, `doctor`, `help`,
+`version`).
 
 You can pass any branch text; `nk` turns it into a valid name and says so:
 uppercase becomes lowercase, and `/`, spaces, non-ASCII and other characters
@@ -355,6 +357,23 @@ without a terminal, `nk switch` needs the name.
 
 Unlike `nk <name>`, `nk switch` only tells where the workspace is: the open
 hook does not run, and no service or agent starts.
+
+### `nks`: choose and go there
+
+`nk shell-init <shell>` prints a small function, `nks`, that runs `nk switch`
+and changes to the folder it prints. Add one line to your shell's profile:
+
+| Shell | Profile | Line |
+|---|---|---|
+| PowerShell | `$PROFILE` | `Invoke-Expression (& nk shell-init powershell \| Out-String)` |
+| bash | `~/.bashrc` | `eval "$(nk shell-init bash)"` |
+| zsh | `~/.zshrc` | `eval "$(nk shell-init zsh)"` |
+| fish | `~/.config/fish/config.fish` | `nk shell-init fish \| source` |
+
+Then `nks` shows the list and goes to the workspace you choose, and
+`nks <name>` goes there at once. When you leave the list, or the name is not
+a workspace, you stay where you are. nk does not write to your profile; to
+remove `nks`, delete the line.
 
 ## Listing and cleaning up
 
