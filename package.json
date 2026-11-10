@@ -1,7 +1,25 @@
 {
   "name": "@ree-auz/nook",
   "version": "0.1.3",
-  "description": "One home folder for your git worktrees: create, open and remove workspaces with shared files, ports and hooks.",
+  "description": "One isolated workspace per task: git worktree, ports and env files, with any AI coding agent inside. Clean up with one command.",
+  "keywords": [
+    "git-worktree",
+    "worktree",
+    "worktree-manager",
+    "git",
+    "workspace",
+    "ai-coding-agent",
+    "coding-agent",
+    "codex",
+    "claude-code",
+    "parallel-agents",
+    "dev-environment",
+    "docker-compose",
+    "ports",
+    "cli"
+  ],
+  "homepage": "https://github.com/ree-auz/nook#readme",
+  "bugs": "https://github.com/ree-auz/nook/issues",
   "license": "MIT",
   "type": "module",
   "bin": {

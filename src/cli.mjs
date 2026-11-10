@@ -26,8 +26,13 @@ Usage:
                                          since nk hooks test last passed)
   nk <name> [agent] [-p <prompt>]         open a workspace; start the agent if given
   nk ls [--json]                          list workspaces: changes, commits, PR and CI
-  nk rm <name>... [-n] [-y]               back up and remove workspaces
-  nk clean [-n] [-y]                      remove workspaces whose work is merged, and leftover folders
+  nk rm <name>... [-n] [-y]               remove workspaces: saves uncommitted changes and unpushed
+                                         commits to ~/nook/backup first, then deletes the folder
+                                         and the branch (-n: only show what would happen;
+                                         -y: do not ask)
+  nk clean [-n] [-y]                      remove every workspace whose work is merged, the way
+                                         nk rm does, and leftover folders; keeps the rest and
+                                         says why (-n: only show the list; -y: do not ask)
   nk hooks                                the repository's .nook hooks: allowed? tested?
   nk hooks write [agent]                  write the hooks from the repository's CI (GitHub Actions)
                                          and Compose file; with an agent: then starts it in the
