@@ -1,3 +1,4 @@
+// @ts-check
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { NookError } from "../errors.mjs";

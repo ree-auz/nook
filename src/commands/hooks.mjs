@@ -1,3 +1,4 @@
+// @ts-check
 import { resolveRepo } from "../context.mjs";
 import { useColor, line } from "../ui.mjs";
 import { HOOK_EVENTS, findHook, hookHash, trustState } from "../hooks.mjs";

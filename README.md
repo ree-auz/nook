@@ -446,6 +446,13 @@ npm test
 
 CI runs the tests on Linux, macOS and Windows.
 
+`npm run lint` (ESLint) looks for mistakes, not style, in every file.
+`npm run typecheck` (TypeScript reading the JavaScript as it is; nothing is
+compiled) checks the files that start with `// @ts-check`. A new file starts
+with that line; an older one gets it when its types are next worked on. Both
+tools are development dependencies only: the published package still needs
+nothing but its three runtime dependencies. CI runs both.
+
 To release, set the new `version` in `package.json` on main, then publish a
 GitHub Release tagged `v<version>`. `.github/workflows/release.yml` checks the
 tag against `package.json`, runs the tests and publishes to npm with trusted

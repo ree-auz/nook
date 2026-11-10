@@ -1,3 +1,4 @@
+// @ts-check
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { exists } from "./home.mjs";

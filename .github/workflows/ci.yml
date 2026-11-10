@@ -33,6 +33,21 @@ jobs:
       - name: CLI runs from the bin entry
         run: node bin/nk.mjs --help
 
+  lint:
+    name: lint and types
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # ESLint for mistakes (not style) in every file; tsc for the modules that start with // @ts-check.
+      - run: npm run lint
+      - run: npm run typecheck
+
   corpus:
     name: hooks write on real repositories
     runs-on: ubuntu-latest

@@ -1,3 +1,4 @@
+// @ts-check
 import { createInterface } from "node:readline/promises";
 import { NookError } from "./errors.mjs";
 import { line, useColor } from "./ui.mjs";

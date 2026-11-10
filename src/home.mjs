@@ -1,3 +1,4 @@
+// @ts-check
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative, resolve, isAbsolute } from "node:path";

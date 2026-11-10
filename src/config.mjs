@@ -1,3 +1,4 @@
+// @ts-check
 import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { parse, stringify } from "smol-toml";

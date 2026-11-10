@@ -1,3 +1,4 @@
+// @ts-check
 import { createHash } from "node:crypto";
 import { createWriteStream, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
