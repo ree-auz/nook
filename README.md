@@ -460,6 +460,15 @@ reviewed results in `tests/corpus/expected/`. CI runs it too. After a change to
 how hooks are written, review the lines it prints and accept them with
 `npm run corpus -- --update`.
 
+The rules hooks are written by are lists in `src/rules.mjs`: the actions that
+install a tool, the commands that count as a dependency install, and the
+images that count as a database or similar service. A new case is one line
+there, with a test. Add one when about three repositories show the same case,
+or at once when it keeps a workspace from reaching something outside itself;
+until then `nk hooks write <agent>` covers it. `npm run corpus -- --rules`
+lists how many of the repositories use each rule, and the rules none of them
+uses.
+
 The repositories marked `"full": true`, plus about ten popular ones nk has not
 seen (`scripts/real-explore.mjs` picks different ones each time, each with a
 root Compose file or CI services), also get a real run every Monday
