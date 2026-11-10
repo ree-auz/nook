@@ -34,9 +34,10 @@ Usage:
                                          runs, nothing starts. Without a name: choose from a
                                          list (arrows, type to filter). To go there:
                                          cd "$(nk switch)"   PowerShell: Set-Location (nk switch)
-  nk shell-init <shell>                   print the nks function for powershell, bash, zsh or
-                                         fish: nks chooses a workspace and goes to its folder.
-                                         The output says which line to add to your profile
+  nk shell-init --install                 add nks to your shell's profile: nks chooses a workspace
+                                         and goes to its folder (nk init offers this too)
+  nk shell-init <shell>                   only print the nks function, for powershell, bash, zsh
+                                         or fish
   nk rm <name>... [-n] [-y]               remove workspaces: saves uncommitted changes and unpushed
                                          commits to ~/nook/backup first, then deletes the folder
                                          and the branch (-n: only show what would happen;
@@ -107,9 +108,9 @@ export async function run(argv, io = {}) {
       return switchWorkspace(ctx, { name: positionals[0], repo: values.repo, input: io.in ?? process.stdin });
     }
     case "shell-init": {
-      const { positionals } = parse(args.slice(1), {});
-      if (positionals.length > 1) throw new NookError("Usage: nk shell-init <shell>");
-      return printShellInit(ctx, { shell: positionals[0] });
+      const { values, positionals } = parse(args.slice(1), { install: { type: "boolean" } });
+      if (positionals.length > 1) throw new NookError("Usage: nk shell-init <shell> | nk shell-init --install [shell]");
+      return printShellInit(ctx, { shell: positionals[0], install: values.install });
     }
     case "rm": {
       const { values, positionals } = parse(args.slice(1), {

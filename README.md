@@ -70,7 +70,7 @@ nk clean                    remove every workspace whose work is merged
 | `nk -b <name> [agent] [-p <prompt>] [-y]` | Create a workspace; start the agent if given (`-y` keeps a converted name without asking) |
 | `nk <name> [agent] [-p <prompt>]` | Open a workspace; start the agent if given |
 | `nk switch [<name>]` | Print a workspace's folder and do nothing else; without a name, choose it from a list (arrows, or type to filter) |
-| `nk shell-init <shell>` | Print the `nks` function for PowerShell, bash, zsh or fish: `nks` chooses a workspace and goes to its folder |
+| `nk shell-init --install` | Add `nks` to your shell's profile: `nks` chooses a workspace and goes to its folder (`nk shell-init <shell>` only prints the function) |
 | `nk ls [--json] [--no-pr] [--timing]` | List workspaces: uncommitted changes, commits ahead of and behind the default branch, PR and CI (`--no-pr` does not ask GitHub; `--timing` says how long git and GitHub took) |
 | `nk rm <name>... [-n] [-y]` | Remove one or more workspaces, asking once: uncommitted changes and unpushed commits are saved to `~/nook/backup/` first, then the folder and the branch are deleted (`-n` shows what would happen, `-y` skips the question) |
 | `nk clean [-n] [-y]` | Remove every workspace whose work is merged, the way `nk rm` does, and folders left from earlier removals; the rest is kept, each with its reason (`-n` only shows the list, `-y` skips the question) |
@@ -360,20 +360,36 @@ hook does not run, and no service or agent starts.
 
 ### `nks`: choose and go there
 
-`nk shell-init <shell>` prints a small function, `nks`, that runs `nk switch`
-and changes to the folder it prints. Add one line to your shell's profile:
+`nks` is a small function of your shell that runs `nk switch` and changes to
+the folder it prints. `nks` shows the list and goes to the workspace you
+choose; `nks <name>` goes there at once. When you leave the list, or the name
+is not a workspace, you stay where you are.
 
-| Shell | Profile | Line |
-|---|---|---|
-| PowerShell | `$PROFILE` | `Invoke-Expression (& nk shell-init powershell \| Out-String)` |
-| bash | `~/.bashrc` | `eval "$(nk shell-init bash)"` |
-| zsh | `~/.zshrc` | `eval "$(nk shell-init zsh)"` |
-| fish | `~/.config/fish/config.fish` | `nk shell-init fish \| source` |
+`nk init` offers to add it to your shell's profile when it runs in a terminal,
+and `nk shell-init --install` does the same at any time:
 
-Then `nks` shows the list and goes to the workspace you choose, and
-`nks <name>` goes there at once. When you leave the list, or the name is not
-a workspace, you stay where you are. nk does not write to your profile; to
-remove `nks`, delete the line.
+```
+$ nk shell-init --install
+√ Added nks to ~/Documents/PowerShell/Microsoft.PowerShell_profile.ps1
+○ Open a new terminal to use it: nks shows your workspaces, nks <name> goes to one
+```
+
+On Windows that is the profile of PowerShell 7 and of Windows PowerShell,
+whichever is installed, at the place PowerShell itself gives for `$PROFILE`.
+Elsewhere it is the file of your login shell: `~/.bashrc`, `~/.zshrc` or
+`~/.config/fish/config.fish`. `nk shell-init --install <shell>` names the
+shell instead. nk adds its lines at the end, between two marker lines, and
+changes nothing else in the file; delete those lines to remove `nks`. With
+`--yes`, `nk init` does not write to a profile.
+
+To load it yourself instead, `nk shell-init <shell>` prints the function:
+
+| Shell | Line for the profile |
+|---|---|
+| PowerShell | `Invoke-Expression (& nk shell-init powershell \| Out-String)` |
+| bash | `eval "$(nk shell-init bash)"` |
+| zsh | `eval "$(nk shell-init zsh)"` |
+| fish | `nk shell-init fish \| source` |
 
 ## Listing and cleaning up
 
