@@ -2,7 +2,7 @@ import { NookError } from "../errors.mjs";
 import { baseRef, remoteUrl } from "../git.mjs";
 import { githubPrs } from "../forge.mjs";
 import { localState } from "../status.mjs";
-import { useColor } from "../ui.mjs";
+import { fitColumns, hint, useColor } from "../ui.mjs";
 import { branchOf, repoFromCwd, repoWorkspaces } from "../context.mjs";
 import { exists, isInside } from "../home.mjs";
 
@@ -67,8 +67,9 @@ export async function collect(ctx, { repo: repoFlag, prs: lookup = githubPrs } =
 const portsText = (ws) => (Number.isInteger(ws.port) ? `${ws.port}-${ws.port + 9}` : "-");
 
 export function changesText(n, path) {
-  // No count: the folder is gone, or it is there and git cannot read it (a removal that stopped halfway).
-  if (n === null) return exists(path) ? "unreadable" : "missing";
+  // No count: the folder is gone, or it is there and git cannot read it (a removal that stopped halfway),
+  // so what changed in it is unknown.
+  if (n === null) return exists(path) ? "unknown" : "missing";
   return n ? `${n} changed` : "clean";
 }
 
@@ -123,7 +124,9 @@ export async function listWorkspaces(ctx, { repo: repoFlag, json = false, prs, "
     const name = item.ws.locked ? `${item.name} (locked)` : item.name;
     rows.push([mark(item), name, item.repoName, portsText(item.ws), changesText(item.changes, item.ws.path), commitsText(item.commits), prText(item.pr), item.ws.path]);
   }
-  const lines = table(rows);
+  // A narrow terminal gets the state columns whole; the path goes first, as nk switch <name> prints it.
+  const fitted = fitColumns(rows, ctx.out?.isTTY ? ctx.out.columns : 0, ["PATH", "PORTS", "BASE", "REPO"]);
+  const lines = table(fitted.rows);
   // Merged rows are dimmed, as worktrunk does for branches that are safe to delete.
   const dim = useColor(ctx.out, ctx.env);
   items.forEach((item, i) => {
@@ -140,7 +143,8 @@ export async function listWorkspaces(ctx, { repo: repoFlag, json = false, prs, "
   if (changed) parts.push(`${changed} with changes`);
   if (merged) parts.push(`${merged} merged (nk clean removes them)`);
   ctx.info(parts.join(", "));
-  for (const problem of problems) ctx.warn(`No PR status: ${problem}`);
+  if (fitted.dropped.length) ctx.info(`Left out to fit the terminal: ${fitted.dropped.join(", ")}. nk ls --json has them all; nk switch <name> prints a path`);
+  for (const problem of problems) ctx.warn(hint("PR status unknown", problem, "nk doctor checks gh; nk ls --no-pr skips GitHub"));
   timed();
   return 0;
 }

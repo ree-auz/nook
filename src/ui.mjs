@@ -59,3 +59,30 @@ export function indenter(width = 2) {
     return out;
   };
 }
+
+/**
+ * A hint in the shape ls, clean, rm and doctor all use: the state in one of a
+ * few words (merged, locked, prunable, ignored data, unknown, ...), why, and
+ * the command that moves on from it.
+ */
+export function hint(state, reason, next) {
+  return `${state}${reason ? `: ${reason}` : ""}${next ? `. Next: ${next}` : ""}`;
+}
+
+/**
+ * Drops columns, last named first, until the rows fit `width`; never the first
+ * two. Returns the rows and the headers it dropped. No width (not a terminal): all stay.
+ */
+export function fitColumns(rows, width, drop) {
+  const measure = (table) => table[0].reduce((sum, _, i) => sum + Math.max(...table.map((row) => row[i].length)) + 2, -2);
+  let table = rows;
+  const dropped = [];
+  for (const header of drop) {
+    if (!width || measure(table) <= width) break;
+    const i = table[0].indexOf(header);
+    if (i < 2) continue;
+    table = table.map((row) => row.filter((_, j) => j !== i));
+    dropped.push(header);
+  }
+  return { rows: table, dropped };
+}

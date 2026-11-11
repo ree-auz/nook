@@ -87,7 +87,11 @@ export async function deleteWorkspace(ctx, target, { state, base, backupRoot, pr
     } catch (error) {
       if (!(error instanceof NookError)) throw error;
       if (removed.ok) done.push("git no longer lists the worktree");
-      throw new NookError(`${error.message}\n${holders(ws.path, scan)}\n${done.length ? `Already done: ${done.join("; ")}. ` : ""}Not done: the folder${branchName ? `, branch ${branchName}` : ""} and nk's record are still there, so nk rm ${name} can finish the removal`);
+      // One Next line, at the end: what deleteFolder suggests, then the command that finishes.
+      const lines = error.message.split("\n");
+      const next = lines.find((text) => text.startsWith("Next: "))?.slice(6).replace(/ and run the command again$/, "") ?? "close what uses it";
+      const why = lines.filter((text) => !text.startsWith("Next: ")).join("\n");
+      throw new NookError(`${why}\n${holders(ws.path, scan)}\n${done.length ? `Already done: ${done.join("; ")}. ` : ""}Not done: the folder${branchName ? `, branch ${branchName}` : ""} and nk's record are still there\nNext: ${next}, then nk rm ${name} finishes the removal`);
     }
   }
   // Drop git's record of this worktree alone. A plain prune would also drop the record of every other
@@ -96,7 +100,7 @@ export async function deleteWorkspace(ctx, target, { state, base, backupRoot, pr
   if (listed()) gitTry(["worktree", "remove", "--force", ws.path], { cwd: repo.path });
   if (listed()) gitTry(["worktree", "prune"], { cwd: repo.path });
   if (listed())
-    throw new NookError(`git still lists ${ws.path} as a worktree. Run git worktree prune in ${repo.path}, then nk rm ${name} again`);
+    throw new NookError(`git still lists ${ws.path} as a worktree\nNext: git worktree prune in ${repo.path}, then nk rm ${name} again`);
   if (branchName) {
     const branch = gitTry(["branch", "-D", branchName], { cwd: repo.path });
     if (!branch.ok && !/not found/i.test(branch.err)) ctx.warn(`Branch ${branchName} was kept: ${branch.err}`);
@@ -142,10 +146,10 @@ export function deleteFolder(path) {
   } catch (error) {
     // A container that mounts the workspace and runs as root leaves files this user cannot delete.
     if (error.code === "EACCES" || (error.code === "EPERM" && process.platform !== "win32"))
-      throw new NookError(`Could not delete ${path}: ${error.message}\nA container probably wrote these files as another user (often root). Delete the folder with sudo rm -rf, or have the remove hook delete them from inside the container`);
-    throw new NookError(`Could not delete ${path}: ${error.message}\nClose what uses it and run the command again`);
+      throw new NookError(`Could not delete ${path}: ${error.message}\nA container probably wrote these files as another user (often root)\nNext: delete the folder with sudo rm -rf, or have the remove hook delete them from inside the container`);
+    throw new NookError(`Could not delete ${path}: ${error.message}\nNext: close what uses it and run the command again`);
   }
-  if (exists(path)) throw new NookError(`Could not delete ${path}; close what uses it and run the command again`);
+  if (exists(path)) throw new NookError(`Could not delete ${path}\nNext: close what uses it and run the command again`);
 }
 
 /** What removing one workspace involves, checked before anything changes. */
@@ -154,9 +158,9 @@ async function planRemoval(ctx, input, { repoFlag, scan, prs, docker, dryRun }) 
   const target = resolveWorkspace(ctx, name, repoFlag);
   const { repo, ws } = target;
   if (target.main) throw new NookError(`${ws.path} is the main checkout of ${target.repoName}; git cannot remove it`);
-  if (ws.locked) throw new NookError(`${ws.path} is locked. Unlock it first: git worktree unlock ${ws.path}`);
+  if (ws.locked) throw new NookError(`${target.name} is locked: nk rm and nk clean leave a locked worktree\nNext: git worktree unlock ${ws.path}`);
   if (exists(ws.path) && isInside(ctx.cwd, ws.path))
-    throw new NookError(`You are inside ${ws.path}. Change to another folder first, e.g. cd ${repo.path}`);
+    throw new NookError(`${target.name} is in use: you are inside ${ws.path}\nNext: cd ${repo.path}, then nk rm ${target.name}`);
 
   if (exists(ws.path) && !readableWorktree(ws.path)) {
     // A removal that stopped halfway, or a tool that deleted the folder's .git: what is in the folder
@@ -164,7 +168,7 @@ async function planRemoval(ctx, input, { repoFlag, scan, prs, docker, dryRun }) 
     const tree = listWorktrees(repo.path).find((item) => samePath(item.path, ws.path));
     if (!tree)
       throw new NookError(
-        `${ws.path} is no longer a git worktree: git has no record of it, so nk cannot tell which files in it are work, or back them up.\nLook inside. When nothing in it is needed, delete the folder, then run nk rm ${target.name} again to drop its record${branchOf(target.name, ws) ? " and branch" : ""}`,
+        `${target.name} is unknown: ${ws.path} is no longer a git worktree, so nk cannot tell which files in it are work, or back them up\nNext: look inside; when nothing in it is needed, delete the folder, then nk rm ${target.name} drops its record${branchOf(target.name, ws) ? " and branch" : ""}`,
       );
     const why = tree.prunable ? ` (${tree.prunable})` : "";
     if (dryRun) {
@@ -172,7 +176,7 @@ async function planRemoval(ctx, input, { repoFlag, scan, prs, docker, dryRun }) 
       return null;
     }
     if (!repairWorktree(repo.path, ws.path))
-      throw new NookError(`git cannot read ${ws.path}${why}, and git worktree repair did not fix it.\nNothing was deleted. Look inside; when nothing in it is needed, delete the folder, then run nk rm ${target.name} again`);
+      throw new NookError(`git cannot read ${ws.path}${why}, and git worktree repair did not fix it. Nothing was deleted\nNext: look inside; when nothing in it is needed, delete the folder, then nk rm ${target.name} again`);
     ctx.ok(`Repaired the link between ${ws.path} and the repository; its files were not touched`);
   }
 
@@ -188,11 +192,11 @@ async function planRemoval(ctx, input, { repoFlag, scan, prs, docker, dryRun }) 
   if (state.present && changed.length) ctx.warn(`${changed.join(", ")} changed since nk hooks test last passed; remove may leave things behind`);
   const compose = findComposeProjects(ws.path, docker);
   for (const project of compose.projects) ctx.info(`Removes ${describeProject(project)}`);
-  for (const name of compose.shared) ctx.warn(`Compose project ${name} also has containers outside this workspace; it is kept`);
+  for (const name of compose.shared) ctx.warn(`Compose project ${name} is shared: it also has containers outside this workspace, so it is kept`);
   if (compose.unavailable && compose.unavailable !== "not installed") ctx.warn(`Could not check for Docker containers: ${compose.unavailable}`);
   if (needsBackup(state)) ctx.info(`Backs up changes to ${backupRoot}`);
   const lost = state.present ? ignoredData(ws.path, join(ctx.paths.shared, target.repoName)) : [];
-  if (lost.length) ctx.warn(`Deleted with the workspace, not backed up (git ignores them): ${lost.slice(0, 8).join(", ")}${lost.length > 8 ? ` and ${lost.length - 8} more` : ""}`);
+  if (lost.length) ctx.warn(`Ignored data deleted with the workspace, not backed up: ${lost.slice(0, 8).join(", ")}${lost.length > 8 ? ` and ${lost.length - 8} more` : ""}`);
   if (state.changes.length) {
     ctx.warn(`${plural(state.changes.length, "uncommitted change")}:`);
     for (const change of state.changes.slice(0, 10)) ctx.item(change);
@@ -240,7 +244,7 @@ export async function removeWorkspace(ctx, { name, names = [name], repo: repoFla
     try {
       ok = await prompter.confirm(question, false);
     } catch {
-      throw new NookError("Confirmation needs a terminal; pass -y to remove without asking");
+      throw new NookError("Confirmation needs a terminal\nNext: nk rm -n to look, nk rm -y to remove without asking");
     }
     if (!ok) throw new NookError("Nothing was removed");
   }

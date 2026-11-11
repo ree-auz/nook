@@ -162,16 +162,30 @@ test("ls --no-pr does not ask GitHub; --timing reports on stderr only", async (t
   const data = JSON.parse(out.join(""));
   assert.equal(data.find((item) => item.name === "work").pr, null);
   assert.match(err.join(""), /Took \d+ ms: git \d+ ms\n/);
-  assert.doesNotMatch(err.join(""), /GitHub|No PR status/);
+  assert.doesNotMatch(err.join(""), /GitHub|PR status/);
 
   out.length = err.length = 0;
   assert.equal(await listWorkspaces(ctx(), { timing: true, prs: async () => ({ error: "gh is not logged in" }) }), 0);
   assert.match(err.join(""), /Took \d+ ms: git \d+ ms, GitHub \d+ ms/);
-  assert.match(err.join(""), /No PR status: gh is not logged in/);
+  assert.match(err.join(""), /PR status unknown: gh is not logged in\. Next: nk doctor/);
   assert.doesNotMatch(out.join(""), /Took/);
 
   // Through the command line too.
   const cli = run(["ls", "--no-pr", "--json"]);
   assert.equal(cli.status, 0);
   assert.equal(JSON.parse(cli.out).length, 2);
+});
+
+test("ls on a narrow terminal leaves out the path first and says so", async (t) => {
+  const { run, home, repo } = setup(t);
+  assert.equal(run(["-b", "work"]).status, 0);
+  const lines = [];
+  const err = [];
+  const out = { isTTY: true, columns: 60, write: (text) => lines.push(text) };
+  const narrow = createContext({ env: { ...process.env, NOOK_HOME: home, NO_COLOR: "1" }, cwd: repo, out, err: { write: (text) => err.push(text) } });
+  assert.equal(await listWorkspaces(narrow, { "no-pr": true }), 0);
+  const [header] = lines.join("").split("\n");
+  assert.doesNotMatch(header, /PATH/);
+  assert.match(header, /NAME\s+REPO\s+PORTS\s+CHANGES/);
+  assert.match(err.join(""), /Left out to fit the terminal: PATH\. nk ls --json has them all/);
 });

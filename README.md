@@ -422,7 +422,8 @@ behind (↓) the default branch, and its pull request with the CI result
 [GitHub CLI](https://cli.github.com/) (`gh`), one request per repository. When
 `gh` is missing or not logged in, the PR column stays empty and a ▲ line says
 why. Merged rows are dimmed. `nk ls --json` prints the same data for scripts
-and agents.
+and agents. On a terminal too narrow for the table, `nk ls` leaves out PATH
+first, then PORTS, BASE and REPO, and says which; NAME, CHANGES and PR stay.
 
 git reads the workspaces several at a time, while GitHub answers. GitHub is
 usually the slower of the two: `nk ls --no-pr` leaves it out and shows the
@@ -472,9 +473,20 @@ program is still running there. A folder there that holds any other file is
 kept and named, since nk cannot tell where it came from. `nk rm` itself deletes
 whatever git leaves and stops with the reason when Windows keeps a file open.
 
+When `ls`, `clean`, `rm` or `doctor` keep something or stop, they say it the
+same way: the state in a word or two (`merged`, `locked`, `prunable`,
+`unknown`, `in use`, `changed`, ignored data), why, then `Next:` and the
+command that moves on. For example:
+
+```
+▲ Kept 2:
+   ┃ ree-281 (pipit)  changed: 2 uncommitted changes. Next: commit them, or nk rm ree-281 (backs them up)
+   ┃ ree-290 (pipit)  locked: nk clean and nk rm leave a locked worktree. Next: git worktree unlock ...
+```
+
 When a removal stops halfway (another tool killed git, or a program held the
 folder), the folder can remain without its `.git` file. `nk ls` then shows it
-as `unreadable`, and `nk doctor` says why. `nk rm <name>` first restores the
+with CHANGES `unknown`, and `nk doctor` says why. `nk rm <name>` first restores the
 link to the repository (`git worktree repair`, which touches no file of
 yours), then checks, backs up and removes the workspace as usual. If git has no
 record of the folder any more, `nk rm` deletes nothing and says so: look
