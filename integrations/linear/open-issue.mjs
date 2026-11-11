@@ -307,7 +307,15 @@ async function fromLinear(argv) {
   const agentArgs = args.length ? ["--agent-args", JSON.stringify(args)] : [];
   const inner = [process.execPath, self, "--run", file, branch, agent, ...agentArgs, "--again", again];
   const { reason } = open({ dir, id, inner, wezterm, open: openIn });
-  if (reason) console.log(`  ${reason}`);
+  if (reason) {
+    // The agent clears the new window, so Linear's window stays to show why.
+    console.log(`  ${reason}`);
+    if (process.stdin.isTTY) {
+      process.stdout.write("  Press Enter to close this window.");
+      await new Promise((done) => process.stdin.once("data", done).resume());
+      process.stdin.pause();
+    }
+  }
   if (close) closeLinearWindow();
 }
 
