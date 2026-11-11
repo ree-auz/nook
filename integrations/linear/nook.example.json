@@ -1,0 +1,15 @@
+{
+  "agent": "codex",
+  "terminal": "orca",
+  "labels": { "agent": "Agent", "model": "Model", "terminal": "Terminal" },
+  "models": {
+    "Luna": { "id": "gpt-6-luna", "agent": "codex" },
+    "Sol": { "id": "gpt-6.1-sol", "agent": "codex" },
+    "Astra": { "id": "gpt-6-astra", "agent": "codex" },
+    "Opus": { "id": "claude-opus-5-5", "agent": "claude" },
+    "Sonnet": { "id": "claude-sonnet-5-5", "agent": "claude" },
+    "Gemini Pro": { "id": "gemini-3-pro", "agent": "gemini" },
+    "Grok": { "id": "grok-5", "agent": "grok" }
+  },
+  "efforts": { "low": "low", "med": "medium", "hi": "high" }
+}
