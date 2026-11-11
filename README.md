@@ -80,6 +80,7 @@ nk clean                    remove every workspace whose work is merged
 | `nk forget [<short-name>]` | Stop knowing a repository: remove its registration and shared files; its folder and backups stay |
 | `nk doctor` | Check nk's tools (node, git, gh, docker, agents) without changing anything |
 | `nk doctor --workspace <name>` | Check one workspace: what a removal would touch, and what `nk clean` would do with it and why |
+| `nkl [<ISSUE>]` | Choose a Linear issue (or name one) and start a workspace with the agent for it; `nkl show <ISSUE>` its status and blocks, `nkl ls` each workspace's issue status. See [Linear](#linear) |
 
 Like git, every command acts on the repository you are in: its main
 checkout or one of its workspaces. Outside a repository, `nk -b`, opening,
@@ -534,7 +535,12 @@ in `~/nook/backup/` first.
 
 ## Linear
 
-To open a Linear issue in a new workspace with one click, see
+`nkl` (installed with nk) starts work on Linear issues from the command line:
+`nkl` lists your unfinished issues to choose from, `nkl REE-292` starts one in
+a new workspace with your agent, `nkl show REE-292` shows its status and what
+blocks it, and `nkl ls` shows each workspace's issue status. To open an issue
+from Linear itself with one click, there is a script for Linear's
+**Work on issue** menu too. Both are in
 [integrations/linear](integrations/linear/README.md).
 
 ## For agents
