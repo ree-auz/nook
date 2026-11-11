@@ -445,6 +445,7 @@ test("choices made in Linear's window win over the labels, for this start only",
 
 test("the list in Linear's window changes a choice, then starts", async () => {
   const { PassThrough } = await import("node:stream");
+  const { choose } = await import("../integrations/linear/choose.mjs");
   const { review } = await import("../integrations/linear/open-issue.mjs");
   const config = { labels: { agent: "Agent", model: "Model" }, models: { Strong: { codex: "gpt-6-astra", claude: "opus" } } };
   const prompt = "<label>Agent › Codex</label>\n<label>Model › Strong</label>";
@@ -480,6 +481,25 @@ test("the list in Linear's window changes a choice, then starts", async () => {
   assert.equal(sides.result.again, "new", "right, right, left, then one down in the sub-list");
   assert.match(sides.screen, /Workspace ree-1: Run again in a new workspace/);
   assert.match(sides.screen, /Workspace ree-1: Start over in it/);
+
+  // A label's effort the list names differently: one Right already changes the line.
+  const example = JSON.parse(readFileSync(new URL("../integrations/linear/nook.example.json", import.meta.url), "utf8"));
+  const labelled = ["Agent › Grok", "Model › Strong", "Effort › High"].map((l) => `<label>${l}</label>`).join("\n");
+  for (const side of [RIGHT, LEFT]) {
+    const input = new PassThrough();
+    Object.assign(input, { isTTY: true, setRawMode() {} });
+    const written = [];
+    const output = { columns: 100, rows: 30, write: (text) => written.push(text), on() {}, off() {} };
+    const done = review({ id: "REE-1", existing: null, again: "ask", prompt: labelled, flags: {}, config: example, input, output });
+    for (const key of [DOWN, DOWN, DOWN, side, UP, UP, UP, ENTER]) {
+      await new Promise((ok) => setTimeout(ok, 5));
+      input.write(key);
+    }
+    const result = await done;
+    assert.ok(result.picks.effort !== undefined, "Effort changed");
+    const after = choose(labelled, { picks: result.picks }, example).model?.effort ?? null;
+    assert.notEqual(after, "high", `one ${side === RIGHT ? "Right" : "Left"} leaves high`);
+  }
 
   // Esc in a sub-list goes back; Esc in the list starts nothing.
   assert.deepEqual((await run([DOWN, DOWN, ENTER, ESC, UP, UP, ENTER])).result, { again: "continue", picks: {} });

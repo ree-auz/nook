@@ -381,13 +381,6 @@ async function hold(text) {
 const TERMINAL_SHOWN = { wt: "Windows Terminal", warp: "Warp", wezterm: "WezTerm", orca: "Orca" };
 const DEFAULT = "the agent's default";
 
-/** The value `side` steps away from `current` in `values`, wrapping around. */
-function step(values, current, side) {
-  const at = values.indexOf(current);
-  const from = at === -1 ? (side > 0 ? -1 : 0) : at;
-  return values[(from + side + values.length) % values.length];
-}
-
 /**
  * The list in Linear's window before anything starts: Start, then what the
  * labels chose (agent, model, effort, terminal) and, for an issue that has
@@ -402,22 +395,49 @@ export async function review({ id, existing, again, prompt, flags, config, input
   const options = pickOptions(config);
   const one = (item) => [item.text];
 
+  /** The lines for a state: what Start would do with it. */
+  const linesFor = (at) => {
+    const now = choose(prompt, { ...flags, picks: at.picks }, config);
+    return {
+      now,
+      rows: [
+        { key: "start", text: `Start ${now.agent}` },
+        ...(existing ? [{ key: "again", text: `Workspace ${existing.name}: ${AGAIN_SHORT[at.again]}` }] : []),
+        { key: "agent", text: `Agent: ${now.agent}` },
+        { key: "model", text: `Model: ${now.model?.id ?? DEFAULT}` },
+        { key: "effort", text: `Effort: ${now.model?.effort ?? DEFAULT}` },
+        { key: "terminal", text: `Terminal: ${TERMINAL_SHOWN[now.terminal] ?? "this window"}` },
+      ],
+    };
+  };
+  const withValue = (at, key, value) => (key === "again" ? { ...at, again: value } : { ...at, picks: { ...at.picks, [key]: value } });
+  const shownAs = (at, key) => linesFor(at).rows.find((row) => row.key === key)?.text;
+
   const main = (at = "start") => {
-    const now = choose(prompt, { ...flags, picks: state.picks }, config);
+    const { now, rows } = linesFor(state);
     const againKeys = againChoices(now.terminal);
     const current = { agent: now.agent, terminal: TERMINAL_SHOWN[now.terminal] ?? "Here" };
-    const rows = [
-      { key: "start", text: `Start ${now.agent}` },
-      ...(existing ? [{ key: "again", text: `Workspace ${existing.name}: ${AGAIN_SHORT[state.again]}` }] : []),
-      { key: "agent", text: `Agent: ${now.agent}` },
-      { key: "model", text: `Model: ${now.model?.id ?? DEFAULT}` },
-      { key: "effort", text: `Effort: ${now.model?.effort ?? DEFAULT}` },
-      { key: "terminal", text: `Terminal: ${TERMINAL_SHOWN[now.terminal] ?? "this window"}` },
-    ];
     const valueOf = (key) => (key === "again" ? state.again : key in state.picks ? state.picks[key] : current[key]);
     const valuesOf = (key) => (key === "again" ? againKeys : options[key]);
     const set = (key, value) => {
-      state = key === "again" ? { ...state, again: value } : { ...state, picks: { ...state.picks, [key]: value } };
+      state = withValue(state, key, value);
+    };
+    /**
+     * Left or Right: the next value that changes what the line shows. A label
+     * can set a value the list names differently (effort "high" from a model
+     * tier, while the list has "High" or the agent's default), and two values
+     * can show the same; stepping only by position looked stuck then.
+     */
+    const stepShown = (key, side) => {
+      const list = valuesOf(key);
+      const before = shownAs(state, key);
+      const known = list.indexOf(valueOf(key));
+      let at = known !== -1 ? known : list.findIndex((value) => shownAs(withValue(state, key, value), key) === before);
+      if (at === -1) at = side > 0 ? -1 : list.length;
+      for (let n = 1; n <= list.length; n++) {
+        const value = list[(((at + side * n) % list.length) + list.length) % list.length];
+        if (shownAs(withValue(state, key, value), key) !== before) return set(key, value);
+      }
     };
     // A sub-list of one line's values; choosing or Esc comes back here.
     const values = (row) => {
@@ -447,7 +467,7 @@ export async function review({ id, existing, again, prompt, flags, config, input
       onChoose: (row, side) => {
         if (row.key === "start") return side ? { view: main("start") } : undefined;
         if (!side) return { view: values(row) };
-        set(row.key, step(valuesOf(row.key), valueOf(row.key), side));
+        stepShown(row.key, side);
         return { view: main(row.key) };
       },
     };
