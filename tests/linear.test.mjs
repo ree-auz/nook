@@ -58,11 +58,52 @@ test("for Warp, a tab config runs the launcher in the chosen folder", async (t) 
 });
 
 test("an issue label can pick the agent", async () => {
-  const { agentFromLabels } = await import("../integrations/linear/open-issue.mjs");
+  const { agentFromLabels } = await import("../integrations/linear/choose.mjs");
   const prompt = "<issue>\n<label>Chore</label>\n<label>模型 › Sol · 低</label>\n<label>执行 › Claude</label>\n</issue>";
   assert.equal(agentFromLabels(prompt, "执行"), "claude");
-  assert.equal(agentFromLabels(prompt, "Agent"), null, "no label in that group");
-  assert.equal(agentFromLabels(prompt, undefined), null, "only when asked for");
+  assert.equal(agentFromLabels("<label>Agent › Opus Max</label>", "Agent"), "opus-max", "any name in the group");
+  // Without the group, a label named like a known agent still picks it.
+  assert.equal(agentFromLabels(prompt, "Agent"), "claude");
+  assert.equal(agentFromLabels(prompt, undefined), "claude");
+  assert.equal(agentFromLabels("<label>Grok</label>", undefined), "grok", "a label outside any group");
+  assert.equal(agentFromLabels("<label>Chore</label>", undefined), null);
+  assert.equal(agentFromLabels("<label>Agent › Codex</label><label>Claude</label>", undefined), null, "two agents: neither");
+});
+
+test("a model label picks the model, its effort and, alone, its agent", async () => {
+  const { choose, agentModelArgs } = await import("../integrations/linear/choose.mjs");
+  const config = {
+    labels: { agent: "Agent", model: "Model" },
+    models: { Luna: { id: "gpt-6-luna", agent: "codex" }, Opus: { id: "claude-opus-5-5", agent: "claude" }, Fast: "grok-5-fast" },
+    efforts: { 高: "high" },
+  };
+  const pick = (labels, flags = {}) => choose(labels.map((l) => `<label>${l}</label>`).join("\n"), flags, config);
+
+  assert.deepEqual(pick(["Model › Luna · 高", "Agent › Codex"]), { agent: "codex", model: { id: "gpt-6-luna", effort: "high" }, terminal: null, orca: "orca", notes: [] });
+  assert.equal(pick(["Model › Opus · high"]).agent, "claude", "the model's agent when no agent label");
+  assert.deepEqual(pick(["Model › gpt-6.1-sol · low"]).model, { id: "gpt-6.1-sol", effort: "low" }, "a label that is a model id needs no config");
+  assert.deepEqual(pick(["Model › Fast", "Agent › Grok"]).model, { id: "grok-5-fast", effort: null });
+  // A model of another agent: that agent's own default, and a note says why.
+  const mismatch = pick(["Model › Luna · high", "Agent › Grok"]);
+  assert.equal(mismatch.agent, "grok");
+  assert.equal(mismatch.model, null);
+  assert.match(mismatch.notes[0], /Model › Luna · high is a codex model; grok starts with its own default/);
+  assert.match(pick(["Model › Luna · turbo"]).notes[0], /"turbo" is not an effort; add it to "efforts"/);
+  assert.match(pick(["Model › Opus · high"]).notes[0], /effort high is passed only to codex, or to any agent through Orca/);
+  assert.deepEqual(pick(["Model › Opus · high"], { terminal: "orca" }).notes, [], "Orca takes the effort");
+  assert.equal(pick([], { agent: "gemini" }).agent, "gemini", "flags give the default");
+
+  assert.deepEqual(agentModelArgs("codex", { id: "gpt-6-luna", effort: "high" }), ["-m", "gpt-6-luna", "-c", "model_reasoning_effort=high"]);
+  assert.deepEqual(agentModelArgs("claude", { id: "opus", effort: "high" }), ["--model", "opus"]);
+});
+
+test("the config file is optional unless named", async (t) => {
+  const { loadConfig } = await import("../integrations/linear/choose.mjs");
+  const dir = tempDir(t);
+  assert.deepEqual(loadConfig(join(dir, "none.json")), {});
+  assert.throws(() => loadConfig(join(dir, "none.json"), { required: true }), /Could not read/);
+  writeFileSync(join(dir, "bad.json"), "{ nope");
+  assert.throws(() => loadConfig(join(dir, "bad.json")), /is not valid JSON/);
 });
 
 test("for Orca, nk creates the workspace and Orca starts the agent in it", (t) => {
@@ -83,14 +124,16 @@ test("for Orca, nk creates the workspace and Orca starts the agent in it", (t) =
     LINEAR_ISSUE_BRANCH_NAME: "ree-auz/ree-280-orca",
     LINEAR_WORK_DIR: repo,
     LINEAR_ISSUE_IDENTIFIER: "REE-280",
-    LINEAR_PROMPT: 'Work on REE-280: "Orca"\n\n- step one\n',
+    LINEAR_PROMPT: 'Work on REE-280: "Orca"\n\n- step one\n<label>Model › Sol · medium</label>\n',
     GIT_AUTHOR_NAME: "Test",
     GIT_AUTHOR_EMAIL: "t@example.com",
     GIT_COMMITTER_NAME: "Test",
     GIT_COMMITTER_EMAIL: "t@example.com",
   };
+  const config = join(root, "nook.json");
+  writeFileSync(config, JSON.stringify({ labels: { model: "Model" }, models: { Sol: "gpt-6.1-sol" } }));
   const run = () => {
-    const r = spawnSync(process.execPath, [script, "--terminal", "orca", "--orca", orca, "--agent", "codex"], { cwd: root, encoding: "utf8", env });
+    const r = spawnSync(process.execPath, [script, "--config", config, "--terminal", "orca", "--orca", orca, "--agent", "codex"], { cwd: root, encoding: "utf8", env });
     assert.equal(r.status, 0, r.stdout + r.stderr);
   };
 
@@ -99,7 +142,7 @@ test("for Orca, nk creates the workspace and Orca starts the agent in it", (t) =
   assert.ok(existsSync(ws), "nk created the workspace");
   run();
   const calls = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
-  const launch = ["agent", "launch", "--agent", "codex", "--worktree", `path:${ws}`, "--focus", "--json"];
+  const launch = ["agent", "launch", "--agent", "codex", "--worktree", `path:${ws}`, "--focus", "--json", "--model", "gpt-6.1-sol", "--effort", "medium"];
   assert.deepEqual(calls, [["open", "--json"], [...launch, "--prompt", env.LINEAR_PROMPT], ["open", "--json"], launch]);
 });
 
@@ -114,4 +157,14 @@ test("the launcher runs when started through a linked folder, like fnm's aliases
   // It ran: it asks for Linear's variables instead of exiting silently.
   assert.equal(r.status, 1);
   assert.match(r.stderr, /LINEAR_ISSUE_BRANCH_NAME and LINEAR_WORK_DIR are missing/);
+});
+
+test("a label can pick the terminal, Orca included", async () => {
+  const { terminalFromLabels } = await import("../integrations/linear/choose.mjs");
+  assert.equal(terminalFromLabels("<label>Terminal › Orca</label>", "Terminal"), "orca");
+  assert.equal(terminalFromLabels("<label>Terminal › Windows Terminal</label>", "Terminal"), "wt");
+  assert.equal(terminalFromLabels("<label>Terminal › Here</label>", "Terminal"), null, "the window Linear opened");
+  assert.equal(terminalFromLabels("<label>Warp</label>", undefined), "warp", "a label named like a terminal");
+  assert.equal(terminalFromLabels("<label>Chore</label>", "Terminal"), undefined, "no label: --terminal decides");
+  assert.throws(() => terminalFromLabels("<label>Terminal › Kitty</label>", "Terminal"), /not a terminal/);
 });

@@ -51,12 +51,53 @@ Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only.
      volumes. Orca's command-line tool must be installed; if Linear cannot
      find it on PATH, add `"--orca", "<full path to orca>"`. Linear's window
      closes when Orca has the agent, and stays open with the error otherwise.
-   - To let each issue pick its agent, label issues from one label group
-     (say `Agent › Codex`, `Agent › Claude`) and add `"--agent-label", "Agent"`
-     to `args`. Linear's prompt lists the issue's labels, and the script starts
-     the agent named by that group's label (lowercased, spaces as `-`), or the
-     `--agent` one when the issue has none.
    - `env` is an allowlist: Linear only passes the variables listed here.
+
+4. Optional: let labels choose, per issue, the agent, its model and effort,
+   and the terminal. Put this in `~/.linear/nook.json` (on Windows,
+   `C:\Users\<you>\.linear\nook.json`; or name another file with
+   `"--config", "<path>"` in `args`). [`nook.example.json`](nook.example.json)
+   is a fuller example (its model ids are examples: use the ones your agents'
+   command-line tools take):
+
+   ```json
+   {
+     "agent": "codex",
+     "terminal": "orca",
+     "labels": { "agent": "Agent", "model": "Model", "terminal": "Terminal" },
+     "models": {
+       "Luna": { "id": "gpt-6-luna", "agent": "codex" },
+       "Opus": { "id": "claude-opus-5-5", "agent": "claude" }
+     }
+   }
+   ```
+
+   - `agent` and `terminal` are the defaults, for issues without such labels.
+     `--agent` and `--terminal` in `args` win over them.
+   - `labels` names your label groups. Each is optional.
+     `"--agent-label", "<group>"` and `"--terminal-label", "<group>"` in `args`
+     do the same without a config file.
+   - **Agent**: the issue's label in the `agent` group, say `Agent › Claude`,
+     starts that agent (lowercased, spaces as `-`). Without the group, a
+     single label named like a known agent (Codex, Claude, Grok, Gemini, …)
+     works too.
+   - **Model**: a label in the `model` group reads `<model>` or
+     `<model> · <effort>`, say `Model › Luna · high`. `<model>` is a name from
+     `models`, or, when it is not there, the model's id as the agent takes it
+     (`Model › gpt-6.1-sol · low` needs no config). A `models` entry is the id
+     alone (`"Luna": "gpt-6-luna"`) or `{ "id", "agent" }`; with `agent`, an
+     issue with only that model label starts that agent, and an issue labelled
+     for another agent starts it with its own default model.
+   - **Effort**: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. For other
+     words in your labels, map them: `"efforts": { "高": "high" }`. Codex gets
+     `-m <id> -c model_reasoning_effort=<effort>`; other agents get
+     `--model <id>`, without the effort. Orca gets `--model <id> --effort
+     <effort>` for any agent.
+   - **Terminal**: a label in the `terminal` group named `Orca`, `Warp`,
+     `Windows Terminal` or `Here` (the window Linear opened) wins over the
+     default. A single label with one of those names works without the group.
+   - The first line in Linear's window says which agent, model and terminal
+     were chosen, and why a label was not used, if one was not.
 
 ## Use
 
