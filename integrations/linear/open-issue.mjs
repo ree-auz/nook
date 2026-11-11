@@ -150,7 +150,7 @@ export function openInWezTerm({ dir, id, inner, wezterm = "wezterm", open = "tab
   } catch {
     // An older WezTerm without --format json: let spawn choose the window.
   }
-  const windowId = panes.find((pane) => pane.is_active)?.window_id ?? panes[0]?.window_id;
+  const windowId = focusedWindow(wezterm, panes, run);
   const target = windowId === undefined ? [] : ["--window-id", String(windowId)];
   const spawned = run(wezterm, ["cli", "--no-auto-start", "spawn", ...target, "--cwd", dir, "--", ...inner]);
   if (spawned.status !== 0) return inWindow(`WezTerm did not open a tab (wezterm cli spawn: ${said(spawned)})`);
@@ -158,6 +158,28 @@ export function openInWezTerm({ dir, id, inner, wezterm = "wezterm", open = "tab
   // Older WezTerm has no set-tab-title; the tab keeps the command's title then.
   if (/^\d+$/.test(pane)) run(wezterm, ["cli", "set-tab-title", "--pane-id", pane, id]);
   return { opened: "tab", reason: null };
+}
+
+/**
+ * The window to add a tab to: the one with the focused pane of the WezTerm
+ * window used last (list-clients knows it). "is_active" in the pane list
+ * only means active in its own tab, so every window has one; it is the
+ * fallback for a WezTerm without list-clients.
+ */
+function focusedWindow(wezterm, panes, run) {
+  const listed = run(wezterm, ["cli", "--no-auto-start", "list-clients", "--format", "json"]);
+  let clients = [];
+  try {
+    if (listed.status === 0) clients = JSON.parse(listed.stdout || "[]");
+  } catch {
+    // An older WezTerm: the pane list alone decides.
+  }
+  const idle = (client) => (client.idle_time?.secs ?? Infinity) + (client.idle_time?.nanos ?? 0) / 1e9;
+  for (const client of [...clients].sort((a, b) => idle(a) - idle(b))) {
+    const pane = panes.find((p) => p.pane_id === client.focused_pane_id);
+    if (pane) return pane.window_id;
+  }
+  return panes.find((pane) => pane.is_active)?.window_id ?? panes[0]?.window_id;
 }
 
 /** Runs a command and waits, without a console window or a shell. */

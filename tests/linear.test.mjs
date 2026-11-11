@@ -265,19 +265,30 @@ test("WezTerm opens a tab in the open WezTerm window, else a window", async () =
     { window_id: 3, tab_id: 5, pane_id: 7, is_active: true },
   ]);
   // answers: what list and spawn return; set-tab-title always works.
-  const answer = ({ list = { status: 0, stdout: panes }, spawn = { status: 0, stdout: "42\n" } } = {}) => (command, args) => {
+  // No list-clients by default, as in an older WezTerm.
+  const answer = ({ list = { status: 0, stdout: panes }, spawn = { status: 0, stdout: "42\n" }, clients = { status: 1 } } = {}) => (command, args) => {
     calls.push([command, ...args]);
-    return { list, spawn, "set-tab-title": { status: 0 } }[args[args[1] === "--no-auto-start" ? 2 : 1]];
+    return { list, spawn, "list-clients": clients, "set-tab-title": { status: 0 } }[args[args[1] === "--no-auto-start" ? 2 : 1]];
   };
   const start = (command, args) => started.push([command, ...args]);
 
   assert.deepEqual(openInWezTerm({ dir: "D:\\Projects\\Pipit", id: "REE-270", inner, run: answer(), start }), { opened: "tab", reason: null });
   assert.deepEqual(calls, [
     ["wezterm", "cli", "--no-auto-start", "list", "--format", "json"],
+    ["wezterm", "cli", "--no-auto-start", "list-clients", "--format", "json"],
     ["wezterm", "cli", "--no-auto-start", "spawn", "--window-id", "3", "--cwd", "D:\\Projects\\Pipit", "--", ...inner],
     ["wezterm", "cli", "set-tab-title", "--pane-id", "42", "REE-270"],
   ], "the tab goes into the window of the active pane: outside WezTerm, spawn has no current window");
   assert.deepEqual(started, []);
+
+  // Every window has an active pane; the focused one of the client used last wins.
+  calls.length = 0;
+  const clients = { status: 0, stdout: JSON.stringify([
+    { pid: 1, focused_pane_id: 7, idle_time: { secs: 300, nanos: 0 } },
+    { pid: 2, focused_pane_id: 0, idle_time: { secs: 2, nanos: 0 } },
+  ]) };
+  openInWezTerm({ dir: ".", id: "x", inner, run: answer({ clients }), start });
+  assert.deepEqual(calls[2].slice(3, 6), ["spawn", "--window-id", "0"]);
 
   calls.length = 0;
   const none = openInWezTerm({ dir: "/work/pipit", id: "REE-270", inner, wezterm: "/opt/wezterm", run: answer({ list: { status: 1, stderr: "failed to connect to gui\n" } }), start });
