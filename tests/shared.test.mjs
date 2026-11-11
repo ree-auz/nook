@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { copyShared, includePatterns, knownSecretFiles, sharedCandidates, templateFiles } from "../src/shared.mjs";
-import { makeRepo, tempDir, write } from "./helpers.mjs";
+import { makeRepo, nk, tempDir, write } from "./helpers.mjs";
 
 test("defaults to ignored .env* files", (t) => {
   const repo = makeRepo(join(tempDir(t), "demo"), { ".gitignore": ".env\n.env.local\nnode_modules/\n", ".env.example": "KEY=\n" });
@@ -62,4 +62,19 @@ test("finds templates for any ignored file, in any folder", (t) => {
     { from: "apps/api/.dev.vars.example", to: "apps/api/.dev.vars" },
     { from: "config/database.yml.dist", to: "config/database.yml" },
   ], "not a library's template in a committed vendor folder");
+});
+
+test("nk init goes on when a template git lists is not in the folder (a sparse checkout)", (t) => {
+  const root = tempDir(t);
+  const home = join(root, "nook-home");
+  const repo = makeRepo(join(root, "demo"), { ".gitignore": ".env\n.dev.vars\n", ".env.example": "KEY=\n", "apps/api/.dev.vars.example": "TOKEN=\n" });
+  // What a sparse checkout does to a path outside its patterns: tracked, and not on disk.
+  rmSync(join(repo, "apps"), { recursive: true });
+  const result = nk(["init", "--yes"], { cwd: repo, home });
+  assert.equal(result.status, 0, result.err);
+  assert.match(result.err, /apps\/api\/\.dev\.vars\.example is in git but not in this folder \(a sparse checkout\?\), so shared apps\/api\/\.dev\.vars was not started from it/);
+  // The template that is there still starts its shared file.
+  assert.equal(readFileSync(join(home, "shared", "demo", ".env"), "utf8"), "KEY=\n");
+  assert.ok(!existsSync(join(home, "shared", "demo", "apps")));
+  assert.doesNotMatch(result.err, /ENOENT|at copyFile/);
 });

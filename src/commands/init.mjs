@@ -3,7 +3,7 @@ import { basename, join } from "node:path";
 import spawn from "cross-spawn";
 import { detectAgents, which } from "../agents.mjs";
 import { NookError } from "../errors.mjs";
-import { isInside, samePath } from "../home.mjs";
+import { exists, isInside, samePath } from "../home.mjs";
 import { defaultBranch, listWorktrees, mainWorktree, remoteUrl } from "../git.mjs";
 import { ensureTrusted, findHooks, trustState } from "../hooks.mjs";
 import { assertName, suggestRepoName } from "../names.mjs";
@@ -44,6 +44,11 @@ async function prepareShared(ctx, { repoPath, sharedDir, prompter }) {
   const fill = [];
   for (const template of templates) {
     if (present.has(template.to)) continue;
+    // git lists the template, but a sparse checkout (or a deletion not yet committed) left it out of the folder.
+    if (!exists(join(repoPath, template.from))) {
+      ctx.warn(`${template.from} is in git but not in this folder (a sparse checkout?), so shared ${template.to} was not started from it\nCheck the file out and run nk init again, or put ${template.to} in ${sharedDir} yourself`);
+      continue;
+    }
     // A committed template is the safe start: the same file in the main checkout may be production.
     copies.push({ from: join(repoPath, template.from), to: template.to });
     fill.push(join(sharedDir, template.to));
