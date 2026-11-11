@@ -46,8 +46,8 @@
     "Low": "low",
     "Medium": "medium",
     "High": "high",
-    "Extra high": { "codex": "xhigh", "claude": "xhigh", "pi": "xhigh", "droid": "xhigh", "grok": "high", "aider": "high" },
-    "Max": { "codex": "max", "claude": "max", "pi": "max", "droid": "max", "grok": "high", "aider": "high" }
+    "Extra high": { "codex": "xhigh", "claude": "xhigh", "pi": "xhigh", "droid": "xhigh", "grok": "xhigh", "aider": "high" },
+    "Max": { "codex": "max", "claude": "max", "pi": "max", "droid": "max", "grok": "max", "aider": "high" }
   },
   "models": {
     "Light": {
@@ -93,5 +93,15 @@
       "pi": { "id": "openai/gpt-6-astra", "effort": "high" },
       "aider": "openai/gpt-6-astra"
     }
+  },
+  "agentModels": {
+    "codex": ["gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"],
+    "claude": ["opus", "sonnet", "haiku", "fable", "opusplan", "claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-opus-4-8"],
+    "grok": ["grok-4.7"],
+    "gemini": ["gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-2.5-pro", "gemini-2.5-flash"],
+    "opencode": ["anthropic/claude-opus-5-5", "anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-5-5", "openai/gpt-6-astra", "openai/gpt-6.1-sol", "openai/gpt-6-luna", "xai/grok-4.7"],
+    "pi": ["anthropic/claude-opus-5-5", "anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-5-5", "openai/gpt-6-astra", "openai/gpt-6.1-sol", "openai/gpt-6-luna", "xai/grok-4.7"],
+    "aider": ["anthropic/claude-opus-5-5", "anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-5-5", "openai/gpt-6-astra", "openai/gpt-6.1-sol", "openai/gpt-6-luna", "xai/grok-4.7"],
+    "droid": ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"]
   }
 }

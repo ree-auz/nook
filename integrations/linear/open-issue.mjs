@@ -392,7 +392,6 @@ const DEFAULT = "the agent's default";
  */
 export async function review({ id, existing, again, prompt, flags, config, input = process.stdin, output = process.stdout }) {
   let state = { again: again === "ask" ? "continue" : again, picks: {} };
-  const options = pickOptions(config);
   const one = (item) => [item.text];
 
   /** The lines for a state: what Start would do with it. */
@@ -418,6 +417,7 @@ export async function review({ id, existing, again, prompt, flags, config, input
     const againKeys = againChoices(now.terminal);
     const current = { agent: now.agent, terminal: TERMINAL_SHOWN[now.terminal] ?? "Here" };
     const valueOf = (key) => (key === "again" ? state.again : key in state.picks ? state.picks[key] : current[key]);
+    const options = pickOptions(config, now.agent);
     const valuesOf = (key) => (key === "again" ? againKeys : options[key]);
     const set = (key, value) => {
       state = withValue(state, key, value);

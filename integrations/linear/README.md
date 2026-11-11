@@ -242,6 +242,7 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `agents` | label name → agent command |
 | `terminals` | label name → `orca`, `warp`, `wezterm`, `wt` or `here` |
 | `models` | label name → tier, id, or one agent's model |
+| `agentModels` | agent → more model ids the list in Linear's window offers for it (the list shows only the `models` entries and ids the chosen agent has) |
 | `efforts` | label word → an effort, or each agent's effort |
 | `agentArgs` | agent → how it takes `{model}` and `{effort}` |
 | `linear` | `{ apiKey, start, assign }`: move the issue to In Progress (default with a key) and assign it to you (off by default) |

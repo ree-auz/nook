@@ -441,6 +441,12 @@ test("choices made in Linear's window win over the labels, for this start only",
   assert.deepEqual(options.model, [null, "Strong"]);
   assert.deepEqual(options.effort, [null, "High", "Max"]);
   assert.ok(options.agent.includes("grok") && options.terminal.includes("WezTerm"));
+  // For one agent: only what it has, then its own ids; a picked id is used as is.
+  const more = { ...config, models: { ...config.models, Light: { codex: "gpt-6-luna" } }, agentModels: { grok: ["grok-4.7", "grok-5-mini"] } };
+  assert.deepEqual(pickOptions(more, "grok").model, [null, "Strong", "grok-4.7", "grok-5-mini"]);
+  assert.deepEqual(pickOptions(more, "claude").model, [null]);
+  assert.deepEqual(pickOptions(more, "claude").effort, [null, "High"], "Max names no effort for claude");
+  assert.deepEqual(choose(prompt, { picks: { model: "grok-5-mini" } }, more).model, { id: "grok-5-mini", effort: "high" });
 });
 
 test("the list in Linear's window changes a choice, then starts", async () => {

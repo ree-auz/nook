@@ -16,6 +16,7 @@ export const CONFIG_PATH = join(homedir(), ".linear", "nook.json");
  * { agent, terminal, open, closeLinearWindow, orca, wezterm, labels: { agent, model, effort, terminal },
  *   agents: { "<label name>": "<command>" }, terminals: { "<label name>": "<terminal>" },
  *   models: { "<label name>": "<id>" | { id, agent } | { "<agent>": "<id>" | { id, effort } } },
+ *   agentModels: { "<agent>": ["<id>", ...] }: more models the list in Linear's window offers,
  *   efforts: { "<word>": "<effort>" | { "<agent>": "<effort>" } },
  *   agentArgs: { "<agent>": { model: [...args with {model}], effort: [...args with {effort}] } } }
  */
@@ -255,12 +256,26 @@ export function withPicks(prompt, config = {}, picks = {}) {
   return { prompt: text, config: { ...config, labels }, picked };
 }
 
-/** What Linear's window offers for each choice, from the config and the built-in names. */
-export function pickOptions(config = {}) {
+/**
+ * What Linear's window offers for each choice, from the config and the
+ * built-in names. With `agent`, only the models and efforts that agent has:
+ * the `models` entries that name a model for it, then its ids from
+ * `agentModels`.
+ */
+export function pickOptions(config = {}, agent = null) {
+  const models = Object.entries(config.models ?? {})
+    .filter(([, entry]) => !agent || typeof entry === "string" || ("id" in entry ? !entry.agent || entry.agent === agent : Boolean(tierModel(entry, agent))))
+    .map(([name]) => name);
+  const ids = agent ? (lookup(config.agentModels, agent) ?? []) : [];
+  const efforts = config.efforts
+    ? Object.entries(config.efforts)
+        .filter(([, value]) => !agent || effortFor(value, agent) !== null)
+        .map(([name]) => name)
+    : EFFORTS;
   return {
     agent: [...new Set([...Object.keys(config.agentArgs ?? {}), ...KNOWN_AGENTS])],
-    model: [null, ...Object.keys(config.models ?? {})],
-    effort: [null, ...(config.efforts ? Object.keys(config.efforts) : EFFORTS)],
+    model: [null, ...new Set([...models, ...ids])],
+    effort: [null, ...efforts],
     terminal: ["Here", "Windows Terminal", "Warp", "WezTerm", "Orca"],
   };
 }
