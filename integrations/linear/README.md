@@ -47,7 +47,12 @@ Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only;
      the script opens a tab in the WezTerm window that is open, or a new
      WezTerm window when none is, and closes Linear's window. If WezTerm is
      not on PATH, add `"--wezterm", "<full path to wezterm>"` (on Windows,
-     usually `C:\\Program Files\\WezTerm\\wezterm.exe`).
+     usually `C:\\Program Files\\WezTerm\\wezterm.exe`). When a WezTerm
+     window is open but a new one opens anyway, the new window's first line
+     says why.
+   - Windows Terminal and WezTerm open a tab by default. For a window of its
+     own per issue, add `"--open", "window"` (or `"open": "window"` in the
+     config file below). Warp always opens a tab.
    - To keep agents in [Orca](https://www.onorca.dev) (its accounts and
      sessions), add `"--terminal", "orca"`: Nook creates the workspace and
      runs its hooks in Linear's window, then
@@ -218,6 +223,8 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `--terminal-label <group>` | the terminal label group, over `labels.terminal` |
 | `--orca <path>` | Orca's command-line tool, when it is not on PATH |
 | `--wezterm <path>` | WezTerm, when it is not on PATH |
+| `--again <choice>` | what starting an issue that has a workspace does, over `"again"` |
+| `--open tab\|window` | a tab (the default) or a window of its own, over `"open"`; Windows Terminal and WezTerm |
 
 `nook.json`:
 
@@ -225,6 +232,10 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | -- | -- |
 | `agent` | the default agent's command |
 | `terminal` | the default terminal |
+| `open` | `"tab"` (the default) or `"window"`: where Windows Terminal and WezTerm open the issue |
+| `confirm` | `true`: show the list in Linear's window for every issue, not only for one that has a workspace |
+| `again` | what starting an issue that has a workspace does: `ask` (the default), `continue`, `prompt`, `new`, `over` or `shell` |
+| `closeLinearWindow` | `false` keeps the window Linear opened after the agent starts in another terminal |
 | `orca` | Orca's command-line tool |
 | `wezterm` | WezTerm's program |
 | `labels` | `{ agent, model, effort, terminal }`: your label group names |
@@ -233,6 +244,7 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `models` | label name → tier, id, or one agent's model |
 | `efforts` | label word → an effort, or each agent's effort |
 | `agentArgs` | agent → how it takes `{model}` and `{effort}` |
+| `linear` | `{ apiKey, start, assign }`: move the issue to In Progress (default with a key) and assign it to you (off by default) |
 
 ## Use
 
@@ -243,12 +255,51 @@ the issue belongs to; nothing runs there.
 
 The terminal runs `nk -b <issue branch> <agent> -y -p <Linear's prompt>` in
 that folder (`-y` keeps the converted workspace name without asking).
-Choosing the same issue again reopens its workspace and starts the agent
-without the prompt (with `--terminal orca`, a new agent session in Orca;
-earlier sessions stay in Orca's list).
+Choosing an issue that already has a workspace shows a list in Linear's
+window before anything starts (with `"confirm": true` in the config, every
+issue does):
 
-Linear's GitHub integration moves the issue along as the branch and its pull
-request change, because the branch name holds the issue identifier. After the
+```
+REE-302 · Enter on Start starts; choose a line to change it
+> Start grok
+  Workspace ree-302-search-home: Continue: start the agent in the workspace, …
+  Agent: grok
+  Model: grok-4.7
+  Effort: high
+  Terminal: WezTerm
+```
+
+Enter on **Start** starts. Choosing another line changes it for this start
+only, without touching the issue's labels: the agent, the model (a name from
+`models`, or the agent's default), the effort (a word from `efforts`), the
+terminal, and what to do with the workspace. Esc starts nothing. For the
+workspace:
+
+| Choice | What happens |
+| -- | -- |
+| `continue` | the agent starts in the workspace without Linear's prompt (with Orca, a new session; earlier ones stay in Orca's list) |
+| `prompt` | the agent starts in the workspace with Linear's prompt again; the changes stay |
+| `new` | a new workspace next to it, branch `<issue branch>-2` (`-3`, …): run the issue again with another agent, model or effort and compare; the branch still carries the issue id, so Linear links both pull requests |
+| `over` | `nk rm` removes the workspace and its branch, saving uncommitted changes and unpushed commits to `~/nook/backup` first, then the issue starts fresh |
+| `shell` | only the workspace opens, without an agent (not with Orca) |
+
+`"again": "<choice>"` in the config, or `"--again", "<choice>"` in
+`coding-tools.json`, skips the question.
+
+Linear's **Move issue to started status** setting (Settings → Account →
+Code & reviews) does not apply to custom scripts, so the script moves the
+issue itself when it has a Linear API key: to the team's first started status
+(In Progress), unless the issue has already started or ended. Create a
+personal API key in Linear's **Settings → Account → Security & access**, then
+either put it in the config file as `"linear": { "apiKey": "lin_api_…" }`, or
+set it as the `LINEAR_API_KEY` environment variable and add
+`"LINEAR_API_KEY"` to `env` in `coding-tools.json` (Linear passes only the
+variables listed there). The key stays on your computer; the script sends it
+only to `api.linear.app`. `"linear": { "assign": true }` also assigns an
+unassigned issue to you; `"start": false` turns the status change off.
+After that, Linear's GitHub
+integration moves the issue along as the branch and its pull request change,
+because the branch name holds the issue identifier. After the
 pull request is merged, `nk clean` removes the workspace.
 
 ## How it works
@@ -259,15 +310,18 @@ pull request is merged, `nk clean` removes the workspace.
 - With `--terminal`, the prompt is long Markdown with quotes and semicolons,
   so the script writes it to a temporary file and opens a tab in the chosen
   folder that runs the same script again: Windows Terminal with
-  `wt.exe -w 0 new-tab -d <folder>`; Warp, whose `warp://` links cannot run a
+  `wt.exe -w 0 new-tab -d <folder>` (`-w new` for a window); Warp, whose `warp://` links cannot run a
   command, through a
   [tab config](https://docs.warp.dev/terminal/windows/tab-configs/) written to
   `%APPDATA%\warp\Warp\data\tab_configs\` and opened with
   `warp://tab_config/<name>` (the tab deletes it when it starts). A
   minimized Warp window stays minimized; WezTerm with
-  `wezterm cli --no-auto-start spawn --cwd <folder> -- <command>`, which adds
-  a tab to the open WezTerm window and names it after the issue, or
-  `wezterm start --cwd <folder> -- <command>` when no WezTerm window is open.
+  `wezterm cli --no-auto-start list --format json` to find the open window,
+  then `wezterm cli --no-auto-start spawn --window-id <id> --cwd <folder> -- <command>`,
+  which adds a tab to it and names it after the issue (outside WezTerm, spawn
+  has no current window of its own), or
+  `wezterm start --cwd <folder> -- <command>` when no WezTerm window is open,
+  with `"open": "window"`, or when the tab could not be opened.
   It then
   closes the window Linear opened.
 - `nk` runs with the same Node, never through `cmd.exe`, which would cut a

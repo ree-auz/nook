@@ -45,7 +45,7 @@ test("for Warp, a tab config runs the launcher in the chosen folder", async (t) 
   const appData = tempDir(t);
   const opened = [];
   const inner = ["C:\\Program Files\\nodejs\\node.exe", "C:\\nook\\open-issue.mjs", "--run", "C:\\Temp\\it's.md", "ree-270-x", "codex"];
-  const config = openInWarp({ dir: "D:\\Projects\\Pipit", id: "REE-270", inner, env: { APPDATA: appData }, start: (uri) => opened.push(uri) });
+  const { config } = openInWarp({ dir: "D:\\Projects\\Pipit", id: "REE-270", inner, env: { APPDATA: appData }, start: (uri) => opened.push(uri) });
   assert.match(config, /nk-ree-270-\d+\.toml$/);
   const tab = parse(readFileSync(config, "utf8"));
   assert.deepEqual(opened, [`warp://tab_config/${tab.name}`]);
@@ -79,7 +79,7 @@ test("a model label picks the model, its effort and, alone, its agent", async ()
   };
   const pick = (labels, flags = {}) => choose(labels.map((l) => `<label>${l}</label>`).join("\n"), flags, config);
 
-  assert.deepEqual(pick(["Model › Luna · 高", "Agent › Codex"]), { agent: "codex", model: { id: "gpt-6-luna", effort: "high" }, args: ["-m", "gpt-6-luna", "-c", "model_reasoning_effort=high"], terminal: null, orca: "orca", wezterm: "wezterm", notes: [] });
+  assert.deepEqual(pick(["Model › Luna · 高", "Agent › Codex"]), { agent: "codex", model: { id: "gpt-6-luna", effort: "high" }, args: ["-m", "gpt-6-luna", "-c", "model_reasoning_effort=high"], terminal: null, orca: "orca", wezterm: "wezterm", open: "tab", closeLinearWindow: true, notes: [] });
   assert.equal(pick(["Model › Opus · high"]).agent, "claude", "the model's agent when no agent label");
   assert.deepEqual(pick(["Model › gpt-6.1-sol · low"]).model, { id: "gpt-6.1-sol", effort: "low" }, "a label that is a model id needs no config");
   assert.deepEqual(pick(["Model › Fast", "Agent › Grok"]).model, { id: "grok-5-fast", effort: null });
@@ -255,31 +255,66 @@ test("the preset config parses and covers the built-in agents", async () => {
   assert.deepEqual(pick(["Agent › Amp", "Model › Strong"]).args, [], "Amp takes no model flag");
 });
 
-test("WezTerm opens a tab in the running WezTerm, else a window", async () => {
+test("WezTerm opens a tab in the open WezTerm window, else a window", async () => {
   const { openInWezTerm } = await import("../integrations/linear/open-issue.mjs");
   const inner = ["C:\\Program Files\\nodejs\\node.exe", "C:\\nook\\open-issue.mjs", "--run", "C:\\Temp\\it's.md", "ree-270-x", "codex"];
   const calls = [];
   const started = [];
-  const answer = (status, stdout = "") => (command, args) => {
+  const panes = JSON.stringify([
+    { window_id: 0, tab_id: 0, pane_id: 0, is_active: false },
+    { window_id: 3, tab_id: 5, pane_id: 7, is_active: true },
+  ]);
+  // answers: what list and spawn return; set-tab-title always works.
+  const answer = ({ list = { status: 0, stdout: panes }, spawn = { status: 0, stdout: "42\n" } } = {}) => (command, args) => {
     calls.push([command, ...args]);
-    return args[1] === "set-tab-title" ? { status: 0 } : { status, stdout };
+    return { list, spawn, "set-tab-title": { status: 0 } }[args[args[1] === "--no-auto-start" ? 2 : 1]];
   };
   const start = (command, args) => started.push([command, ...args]);
 
-  assert.equal(openInWezTerm({ dir: "D:\\Projects\\Pipit", id: "REE-270", inner, run: answer(0, "42\n"), start }), "tab");
+  assert.deepEqual(openInWezTerm({ dir: "D:\\Projects\\Pipit", id: "REE-270", inner, run: answer(), start }), { opened: "tab", reason: null });
   assert.deepEqual(calls, [
-    ["wezterm", "cli", "--no-auto-start", "spawn", "--cwd", "D:\\Projects\\Pipit", "--", ...inner],
+    ["wezterm", "cli", "--no-auto-start", "list", "--format", "json"],
+    ["wezterm", "cli", "--no-auto-start", "spawn", "--window-id", "3", "--cwd", "D:\\Projects\\Pipit", "--", ...inner],
     ["wezterm", "cli", "set-tab-title", "--pane-id", "42", "REE-270"],
-  ]);
+  ], "the tab goes into the window of the active pane: outside WezTerm, spawn has no current window");
   assert.deepEqual(started, []);
 
   calls.length = 0;
-  assert.equal(openInWezTerm({ dir: "/work/pipit", id: "REE-270", inner, wezterm: "/opt/wezterm", run: answer(1), start }), "window", "no WezTerm open");
+  const none = openInWezTerm({ dir: "/work/pipit", id: "REE-270", inner, wezterm: "/opt/wezterm", run: answer({ list: { status: 1, stderr: "failed to connect to gui\n" } }), start });
+  assert.equal(none.opened, "window", "no WezTerm open");
+  assert.match(none.reason, /No WezTerm window found .*failed to connect to gui/);
   assert.equal(calls.length, 1);
-  assert.deepEqual(started, [["/opt/wezterm", "start", "--cwd", "/work/pipit", "--", ...inner]]);
+  assert.deepEqual(started, [["/opt/wezterm", "start", "--cwd", "/work/pipit", "--", ...inner, "--note", none.reason]], "the new window says why");
+
+  started.length = 0;
+  const refused = openInWezTerm({ dir: ".", id: "x", inner, run: answer({ spawn: { status: 1, stderr: "no such window" } }), start });
+  assert.match(refused.reason, /did not open a tab .*no such window/);
+  assert.equal(started.length, 1);
+
+  started.length = 0;
+  calls.length = 0;
+  assert.deepEqual(openInWezTerm({ dir: ".", id: "x", inner, open: "window", run: answer(), start }), { opened: "window", reason: null });
+  assert.equal(calls.length, 0, "open: window does not look for a window");
+  assert.deepEqual(started, [["wezterm", "start", "--cwd", ".", "--", ...inner]]);
 
   const missing = () => ({ status: null, error: Object.assign(new Error("spawn wezterm ENOENT"), { code: "ENOENT" }) });
   assert.throws(() => openInWezTerm({ dir: ".", id: "x", inner, run: missing, start }), /could not run wezterm.*--wezterm/);
+});
+
+test("Windows Terminal opens a tab or a window, and the config chooses", async () => {
+  const { openInWindowsTerminal } = await import("../integrations/linear/open-issue.mjs");
+  const { choose } = await import("../integrations/linear/choose.mjs");
+  const started = [];
+  const start = (command, args) => started.push([command, ...args]);
+  openInWindowsTerminal({ dir: "D:\\p", id: "REE-1", inner: ["node"], start });
+  openInWindowsTerminal({ dir: "D:\\p", id: "REE-1", inner: ["node"], open: "window", start });
+  assert.deepEqual(started.map((call) => call.slice(1, 3)), [["-w", "0"], ["-w", "new"]]);
+  assert.equal(choose("", {}, {}).open, "tab");
+  assert.equal(choose("", {}, { open: "window" }).open, "window");
+  assert.equal(choose("", { open: "tab" }, { open: "window" }).open, "tab", "--open wins");
+  assert.throws(() => choose("", {}, { open: "pane" }), /use "tab" or "window"/);
+  assert.equal(choose("", {}, {}).closeLinearWindow, true);
+  assert.equal(choose("", {}, { closeLinearWindow: false }).closeLinearWindow, false);
 });
 
 test("WezTerm is a terminal a label or the default can name", async () => {
@@ -292,4 +327,101 @@ test("WezTerm is a terminal a label or the default can name", async () => {
   assert.equal(pick([]).wezterm, "wezterm");
   assert.equal(pick([], { wezterm: "C:\\WezTerm\\wezterm.exe" }, { wezterm: "x" }).wezterm, "C:\\WezTerm\\wezterm.exe", "--wezterm wins");
   assert.throws(() => pick(["终端 › Kitty"]), /use Orca, Warp, WezTerm, Windows Terminal or Here/);
+});
+
+test("the script moves the issue to its team's first started status", async () => {
+  const { apiKey, startIssue } = await import("../integrations/linear/start-issue.mjs");
+  assert.equal(apiKey({ linear: { apiKey: "from-config" } }, { LINEAR_API_KEY: "from-env" }), "from-env");
+  assert.equal(apiKey({ linear: { apiKey: "from-config" } }, {}), "from-config");
+  assert.equal(apiKey({}, {}), null);
+
+  const states = [
+    { id: "s-todo", name: "Todo", type: "unstarted", position: 1 },
+    { id: "s-review", name: "In Review", type: "started", position: 3 },
+    { id: "s-progress", name: "In Progress", type: "started", position: 2 },
+  ];
+  const linear = (issue) => {
+    const sent = [];
+    const fetch = async (url, { headers, body }) => {
+      const { query, variables } = JSON.parse(body);
+      sent.push({ url, auth: headers.Authorization, mutation: query.startsWith("mutation"), variables });
+      const data = query.startsWith("mutation") ? { issueUpdate: { success: true } } : { viewer: { id: "me" }, issue: issue && { id: "uuid-302", team: { states: { nodes: states } }, ...issue } };
+      return { ok: true, json: async () => ({ data }) };
+    };
+    return { sent, fetch };
+  };
+
+  const todo = linear({ state: { type: "unstarted", name: "Todo" }, assignee: null });
+  assert.equal(await startIssue({ id: "REE-302", key: "lin_api_x", fetch: todo.fetch }), "REE-302: Todo → In Progress");
+  assert.deepEqual(todo.sent[1], { url: "https://api.linear.app/graphql", auth: "lin_api_x", mutation: true, variables: { id: "uuid-302", input: { stateId: "s-progress" } } });
+
+  const assign = linear({ state: { type: "unstarted", name: "Todo" }, assignee: null });
+  assert.equal(await startIssue({ id: "REE-302", key: "k", assign: true, fetch: assign.fetch }), "REE-302: Todo → In Progress, assigned to you");
+  assert.deepEqual(assign.sent[1].variables.input, { stateId: "s-progress", assigneeId: "me" });
+
+  const started = linear({ state: { type: "started", name: "In Review" }, assignee: { id: "me" } });
+  assert.equal(await startIssue({ id: "REE-302", key: "k", fetch: started.fetch }), "REE-302: already In Review");
+  assert.equal(started.sent.length, 1, "a started issue is left alone");
+
+  const failing = async () => ({ ok: false, status: 401, json: async () => ({ errors: [{ message: "Authentication required" }] }) });
+  await assert.rejects(startIssue({ id: "REE-302", key: "bad", fetch: failing }), /Authentication required/);
+});
+
+test("an issue started again: the choices, the setting and the next branch", async () => {
+  const { againChoices, againSetting, nextBranch } = await import("../integrations/linear/again.mjs");
+  assert.equal(againSetting(), "ask");
+  assert.equal(againSetting({}, { again: "new" }), "new");
+  assert.equal(againSetting({ again: "prompt" }, { again: "new" }), "prompt", "--again wins");
+  assert.throws(() => againSetting({}, { again: "twice" }), /use ask, continue, prompt, new, over, shell/);
+  assert.deepEqual(againChoices("wezterm"), ["continue", "prompt", "new", "over", "shell"]);
+  assert.ok(!againChoices("orca").includes("shell"), "Orca starts agents only");
+  const branch = "ree-302-search-home";
+  assert.equal(nextBranch(branch, [{ branch, name: branch }]), "ree-302-search-home-2");
+  assert.equal(nextBranch(branch, [{ branch, name: branch }, { branch: `${branch}-2`, name: `${branch}-2` }]), "ree-302-search-home-3");
+});
+
+test("choices made in Linear's window win over the labels, for this start only", async () => {
+  const { choose, pickOptions } = await import("../integrations/linear/choose.mjs");
+  const config = {
+    labels: { agent: "Agent", model: "Model", effort: "Effort", terminal: "Terminal" },
+    models: { Strong: { codex: "gpt-6-astra", grok: "grok-4.7" } },
+    efforts: { High: "high", Max: { codex: "max", grok: "high" } },
+  };
+  const prompt = ["Agent › Grok", "Model › Strong", "Effort › High", "Terminal › WezTerm"].map((l) => `<label>${l}</label>`).join("\n");
+  const labels = choose(prompt, {}, config);
+  assert.deepEqual([labels.agent, labels.model, labels.terminal], ["grok", { id: "grok-4.7", effort: "high" }, "wezterm"]);
+  const picked = choose(prompt, { picks: { agent: "codex", effort: "Max", terminal: "Here" } }, config);
+  assert.deepEqual([picked.agent, picked.model, picked.terminal], ["codex", { id: "gpt-6-astra", effort: "max" }, null], "the tier follows the picked agent");
+  assert.equal(choose(prompt, { picks: { model: null, effort: null } }, config).model, null, "the agent's default model and effort");
+  assert.equal(choose(prompt, { agentLabel: "Agent", picks: { agent: "claude" } }, config).agent, "claude", "over --agent-label too");
+  const options = pickOptions(config);
+  assert.deepEqual(options.model, [null, "Strong"]);
+  assert.deepEqual(options.effort, [null, "High", "Max"]);
+  assert.ok(options.agent.includes("grok") && options.terminal.includes("WezTerm"));
+});
+
+test("the list in Linear's window changes a choice, then starts", async () => {
+  const { review } = await import("../integrations/linear/open-issue.mjs");
+  const config = { labels: { agent: "Agent", model: "Model" }, models: { Strong: { codex: "gpt-6-astra", claude: "opus" } } };
+  const prompt = "<label>Agent › Codex</label>\n<label>Model › Strong</label>";
+  // Each answer picks a row by its text, or leaves with Esc (null).
+  const run = async (answers, existing = null) => {
+    const shown = [];
+    const ask = async (title, items, text) => {
+      shown.push(items.map(text));
+      const want = answers.shift();
+      if (want === null) return null;
+      const item = items.find((i) => text(i).startsWith(want));
+      assert.ok(item !== undefined, `no row "${want}" in ${items.map(text).join(" | ")}`);
+      return { item };
+    };
+    return { result: await review({ id: "REE-1", existing, again: "ask", prompt, flags: {}, config, ask }), shown };
+  };
+  const { result, shown } = await run(["Agent", "claude", "Start"]);
+  assert.deepEqual(result, { again: "continue", picks: { agent: "claude" } });
+  assert.ok(shown[2].includes("Model: opus"), "the model follows the new agent");
+  assert.deepEqual((await run(["Model", "the agent's default", "Start"])).result.picks, { model: null });
+  const again = await run(["Workspace", "Run again", "Start"], { name: "ree-1" });
+  assert.equal(again.result.again, "new");
+  assert.equal((await run([null])).result, null, "Esc starts nothing");
 });

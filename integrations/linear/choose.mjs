@@ -13,7 +13,7 @@ export const CONFIG_PATH = join(homedir(), ".linear", "nook.json");
 
 /**
  * The config file, or {} when there is none. Shape:
- * { agent, terminal, orca, wezterm, labels: { agent, model, effort, terminal },
+ * { agent, terminal, open, closeLinearWindow, orca, wezterm, labels: { agent, model, effort, terminal },
  *   agents: { "<label name>": "<command>" }, terminals: { "<label name>": "<terminal>" },
  *   models: { "<label name>": "<id>" | { id, agent } | { "<agent>": "<id>" | { id, effort } } },
  *   efforts: { "<word>": "<effort>" | { "<agent>": "<effort>" } },
@@ -188,8 +188,10 @@ function defaultTerminal(name, terminals = {}) {
  * (`flags`) win over the config file; labels win over both defaults.
  * notes: why a label was not used, for the first lines in Linear's window.
  */
-export function choose(prompt, flags = {}, config = {}) {
-  const labels = { ...config.labels, ...(flags.agentLabel ? { agent: flags.agentLabel } : {}), ...(flags.terminalLabel ? { terminal: flags.terminalLabel } : {}) };
+export function choose(issuePrompt, flags = {}, issueConfig = {}) {
+  // Choices made in Linear's window win over the issue's labels.
+  const { prompt, config, picked } = withPicks(issuePrompt, issueConfig, flags.picks);
+  const labels = { ...config.labels, ...(flags.agentLabel && !picked.agent ? { agent: flags.agentLabel } : {}), ...(flags.terminalLabel && !picked.terminal ? { terminal: flags.terminalLabel } : {}) };
   const notes = [];
   const found = modelFromLabels(prompt, labels.model, config);
   const effortLabel = effortFromLabels(prompt, labels.effort, config.efforts);
@@ -223,5 +225,42 @@ export function choose(prompt, flags = {}, config = {}) {
     notes.push(`"agentArgs" in the config says no effort argument for ${agent}; it starts with its default effort`);
   // The agent's own arguments, for when it starts in a terminal rather than in Orca.
   const args = model ? agentModelArgs(agent, model, config.agentArgs) : [];
-  return { agent, model, args, terminal, orca: flags.orca ?? config.orca ?? "orca", wezterm: flags.wezterm ?? config.wezterm ?? "wezterm", notes };
+  const open = flags.open ?? config.open ?? "tab";
+  if (open !== "tab" && open !== "window") throw new Error(`"open" is "${open}"; use "tab" or "window"`);
+  // Linear's window closes once the agent runs elsewhere, unless the config keeps it.
+  const closeLinearWindow = config.closeLinearWindow !== false;
+  return { agent, model, args, terminal, orca: flags.orca ?? config.orca ?? "orca", wezterm: flags.wezterm ?? config.wezterm ?? "wezterm", open, closeLinearWindow, notes };
+}
+
+
+/** Label groups for choices made in Linear's window; no real label has them. */
+const PICKED = { agent: "nook:agent", model: "nook:model", effort: "nook:effort", terminal: "nook:terminal" };
+
+/**
+ * The prompt and config with choices from Linear's window in place of the
+ * issue's labels: each one becomes the only label of its own group. A model
+ * or effort of null is the agent's default.
+ * picks: { agent: "grok", model: "Strong" | null, effort: "High" | null, terminal: "WezTerm" }.
+ */
+export function withPicks(prompt, config = {}, picks = {}) {
+  const labels = { ...config.labels };
+  const picked = {};
+  let text = prompt;
+  for (const [key, value] of Object.entries(picks ?? {})) {
+    if (value === undefined || !(key in PICKED)) continue;
+    labels[key] = PICKED[key];
+    picked[key] = true;
+    if (value !== null) text += `\n<label>${PICKED[key]} › ${value}</label>`;
+  }
+  return { prompt: text, config: { ...config, labels }, picked };
+}
+
+/** What Linear's window offers for each choice, from the config and the built-in names. */
+export function pickOptions(config = {}) {
+  return {
+    agent: [...new Set([...Object.keys(config.agentArgs ?? {}), ...KNOWN_AGENTS])],
+    model: [null, ...Object.keys(config.models ?? {})],
+    effort: [null, ...(config.efforts ? Object.keys(config.efforts) : EFFORTS)],
+    terminal: ["Here", "Windows Terminal", "Warp", "WezTerm", "Orca"],
+  };
 }
