@@ -16,7 +16,8 @@ export const CONFIG_PATH = join(homedir(), ".linear", "nook.json");
  * { agent, terminal, orca, wezterm, labels: { agent, model, effort, terminal },
  *   agents: { "<label name>": "<command>" }, terminals: { "<label name>": "<terminal>" },
  *   models: { "<label name>": "<id>" | { id, agent } | { "<agent>": "<id>" | { id, effort } } },
- *   efforts: { "<word>": "<effort>" } }
+ *   efforts: { "<word>": "<effort>" | { "<agent>": "<effort>" } },
+ *   agentArgs: { "<agent>": { model: [...args with {model}], effort: [...args with {effort}] } } }
  */
 export function loadConfig(path = CONFIG_PATH, { required = false } = {}) {
   let text;
@@ -90,8 +91,23 @@ export function modelFromLabels(prompt, group, { models = {}, efforts = {} } = {
   else if (entry) found = { id: null, agent: null, tier: entry };
   else found = { id: name, agent: null, tier: null };
   let effort = null;
-  if (level) effort = lookup(efforts, level) ?? (EFFORTS.includes(level.toLowerCase()) ? level.toLowerCase() : undefined);
+  if (level) effort = effortValue(efforts, level);
   return { ...found, effort, label: show(label), level };
+}
+
+/**
+ * What `efforts` says for a word: an effort for every agent ("high"), or
+ * each agent's own ({ "codex": "xhigh", "claude": "max" }). A word not in
+ * `efforts` that is a known effort stands for itself; otherwise undefined.
+ */
+function effortValue(efforts = {}, word) {
+  return lookup(efforts, word) ?? (EFFORTS.includes(word.toLowerCase()) ? word.toLowerCase() : undefined);
+}
+
+/** One agent's effort from an effortValue: null when it has none there. */
+function effortFor(value, agent) {
+  if (value == null) return null;
+  return typeof value === "string" ? value : (lookup(value, agent) ?? null);
 }
 
 /** The effort a label of group `group` names, mapped through `efforts`: { effort, label, name } or null. */
@@ -99,8 +115,7 @@ export function effortFromLabels(prompt, group, efforts = {}) {
   if (!group) return null;
   const label = labelsFromPrompt(prompt).find((l) => l.group === group);
   if (!label) return null;
-  const effort = lookup(efforts, label.name) ?? (EFFORTS.includes(label.name.toLowerCase()) ? label.name.toLowerCase() : undefined);
-  return { effort, label: show(label), name: label.name };
+  return { effort: effortValue(efforts, label.name), label: show(label), name: label.name };
 }
 
 /** A tier's model for one agent: { id, effort } or null. */
@@ -110,12 +125,23 @@ function tierModel(tier, agent) {
   return typeof value === "string" ? { id: value, effort: null } : { id: value.id, effort: value.effort ?? null };
 }
 
-/** Each agent's own flags for a model and effort, when it starts in a terminal. */
-export function agentModelArgs(agent, { id, effort }) {
-  if (!id) return [];
-  if (agent === "codex") return ["-m", id, ...(effort ? ["-c", `model_reasoning_effort=${effort}`] : [])];
-  // Other agents take --model; the effort reaches them only through Orca.
-  return ["--model", id];
+/** How Codex takes a model and effort; other agents are described in "agentArgs" in the config. */
+const BUILT_IN_ARGS = { codex: { model: ["-m", "{model}"], effort: ["-c", "model_reasoning_effort={effort}"] } };
+
+/** An agent's arguments for its model and effort, as "agentArgs" in the config describes them. */
+function argsOf(agent, agentArgs = {}) {
+  return lookup(agentArgs, agent) ?? BUILT_IN_ARGS[agent] ?? { model: ["--model", "{model}"] };
+}
+
+/**
+ * Each agent's own arguments for a model and effort, when it starts in a
+ * terminal: "{model}" and "{effort}" in the templates are replaced. An agent
+ * with no effort template gets no effort.
+ */
+export function agentModelArgs(agent, { id, effort }, agentArgs = {}) {
+  const spec = argsOf(agent, agentArgs);
+  const fill = (template, key, value) => (template ?? []).map((arg) => arg.replaceAll(`{${key}}`, value));
+  return [...(id ? fill(spec.model, "model", id) : []), ...(effort ? fill(spec.effort, "effort", effort) : [])];
 }
 
 /** Terminal names a label can use, and what --terminal calls them. */
@@ -172,19 +198,30 @@ export function choose(prompt, flags = {}, config = {}) {
   // An issue with only a model label gets the agent that model belongs to.
   const agent = fromLabel ?? found?.agent ?? flags.agent ?? config.agent ?? "codex";
   let model = null;
+  let effortSource = null;
   if (found) {
     const fromTier = found.tier && tierModel(found.tier, agent);
-    if (found.level && !found.effort) notes.push(`${found.label}: "${found.level}" is not an effort; add it to "efforts" in the config (say "${found.level}": "high")`);
+    if (found.level && found.effort === undefined) notes.push(`${found.label}: "${found.level}" is not an effort; add it to "efforts" in the config (say "${found.level}": "high")`);
     if (found.agent && found.agent !== agent) notes.push(`${found.label} is a ${found.agent} model; ${agent} starts with its own default`);
     else if (found.tier && !fromTier) notes.push(`${found.label}: the config gives no ${agent} model for it; ${agent} starts with its own default`);
-    else if (fromTier) model = { id: fromTier.id, effort: found.effort ?? fromTier.effort };
-    else model = { id: found.id, effort: found.effort ?? null };
+    else if (fromTier) model = { id: fromTier.id, effort: effortFor(found.effort, agent) ?? fromTier.effort };
+    else model = { id: found.id, effort: effortFor(found.effort, agent) };
+    if (found.effort != null) effortSource = { value: found.effort, label: found.label };
   }
   // A label of the effort group wins over the model label's and the tier's effort.
-  if (model && effortLabel?.effort) model = { ...model, effort: effortLabel.effort };
-  else if (!model && effortLabel?.effort && !found) notes.push(`${effortLabel.label} needs a model label too: the effort is passed with a model`);
+  if (effortLabel?.effort != null) {
+    effortSource = { value: effortLabel.effort, label: effortLabel.label };
+    const effort = effortFor(effortLabel.effort, agent);
+    if (effort) model = { id: model?.id ?? null, effort };
+  }
+  if (effortSource && typeof effortSource.value === "object" && !effortFor(effortSource.value, agent))
+    notes.push(`${effortSource.label}: "efforts" gives no ${agent} value for it; ${agent} starts with its default effort`);
   const terminalLabel = terminalFromLabels(prompt, labels.terminal, config.terminals);
   const terminal = terminalLabel === undefined ? defaultTerminal(flags.terminal ?? config.terminal ?? null, config.terminals) : terminalLabel;
-  if (model?.effort && agent !== "codex" && terminal !== "orca") notes.push(`effort ${model.effort} is passed only to codex, or to any agent through Orca; ${agent} starts with its default effort`);
-  return { agent, model, terminal, orca: flags.orca ?? config.orca ?? "orca", wezterm: flags.wezterm ?? config.wezterm ?? "wezterm", notes };
+  if (model?.effort && terminal === "orca" && !model.id) notes.push(`Orca takes an effort only with a model; add a model label`);
+  if (model?.effort && terminal !== "orca" && !argsOf(agent, config.agentArgs).effort)
+    notes.push(`"agentArgs" in the config says no effort argument for ${agent}; it starts with its default effort`);
+  // The agent's own arguments, for when it starts in a terminal rather than in Orca.
+  const args = model ? agentModelArgs(agent, model, config.agentArgs) : [];
+  return { agent, model, args, terminal, orca: flags.orca ?? config.orca ?? "orca", wezterm: flags.wezterm ?? config.wezterm ?? "wezterm", notes };
 }
