@@ -64,9 +64,15 @@ function lookup(map = {}, name) {
 
 /**
  * The model a label of group `group` names, as "<model>" or "<model> ·
- * <effort>". The model is an alias from `models` (Luna -> gpt-6-luna, maybe
- * with its agent) or, when it has none, the label's text as the model id.
- * Returns { id, agent, effort, label } or null.
+ * <effort>". `<model>` is looked up in `models`, whose entries are:
+ *   "gpt-6-luna"                              the id, for any agent
+ *   { "id": "gpt-6-luna", "agent": "codex" }  the id of one agent's model
+ *   { "codex": "gpt-6-astra", "claude": "claude-opus-5-5" }
+ *                                             a tier: each agent's model for it
+ * A tier's model can be { "id", "effort" }; an effort in the label wins.
+ * A name not in `models` is taken as the model's id.
+ * Returns { id, agent, tier, effort, label, level } or null; for a tier,
+ * `tier` holds the agents' models and `id` is chosen later, by agent.
  */
 export function modelFromLabels(prompt, group, { models = {}, efforts = {} } = {}) {
   if (!group) return null;
@@ -74,10 +80,30 @@ export function modelFromLabels(prompt, group, { models = {}, efforts = {} } = {
   if (!label) return null;
   const [name, level] = label.name.split("·").map((part) => part.trim());
   const entry = lookup(models, name);
-  const { id, agent = null } = typeof entry === "string" ? { id: entry } : (entry ?? { id: name });
+  let found;
+  if (typeof entry === "string") found = { id: entry, agent: null, tier: null };
+  else if (entry && "id" in entry) found = { id: entry.id, agent: entry.agent ?? null, tier: null };
+  else if (entry) found = { id: null, agent: null, tier: entry };
+  else found = { id: name, agent: null, tier: null };
   let effort = null;
   if (level) effort = lookup(efforts, level) ?? (EFFORTS.includes(level.toLowerCase()) ? level.toLowerCase() : undefined);
-  return { id, agent, effort, label: show(label), level };
+  return { ...found, effort, label: show(label), level };
+}
+
+/** The effort a label of group `group` names, mapped through `efforts`: { effort, label, name } or null. */
+export function effortFromLabels(prompt, group, efforts = {}) {
+  if (!group) return null;
+  const label = labelsFromPrompt(prompt).find((l) => l.group === group);
+  if (!label) return null;
+  const effort = lookup(efforts, label.name) ?? (EFFORTS.includes(label.name.toLowerCase()) ? label.name.toLowerCase() : undefined);
+  return { effort, label: show(label), name: label.name };
+}
+
+/** A tier's model for one agent: { id, effort } or null. */
+function tierModel(tier, agent) {
+  const value = lookup(tier, agent);
+  if (!value) return null;
+  return typeof value === "string" ? { id: value, effort: null } : { id: value.id, effort: value.effort ?? null };
 }
 
 /** Each agent's own flags for a model and effort, when it starts in a terminal. */
@@ -117,17 +143,23 @@ export function choose(prompt, flags = {}, config = {}) {
   const labels = { ...config.labels, ...(flags.agentLabel ? { agent: flags.agentLabel } : {}), ...(flags.terminalLabel ? { terminal: flags.terminalLabel } : {}) };
   const notes = [];
   const found = modelFromLabels(prompt, labels.model, config);
+  const effortLabel = effortFromLabels(prompt, labels.effort, config.efforts);
+  if (effortLabel?.effort === undefined && effortLabel) notes.push(`${effortLabel.label}: "${effortLabel.name}" is not an effort; add it to "efforts" in the config (say "${effortLabel.name}": "high")`);
   const fromLabel = agentFromLabels(prompt, labels.agent);
   // An issue with only a model label gets the agent that model belongs to.
   const agent = fromLabel ?? found?.agent ?? flags.agent ?? config.agent ?? "codex";
   let model = null;
   if (found) {
+    const fromTier = found.tier && tierModel(found.tier, agent);
+    if (found.level && !found.effort) notes.push(`${found.label}: "${found.level}" is not an effort; add it to "efforts" in the config (say "${found.level}": "high")`);
     if (found.agent && found.agent !== agent) notes.push(`${found.label} is a ${found.agent} model; ${agent} starts with its own default`);
-    else {
-      if (found.level && !found.effort) notes.push(`${found.label}: "${found.level}" is not an effort; add it to "efforts" in the config (say "${found.level}": "high")`);
-      model = { id: found.id, effort: found.effort ?? null };
-    }
+    else if (found.tier && !fromTier) notes.push(`${found.label}: the config gives no ${agent} model for it; ${agent} starts with its own default`);
+    else if (fromTier) model = { id: fromTier.id, effort: found.effort ?? fromTier.effort };
+    else model = { id: found.id, effort: found.effort ?? null };
   }
+  // A label of the effort group wins over the model label's and the tier's effort.
+  if (model && effortLabel?.effort) model = { ...model, effort: effortLabel.effort };
+  else if (!model && effortLabel?.effort && !found) notes.push(`${effortLabel.label} needs a model label too: the effort is passed with a model`);
   const terminalLabel = terminalFromLabels(prompt, labels.terminal);
   const terminal = terminalLabel === undefined ? (flags.terminal ?? config.terminal ?? null) : terminalLabel;
   if (model?.effort && agent !== "codex" && terminal !== "orca") notes.push(`effort ${model.effort} is passed only to codex, or to any agent through Orca; ${agent} starts with its default effort`);

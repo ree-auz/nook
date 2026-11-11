@@ -168,3 +168,32 @@ test("a label can pick the terminal, Orca included", async () => {
   assert.equal(terminalFromLabels("<label>Chore</label>", "Terminal"), undefined, "no label: --terminal decides");
   assert.throws(() => terminalFromLabels("<label>Terminal › Kitty</label>", "Terminal"), /not a terminal/);
 });
+
+test("a model tier gives each agent its own model", async () => {
+  const { choose } = await import("../integrations/linear/choose.mjs");
+  const config = {
+    labels: { agent: "Agent", model: "Model" },
+    models: {
+      Strong: { codex: { id: "gpt-6-astra", effort: "medium" }, claude: "claude-opus-5-5" },
+      Fast: { codex: "gpt-6-luna" },
+    },
+  };
+  const pick = (labels, flags = {}) => choose(labels.map((l) => `<label>${l}</label>`).join("\n"), flags, config);
+  assert.deepEqual(pick(["Model › Strong", "Agent › Codex"]).model, { id: "gpt-6-astra", effort: "medium" }, "the tier's effort");
+  assert.deepEqual(pick(["Model › Strong · high", "Agent › Codex"]).model, { id: "gpt-6-astra", effort: "high" }, "the label's effort wins");
+  assert.deepEqual(pick(["Model › Strong", "Agent › Claude"]).model, { id: "claude-opus-5-5", effort: null });
+  assert.equal(pick(["Model › Strong"], { agent: "codex" }).model.id, "gpt-6-astra", "the default agent's model");
+  const missing = pick(["Model › Fast", "Agent › Grok"]);
+  assert.equal(missing.model, null);
+  assert.match(missing.notes[0], /Model › Fast: the config gives no grok model for it; grok starts with its own default/);
+});
+
+test("an effort label group sets the effort", async () => {
+  const { choose } = await import("../integrations/linear/choose.mjs");
+  const config = { labels: { agent: "Agent", model: "Model", effort: "Effort" }, models: { Strong: { codex: { id: "gpt-6-astra", effort: "medium" } } }, efforts: { 高: "high" } };
+  const pick = (labels) => choose(labels.map((l) => `<label>${l}</label>`).join("\n"), {}, config);
+  assert.deepEqual(pick(["Model › Strong", "Effort › 高"]).model, { id: "gpt-6-astra", effort: "high" }, "wins over the tier's effort");
+  assert.deepEqual(pick(["Model › Strong", "Effort › low"]).model, { id: "gpt-6-astra", effort: "low" });
+  assert.match(pick(["Model › Strong", "Effort › 猛"]).notes[0], /Effort › 猛: "猛" is not an effort/);
+  assert.match(pick(["Effort › high"]).notes[0], /needs a model label too/);
+});

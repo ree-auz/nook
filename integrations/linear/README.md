@@ -64,10 +64,10 @@ Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only.
    {
      "agent": "codex",
      "terminal": "orca",
-     "labels": { "agent": "Agent", "model": "Model", "terminal": "Terminal" },
+     "labels": { "agent": "Agent", "model": "Model", "effort": "Effort", "terminal": "Terminal" },
      "models": {
-       "Luna": { "id": "gpt-6-luna", "agent": "codex" },
-       "Opus": { "id": "claude-opus-5-5", "agent": "claude" }
+       "Light": { "codex": "gpt-6-luna", "claude": "claude-haiku-5-5" },
+       "Strong": { "codex": "gpt-6-astra", "claude": "claude-opus-5-5" }
      }
    }
    ```
@@ -82,17 +82,28 @@ Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only.
      single label named like a known agent (Codex, Claude, Grok, Gemini, …)
      works too.
    - **Model**: a label in the `model` group reads `<model>` or
-     `<model> · <effort>`, say `Model › Luna · high`. `<model>` is a name from
-     `models`, or, when it is not there, the model's id as the agent takes it
-     (`Model › gpt-6.1-sol · low` needs no config). A `models` entry is the id
-     alone (`"Luna": "gpt-6-luna"`) or `{ "id", "agent" }`; with `agent`, an
-     issue with only that model label starts that agent, and an issue labelled
-     for another agent starts it with its own default model.
-   - **Effort**: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. For other
-     words in your labels, map them: `"efforts": { "高": "high" }`. Codex gets
-     `-m <id> -c model_reasoning_effort=<effort>`; other agents get
-     `--model <id>`, without the effort. Orca gets `--model <id> --effort
-     <effort>` for any agent.
+     `<model> · <effort>`, say `Model › Strong · high`. `<model>` is a name
+     from `models`, or, when it is not there, the model's id as the agent takes
+     it (`Model › gpt-6.1-sol · low` needs no config). A `models` entry is one
+     of:
+     - a **tier**, the shortest to label with: each agent's model for it,
+       `"Strong": { "codex": "gpt-6-astra", "claude": "claude-opus-5-5" }`.
+       The issue's agent picks its model from the tier; an agent the tier does
+       not list starts with its own default. An agent's model can carry its
+       effort, `"codex": { "id": "gpt-6-astra", "effort": "medium" }`, which an
+       effort in the label overrides.
+     - the id alone, for any agent: `"Luna": "gpt-6-luna"`.
+     - one agent's model: `"Luna": { "id": "gpt-6-luna", "agent": "codex" }`.
+       An issue with only that model label starts that agent, and an issue
+       labelled for another agent starts it with its own default model.
+   - **Effort**: a label in the `effort` group, say `Effort › high`, sets
+     the effort; it wins over an effort in the model label (`Strong · high`)
+     and over the tier's. The words built in are `minimal`, `low`, `medium`,
+     `high`, `xhigh` and `max`. For other words in your labels, map them:
+     `"efforts": { "高": "high" }`. The effort travels with a model, so it needs
+     a model label too. Codex gets `-m <id> -c model_reasoning_effort=<effort>`;
+     other agents get `--model <id>`, without the effort. Orca gets
+     `--model <id> --effort <effort>` for any agent.
    - **Terminal**: a label in the `terminal` group named `Orca`, `Warp`,
      `Windows Terminal` or `Here` (the window Linear opened) wins over the
      default. A single label with one of those names works without the group.
