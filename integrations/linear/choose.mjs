@@ -13,8 +13,10 @@ export const CONFIG_PATH = join(homedir(), ".linear", "nook.json");
 
 /**
  * The config file, or {} when there is none. Shape:
- * { agent, terminal, orca, labels: { agent, model, terminal },
- *   models: { "<label name>": "<id>" | { id, agent } }, efforts: { "<word>": "<effort>" } }
+ * { agent, terminal, orca, labels: { agent, model, effort, terminal },
+ *   agents: { "<label name>": "<command>" }, terminals: { "<label name>": "<terminal>" },
+ *   models: { "<label name>": "<id>" | { id, agent } | { "<agent>": "<id>" | { id, effort } } },
+ *   efforts: { "<word>": "<effort>" } }
  */
 export function loadConfig(path = CONFIG_PATH, { required = false } = {}) {
   let text;
@@ -45,14 +47,16 @@ const show = (label) => (label.group ? `${label.group} › ${label.name}` : labe
 /**
  * The agent an issue's labels name: the label in group `group` ("Agent ›
  * Claude" gets `claude`), else the one label named like a known agent
- * (Codex, Claude, Grok, ...), with or without a group.
+ * (Codex, Claude, Grok, ...), with or without a group. `agents` maps other
+ * label names to the agent's command: { "克劳德": "claude" }.
  */
-export function agentFromLabels(prompt, group, known = KNOWN_AGENTS) {
+export function agentFromLabels(prompt, group, known = KNOWN_AGENTS, agents = {}) {
   const labels = labelsFromPrompt(prompt);
+  const command = (label) => lookup(agents, label.name) ?? slug(label.name);
   const inGroup = group && labels.find((label) => label.group === group);
-  if (inGroup) return slug(inGroup.name);
-  const named = labels.filter((label) => known.includes(slug(label.name)));
-  return named.length === 1 ? slug(named[0].name) : null;
+  if (inGroup) return command(inGroup);
+  const named = labels.filter((label) => lookup(agents, label.name) || known.includes(slug(label.name)));
+  return named.length === 1 ? command(named[0]) : null;
 }
 
 const EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"];
@@ -115,23 +119,42 @@ export function agentModelArgs(agent, { id, effort }) {
 }
 
 /** Terminal names a label can use, and what --terminal calls them. */
-const TERMINAL_NAMES = { wt: "wt", "windows-terminal": "wt", warp: "warp", orca: "orca", here: null, linear: null };
+export const TERMINAL_NAMES = { wt: "wt", "windows-terminal": "wt", warp: "warp", orca: "orca", here: null, linear: null };
 
 /**
  * Where the agent runs, from a label: the label in group `group`, else the one
  * label named like a terminal (Orca, Warp, Windows Terminal). "Here" or
- * "Linear" keeps the window Linear opened. Returns undefined when no label says.
+ * "Linear" keeps the window Linear opened. `terminals` maps other label names
+ * to one of those: { "终端窗口": "wt" }. Returns undefined when no label says.
  */
-export function terminalFromLabels(prompt, group) {
+export function terminalFromLabels(prompt, group, terminals = {}) {
   const labels = labelsFromPrompt(prompt);
+  const known = (label) => {
+    const name = slug(lookup(terminals, label.name) ?? label.name);
+    return name in TERMINAL_NAMES ? { found: true, terminal: TERMINAL_NAMES[name] } : { found: false };
+  };
   const inGroup = group && labels.find((label) => label.group === group);
   if (inGroup) {
-    const name = slug(inGroup.name);
-    if (!(name in TERMINAL_NAMES)) throw new Error(`Label ${show(inGroup)} is not a terminal; use Orca, Warp, Windows Terminal or Here`);
-    return TERMINAL_NAMES[name];
+    const result = known(inGroup);
+    if (!result.found) {
+      const mapped = lookup(terminals, inGroup.name);
+      throw new Error(
+        mapped
+          ? `"terminals" maps ${show(inGroup)} to "${mapped}", which is not a terminal; use orca, warp, wt or here`
+          : `Label ${show(inGroup)} is not a terminal; use Orca, Warp, Windows Terminal or Here, or map it in "terminals" in the config`,
+      );
+    }
+    return result.terminal;
   }
-  const named = labels.filter((label) => TERMINAL_NAMES[slug(label.name)]);
-  return named.length === 1 ? TERMINAL_NAMES[slug(named[0].name)] : undefined;
+  const named = labels.filter((label) => known(label).found && known(label).terminal);
+  return named.length === 1 ? known(named[0]).terminal : undefined;
+}
+
+/** The default terminal, written like a label ("Windows Terminal", "Here") or as --terminal takes it. */
+function defaultTerminal(name, terminals = {}) {
+  if (!name) return null;
+  const key = slug(lookup(terminals, name) ?? name);
+  return key in TERMINAL_NAMES ? TERMINAL_NAMES[key] : name;
 }
 
 /**
@@ -145,7 +168,7 @@ export function choose(prompt, flags = {}, config = {}) {
   const found = modelFromLabels(prompt, labels.model, config);
   const effortLabel = effortFromLabels(prompt, labels.effort, config.efforts);
   if (effortLabel?.effort === undefined && effortLabel) notes.push(`${effortLabel.label}: "${effortLabel.name}" is not an effort; add it to "efforts" in the config (say "${effortLabel.name}": "high")`);
-  const fromLabel = agentFromLabels(prompt, labels.agent);
+  const fromLabel = agentFromLabels(prompt, labels.agent, KNOWN_AGENTS, config.agents);
   // An issue with only a model label gets the agent that model belongs to.
   const agent = fromLabel ?? found?.agent ?? flags.agent ?? config.agent ?? "codex";
   let model = null;
@@ -160,8 +183,8 @@ export function choose(prompt, flags = {}, config = {}) {
   // A label of the effort group wins over the model label's and the tier's effort.
   if (model && effortLabel?.effort) model = { ...model, effort: effortLabel.effort };
   else if (!model && effortLabel?.effort && !found) notes.push(`${effortLabel.label} needs a model label too: the effort is passed with a model`);
-  const terminalLabel = terminalFromLabels(prompt, labels.terminal);
-  const terminal = terminalLabel === undefined ? (flags.terminal ?? config.terminal ?? null) : terminalLabel;
+  const terminalLabel = terminalFromLabels(prompt, labels.terminal, config.terminals);
+  const terminal = terminalLabel === undefined ? defaultTerminal(flags.terminal ?? config.terminal ?? null, config.terminals) : terminalLabel;
   if (model?.effort && agent !== "codex" && terminal !== "orca") notes.push(`effort ${model.effort} is passed only to codex, or to any agent through Orca; ${agent} starts with its default effort`);
   return { agent, model, terminal, orca: flags.orca ?? config.orca ?? "orca", notes };
 }
