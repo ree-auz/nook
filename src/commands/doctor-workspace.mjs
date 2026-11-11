@@ -52,15 +52,15 @@ export async function doctorWorkspace(ctx, { name: input, repo: repoFlag, prs = 
     bad(`git cannot read ${ws.path}${tree.prunable ? ` (${tree.prunable})` : ""}; often what a removal that stopped halfway leaves`);
     next.push(`nk rm ${item.name} repairs the link first, then backs up and removes it; to keep the workspace: git worktree repair ${ws.path}`);
   } else ok(`folder ${ws.path}`);
-  if (!item.main) (item.managed ? ok : warn)(item.managed ? "made by nk" : "not made by nk (another tool, or git worktree add): nk clean keeps it when it holds files git ignores");
+  if (!item.main) (item.managed ? ok : warn)(item.managed ? "made by nk" : "not made by nk (another tool, or git worktree add): nk clean keeps it when it holds ignored data");
   if (ws.locked) {
-    warn("locked: nk rm and nk clean leave it");
+    warn("locked: nk rm and nk clean leave a locked worktree");
     next.push(`git worktree unlock ${ws.path} allows removing it`);
   }
 
   // Work that a removal must not lose.
   if (readable) {
-    if (item.changes === null) warn("changes: git could not count them");
+    if (item.changes === null) warn("changes: unknown, git could not count them");
     else if (item.changes) warn(`changes: ${plural(item.changes, "uncommitted change")} (nk rm backs them up; nk clean keeps the workspace)`);
     else ok("changes: none");
   }
@@ -68,7 +68,8 @@ export async function doctorWorkspace(ctx, { name: input, repo: repoFlag, prs = 
     ok(`branch ${item.branch}${item.commits ? `, ${item.commits.ahead} ahead of ${item.base} and ${item.commits.behind} behind` : ""}`);
     const unpushed = unpushedCommits(repo.path, item.branch, item.base);
     if (unpushed.length) warn(`${plural(unpushed.length, "commit")} not pushed (nk rm backs them up)`);
-    for (const problem of problems) warn(`pull requests unknown: ${problem}; only merges git can see are counted`);
+    for (const problem of problems) warn(`PR status unknown: ${problem}; only merges git can see count`);
+    if (problems.length) next.push("nk doctor checks gh");
     if (item.pr) ok(`PR #${item.pr.number} ${item.pr.state}${item.pr.ci ? `, CI ${item.pr.ci}` : ""}`);
   } else if (!item.main && present && tree) warn("no branch (detached HEAD): nk clean leaves it");
 
@@ -91,11 +92,11 @@ export async function doctorWorkspace(ctx, { name: input, repo: repoFlag, prs = 
     else if (compose.unavailable) warn(`Compose: could not check (${compose.unavailable}); nk rm removes no containers it cannot see`);
     else if (!compose.projects.length && !compose.shared.length) ok("Compose: no project started here");
     for (const project of compose.projects) ok(`${describeProject(project)}; it belongs to this workspace alone and is removed with it`);
-    for (const shared of compose.shared) warn(`Compose project ${shared} also has containers outside this workspace; it is kept`);
+    for (const shared of compose.shared) warn(`Compose project ${shared} is shared: it also has containers outside this workspace, so it is kept`);
 
     const ignored = ignoredData(ws.path, join(ctx.paths.shared, item.repoName));
-    if (ignored.length) warn(`deleted with the workspace, not backed up (git ignores them): ${shortList(ignored, 8)}`);
-    else ok("no files git ignores besides shared copies and what the project rebuilds");
+    if (ignored.length) warn(`ignored data deleted with the workspace, not backed up: ${shortList(ignored, 8)}`);
+    else ok("ignored data: none besides shared copies and what the project rebuilds");
     const removeHook = findHook(repo.path, "remove");
     if (removeHook) ok(`remove hook .nook/${removeHook.name} runs first (see nk hooks)`);
   }
@@ -104,7 +105,7 @@ export async function doctorWorkspace(ctx, { name: input, repo: repoFlag, prs = 
   if (!item.main) {
     const verdict = cleanVerdict(ctx, item, now);
     if (!verdict) ctx.print(`nk clean leaves it: ${!item.branch ? "it has no branch" : item.pr ? `PR #${item.pr.number} is ${item.pr.state}` : "its branch is not merged, or it is less than a day old with no pull request"}`);
-    else if (verdict.keep) ctx.print(`nk clean keeps it: ${verdict.keep}`);
+    else if (verdict.keep) ctx.print(`nk clean keeps it, ${verdict.keep}`);
     else ctx.print(`nk clean removes it: ${verdict.remove}`);
   }
   for (const step of next) ctx.print(`Next: ${step}`);

@@ -12,6 +12,7 @@ import { resolveRepo } from "../context.mjs";
 import { collect } from "./ls.mjs";
 import { deleteFolder, deleteWorkspace, ignoredData, unknownFile } from "./rm.mjs";
 import { dockerCli, findComposeProjects, removeComposeProject } from "../compose.mjs";
+import { hint } from "../ui.mjs";
 import { approveHooks } from "./workspace.mjs";
 import { findHook } from "../hooks.mjs";
 
@@ -30,7 +31,7 @@ export function mergedReason(item, now = Date.now()) {
   if (pr?.state === "merged") {
     const tip = branchTip(repo.path, branch);
     if (!tip || (pr.head && contains(repo.path, pr.head, tip))) return { ok: `PR #${pr.number} merged` };
-    return { skip: `has commits that are not in PR #${pr.number}` };
+    return { skip: hint("not merged", `the branch has commits that are not in PR #${pr.number}`, `push them to a new PR, or nk rm ${item.name} (backs them up)`) };
   }
   if (pr) return null;
   const age = now - (ws.created ? Date.parse(ws.created) : createdAt(ws.path));
@@ -49,18 +50,18 @@ export function cleanVerdict(ctx, item, now = Date.now()) {
   if (item.main || !item.branch) return null;
   const reason = mergedReason(item, now);
   if (!reason) return null;
-  if (item.ws.locked) return { keep: "locked (git worktree unlock to allow)" };
+  if (item.ws.locked) return { keep: hint("locked", "nk clean and nk rm leave a locked worktree", `git worktree unlock ${item.ws.path}`) };
   if (reason.skip) return { keep: reason.skip };
-  if (isInside(ctx.cwd, item.ws.path)) return { keep: "you are inside it" };
-  if (item.changes) return { keep: plural(item.changes, "uncommitted change") };
+  if (isInside(ctx.cwd, item.ws.path)) return { keep: hint("in use", "you are inside it", `cd ${item.repo.path}, then nk clean`) };
+  if (item.changes) return { keep: hint("changed", plural(item.changes, "uncommitted change"), `commit them, or nk rm ${item.name} (backs them up)`) };
   // A folder git cannot read may hold changes nobody can count; unknown is not clean.
   if (item.changes === null && exists(item.ws.path))
-    return { keep: `git cannot read the folder, so changes in it are unknown (nk rm ${item.name} repairs it first, or says what to do)` };
+    return { keep: hint("unknown", "git cannot read the folder, so nobody can count changes in it", `nk rm ${item.name} (repairs it first, or says what to do)`) };
   // Files git ignores (a local database, a test report) are not backed up. In a workspace Nook made
   // they are development data that goes with it. A worktree made elsewhere is left to nk rm, which lists them.
   const ignored = item.changes === null ? [] : ignoredData(item.ws.path, join(ctx.paths.shared, item.repoName));
   if (ignored.length && !item.managed)
-    return { keep: `not made by nk, and files git ignores would be lost: ${shortList(ignored, 3)} (nk rm ${item.name} to remove anyway)` };
+    return { keep: hint("not made by nk", `its ignored data would be lost: ${shortList(ignored, 3)}`, `nk rm ${item.name} to remove anyway`) };
   return { remove: reason.ok, ignored };
 }
 
@@ -100,7 +101,7 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
     if (!fetched.ok) ctx.warn(`Could not fetch origin/${repo.default_branch} for ${name}; using what is local`);
   }
   const { items, problems } = await collect(ctx, { repo: name, prs });
-  for (const problem of problems) ctx.warn(`Only checks merges in git: ${problem}`);
+  for (const problem of problems) ctx.warn(hint("PR status unknown", `${problem}; only merges git can see count`, "nk doctor checks gh"));
 
   const remove = [];
   const skipped = [];
@@ -116,22 +117,24 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
     const verdict = cleanVerdict(ctx, item, now);
     if (!verdict) continue;
     const label = `${item.name} (${item.repoName})`;
-    if (verdict.keep) skipped.push(`${label}: ${verdict.keep}`);
+    if (verdict.keep) skipped.push({ label, text: verdict.keep });
     else remove.push({ item, label, reason: verdict.remove, ignored: verdict.ignored, running: item.changes === null ? [] : programsIn(item.ws.path) });
   }
 
   const leftovers = [];
   for (const { path, unknown } of leftoverFolders(ctx, name, repo)) {
     // Being in the workspaces folder does not make a folder nk's to delete.
-    if (unknown) skipped.push(`${path}: not a workspace, and it holds files nk does not know (${unknown}); delete it yourself when nothing in it is needed`);
-    else if (isInside(ctx.cwd, path)) skipped.push(`${path}: you are inside it`);
-    else if (programsIn(path)?.length) skipped.push(`${path}: programs are running in it`);
+    if (unknown) skipped.push({ label: path, text: hint("unknown folder", `not a workspace, and it holds files nk does not know (${unknown})`, "delete it yourself when nothing in it is needed") });
+    else if (isInside(ctx.cwd, path)) skipped.push({ label: path, text: hint("in use", "you are inside it", `cd ${repo.path}, then nk clean`) });
+    else if (programsIn(path)?.length) skipped.push({ label: path, text: hint("in use", "programs are running in it", "close them, then nk clean") });
     else leftovers.push(path);
   }
 
   if (skipped.length) {
     ctx.warn(`Kept ${skipped.length}:`);
-    for (const text of skipped) ctx.item(text);
+    // One line each, as the list of what goes: name, then state, reason and next command.
+    const width = Math.max(...skipped.map((entry) => entry.label.length));
+    for (const { label, text } of skipped) ctx.item(`${label.padEnd(width)}  ${text}`);
   }
   if (!remove.length && !leftovers.length) {
     ctx.info("Nothing to clean");
@@ -144,7 +147,7 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
   }
   const withData = remove.filter((entry) => entry.ignored.length);
   if (withData.length) {
-    ctx.warn("Deleted with them, not backed up (development files git ignores):");
+    ctx.warn("Ignored data deleted with them, not backed up:");
     for (const entry of withData) ctx.item(`${entry.item.name}: ${shortList(entry.ignored, 5)}`);
   }
   if (leftovers.length) {
@@ -171,7 +174,7 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
       const what = count === 1 ? "it" : `these ${count}`;
       ok = await prompter.confirm(running.length ? `Stop the programs and remove ${what}?` : `Remove ${what}?`, false);
     } catch {
-      throw new NookError("Confirmation needs a terminal; pass -y to remove without asking");
+      throw new NookError("Confirmation needs a terminal\nNext: nk clean -n to look, nk clean -y to remove without asking");
     }
     if (!ok) throw new NookError("Nothing was removed");
   }
@@ -206,6 +209,6 @@ export async function cleanWorkspaces(ctx, { repo: repoFlag, dryRun = false, yes
       ctx.warn(`${path} was not deleted: ${error.message.split("\n").join("; ")}`);
     }
   }
-  if (failed) throw new NookError(`${failed} of ${remove.length + leftovers.length} not removed; see the messages above`);
+  if (failed) throw new NookError(`${failed} of ${remove.length + leftovers.length} not removed; the messages above say why\nNext: fix what they name, then nk clean again`);
   return 0;
 }

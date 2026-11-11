@@ -77,7 +77,7 @@ test("init -> -b -> open -> rm", async (t) => {
 
   r = run(["rm", "smoke", "-y"], ws);
   assert.equal(r.status, 1);
-  assert.match(r.err, /You are inside/);
+  assert.match(r.err, /is in use: you are inside [^\n]*\n[^\n]*Next: cd /);
 
   r = run(["rm", "smoke", "-n"]);
   assert.equal(r.status, 0, r.all);
@@ -232,7 +232,7 @@ test("an old branch without .nook still gets the hooks; a branch with / keeps it
   write(join(home, "workspace", "demo", "half-removed"), { "left.txt": "x\n" });
   const checked = run(["doctor"]);
   assert.equal(checked.status, 0, "a leftover folder is a warning, not a problem");
-  assert.match(checked.out, /half-removed is not a workspace, and it holds files nk does not know \(left\.txt\); nk clean leaves it/);
+  assert.match(checked.out, /half-removed unknown folder: not a workspace, and it holds files nk does not know \(left\.txt\); nk clean leaves it/);
   assert.match(checked.out, /No problems found, \d+ warning/);
 
   const removed = run(["rm", "feat-login", "-y"]);
@@ -353,7 +353,7 @@ test("rm removes several workspaces after one check of all of them", (t) => {
   write(join(home, "workspace", "demo", "one"), { "agent.txt": "notes", "node_modules/x/index.js": "" });
   r = run(["rm", "one", "two", "-y"]);
   assert.equal(r.status, 0, r.all);
-  assert.match(r.err, /Deleted with the workspace, not backed up \(git ignores them\): [^\n]*agent\.txt/);
+  assert.match(r.err, /Ignored data deleted with the workspace, not backed up: [^\n]*agent\.txt/);
   assert.doesNotMatch(r.err, /ignores them\): [^\n]*(\.env|node_modules)/, "a shared copy and a rebuilt folder are not worth a warning");
   assert.ok(!existsSync(join(home, "workspace", "demo", "one")));
   assert.ok(!existsSync(join(home, "workspace", "demo", "two")));

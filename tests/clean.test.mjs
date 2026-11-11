@@ -82,8 +82,8 @@ test("clean removes merged workspaces and keeps the rest", async (t) => {
   let text = lines.join("");
   assert.match(text, /squashed \(demo\)\s+PR #1 merged/);
   assert.match(text, /old \(demo\)\s+merged into origin\/main/);
-  assert.match(text, /extra \(demo\): has commits that are not in PR #2/);
-  assert.match(text, /dirty \(demo\): 1 uncommitted change/);
+  assert.match(text, /extra \(demo\)  not merged: the branch has commits that are not in PR #2\. Next: push them to a new PR, or nk rm extra/);
+  assert.match(text, /dirty \(demo\)  changed: 1 uncommitted change\. Next: commit them, or nk rm dirty/);
   assert.doesNotMatch(text, /open \(demo\)|fresh \(demo\)/);
   assert.ok(existsSync(ws("squashed")), "dry run removes nothing");
 
@@ -143,10 +143,10 @@ test("clean deletes folders a removal left behind, and nothing else", async (t) 
   write(ws("my-notes"), { "docs/todo.md": "important\n", "node_modules/pkg/index.js": "x\n" });
   lines.length = 0;
   assert.equal(await cleanWorkspaces(ctx(), { yes: true, prs: lookup, docker: noDocker }), 0);
-  assert.match(lines.join(""), /my-notes: not a workspace, and it holds files nk does not know \(docs\/todo\.md\)/);
+  assert.match(lines.join(""), /my-notes  unknown folder: not a workspace, and it holds files nk does not know \(docs\/todo\.md\)\. Next: delete it yourself/);
   assert.doesNotMatch(lines.join(""), /Left from earlier removals/);
   assert.ok(existsSync(join(ws("my-notes"), "docs", "todo.md")));
-  assert.match(run(["doctor"]).out, /my-notes is not a workspace, and it holds files nk does not know \(docs\/todo\.md\); nk clean leaves it/);
+  assert.match(run(["doctor"]).out, /my-notes unknown folder: not a workspace, and it holds files nk does not know \(docs\/todo\.md\); nk clean leaves it\. Next: delete it yourself/);
 });
 
 /** A merged PR for each workspace, at its current HEAD. */
@@ -169,10 +169,10 @@ test("clean removes a merged workspace nk made together with the files git ignor
 
   assert.equal(await cleanWorkspaces(ctx(), { dryRun: true, prs: lookup }), 0);
   let text = lines.join("");
-  assert.match(text, /Deleted with them, not backed up \(development files git ignores\):/);
+  assert.match(text, /Ignored data deleted with them, not backed up:/);
   assert.match(text, /generated: apps\/web\/next-env\.d\.ts/);
   assert.match(text, /data: data\/, local\.db, next-env\.d\.ts, playwright-report\//);
-  assert.match(text, /source \(demo\): 1 uncommitted change/);
+  assert.match(text, /source \(demo\)  changed: 1 uncommitted change/);
   for (const name of ["generated", "data", "source"]) assert.ok(existsSync(ws(name)), "dry run removes nothing");
 
   lines.length = 0;
@@ -197,7 +197,7 @@ test("clean keeps a merged worktree nk did not make when ignored files would be 
   write(tree("with-data"), { "local.db": "rows\n" });
   const prs = mergedPrs(tree, ["with-data", "plain"]);
   assert.equal(await cleanWorkspaces(ctx(), { yes: true, prs: async () => ({ prs }) }), 0);
-  assert.match(lines.join(""), /with-data \(demo\): not made by nk, and files git ignores would be lost: local\.db \(nk rm with-data to remove anyway\)/);
+  assert.match(lines.join(""), /with-data \(demo\)  not made by nk: its ignored data would be lost: local\.db\. Next: nk rm with-data to remove anyway/);
   assert.ok(existsSync(join(tree("with-data"), "local.db")));
   assert.ok(!existsSync(tree("plain")), "a merged worktree with nothing to lose is removed as before");
 });
@@ -213,7 +213,7 @@ test("clean keeps a workspace whose folder git cannot read", async (t) => {
 
   assert.equal(await cleanWorkspaces(ctx(), { yes: true, prs: lookup, now }), 0);
   const text = lines.join("");
-  assert.match(text, /broken \(demo\): git cannot read the folder, so changes in it are unknown/);
+  assert.match(text, /broken \(demo\)  unknown: git cannot read the folder, so nobody can count changes in it\. Next: nk rm broken/);
   assert.ok(existsSync(join(ws("broken"), "wip.txt")), "the work is still there");
   assert.ok(!existsSync(ws("fine")), "the other merged workspace is still removed");
 });
@@ -226,10 +226,10 @@ test("rm repairs a workspace git cannot read, then backs up and removes it", (t)
     write(ws(name), { "wip.txt": `${name} work\n` });
     rmSync(join(ws(name), ".git"));
   }
-  assert.match(run(["ls"]).out, /broken\s+demo\s+\d+-\d+\s+unreadable/);
+  assert.match(run(["ls"]).out, /broken\s+demo\s+\d+-\d+\s+unknown/);
   const checked = run(["doctor"]);
   assert.equal(checked.status, 1);
-  assert.match(checked.out, /workspace broken: git cannot read [^\n]*gitdir file points to non-existent location[^\n]*nk rm broken repairs it/);
+  assert.match(checked.out, /workspace broken prunable: git cannot read [^\n]*gitdir file points to non-existent location[^\n]*Next: nk rm broken repairs it/);
 
   let r = run(["rm", "broken", "-n"]);
   assert.equal(r.status, 0, r.all);
@@ -257,10 +257,10 @@ test("rm stops at a folder git has no record of", (t) => {
 
   const r = run(["rm", "orphan", "-y"]);
   assert.equal(r.status, 1);
-  assert.match(r.err, /is no longer a git worktree: git has no record of it/);
-  assert.match(r.err, /delete the folder, then run nk rm orphan again/);
+  assert.match(r.err, /orphan is unknown: [^\n]* is no longer a git worktree, so nk cannot tell/);
+  assert.match(r.err, /Next: look inside; when nothing in it is needed, delete the folder, then nk rm orphan drops its record/);
   assert.ok(existsSync(join(ws("orphan"), "wip.txt")), "nothing was deleted");
-  assert.match(run(["doctor"]).out, /workspace orphan: [^\n]*is no longer a git worktree/);
+  assert.match(run(["doctor"]).out, /workspace orphan unknown: [^\n]*is no longer a git worktree/);
 
   // Once the person has deleted the folder, rm drops the record and the branch.
   rmSync(ws("orphan"), { recursive: true });
@@ -296,12 +296,12 @@ test("doctor --workspace says what a removal touches and what clean would do", a
   assert.match(r.text, /changes: none/);
   assert.match(r.text, /PR #1 merged/);
   assert.match(r.text, /programs: none running in it/);
-  assert.match(r.text, /deleted with the workspace, not backed up \(git ignores them\): local\.db/);
+  assert.match(r.text, /ignored data deleted with the workspace, not backed up: local\.db/);
   assert.match(r.text, /nk clean removes it: PR #1 merged/);
 
   r = await check("dirty");
   assert.match(r.text, /changes: 1 uncommitted change/);
-  assert.match(r.text, /nk clean keeps it: 1 uncommitted change/);
+  assert.match(r.text, /nk clean keeps it, changed: 1 uncommitted change/);
 
   r = await check("open");
   assert.match(r.text, /PR #7 open, CI running/);
@@ -314,7 +314,7 @@ test("doctor --workspace says what a removal touches and what clean would do", a
   };
   r = await check("merged", { docker });
   assert.match(r.text, /Compose project merged: 1 container, 1 volume; it belongs to this workspace alone and is removed with it/);
-  assert.match(r.text, /Compose project prod also has containers outside this workspace; it is kept/);
+  assert.match(r.text, /Compose project prod is shared: it also has containers outside this workspace, so it is kept/);
 
   r = await check("broken");
   assert.equal(r.status, 1);
@@ -342,7 +342,7 @@ test("a removal that cannot delete the folder says where it stands", async (t) =
   let calls = 0;
   const scan = () => (calls++ ? { processes: [{ pid: 4242, name: "pwsh", reasons: ["working directory"] }], inaccessible: 3 } : { processes: [] });
   const remove = (path) => {
-    throw new NookError(`Could not delete ${path}: EBUSY\nClose what uses it and run the command again`);
+    throw new NookError(`Could not delete ${path}: EBUSY\nNext: close what uses it and run the command again`);
   };
   await assert.rejects(
     deleteWorkspace(c, target, { state, base: "origin/main", backupRoot: join(home, "backup", "demo"), prompter: {}, scan, remove, docker: () => ({ ok: false, out: "", err: "not installed" }) }),
@@ -351,7 +351,7 @@ test("a removal that cannot delete the folder says where it stands", async (t) =
       assert.match(error.message, /Running in it:\n\s+pwsh \(PID 4242\)/);
       assert.match(error.message, /sees working directories only, not open files; 3 processes could not be looked at/);
       assert.match(error.message, /Already done: changes backed up to [^;]+; git no longer lists the worktree\./);
-      assert.match(error.message, /Not done: the folder, branch held and nk's record are still there, so nk rm held can finish/);
+      assert.match(error.message, /Not done: the folder, branch held and nk's record are still there\nNext: close what uses it, then nk rm held finishes the removal$/);
       return true;
     },
   );
