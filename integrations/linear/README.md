@@ -72,43 +72,115 @@ Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only.
    }
    ```
 
-   - `agent` and `terminal` are the defaults, for issues without such labels.
-     `--agent` and `--terminal` in `args` win over them.
-   - `labels` names your label groups. Each is optional.
-     `"--agent-label", "<group>"` and `"--terminal-label", "<group>"` in `args`
-     do the same without a config file.
-   - **Agent**: the issue's label in the `agent` group, say `Agent › Claude`,
-     starts that agent (lowercased, spaces as `-`). Without the group, a
-     single label named like a known agent (Codex, Claude, Grok, Gemini, …)
-     works too.
-   - **Model**: a label in the `model` group reads `<model>` or
-     `<model> · <effort>`, say `Model › Strong · high`. `<model>` is a name
-     from `models`, or, when it is not there, the model's id as the agent takes
-     it (`Model › gpt-6.1-sol · low` needs no config). A `models` entry is one
-     of:
-     - a **tier**, the shortest to label with: each agent's model for it,
-       `"Strong": { "codex": "gpt-6-astra", "claude": "claude-opus-5-5" }`.
-       The issue's agent picks its model from the tier; an agent the tier does
-       not list starts with its own default. An agent's model can carry its
-       effort, `"codex": { "id": "gpt-6-astra", "effort": "medium" }`, which an
-       effort in the label overrides.
-     - the id alone, for any agent: `"Luna": "gpt-6-luna"`.
-     - one agent's model: `"Luna": { "id": "gpt-6-luna", "agent": "codex" }`.
-       An issue with only that model label starts that agent, and an issue
-       labelled for another agent starts it with its own default model.
-   - **Effort**: a label in the `effort` group, say `Effort › high`, sets
-     the effort; it wins over an effort in the model label (`Strong · high`)
-     and over the tier's. The words built in are `minimal`, `low`, `medium`,
-     `high`, `xhigh` and `max`. For other words in your labels, map them:
-     `"efforts": { "高": "high" }`. The effort travels with a model, so it needs
-     a model label too. Codex gets `-m <id> -c model_reasoning_effort=<effort>`;
-     other agents get `--model <id>`, without the effort. Orca gets
-     `--model <id> --effort <effort>` for any agent.
-   - **Terminal**: a label in the `terminal` group named `Orca`, `Warp`,
-     `Windows Terminal` or `Here` (the window Linear opened) wins over the
-     default. A single label with one of those names works without the group.
-   - The first line in Linear's window says which agent, model and terminal
-     were chosen, and why a label was not used, if one was not.
+   In Linear, make a label group for each entry of `labels` and put the
+   labels in it (**Settings → Teams → Labels**, then a label with
+   **Create group**). Every key is optional: what is left out falls back to
+   the defaults below. [Labels](#labels) lists every key and the names each
+   group's labels can have.
+
+## Labels
+
+### What starts when there are no labels
+
+| | Order, first one wins | Without any |
+| -- | -- | -- |
+| Agent | `Agent` label → the agent of a model label → `--agent` → `"agent"` | `codex` |
+| Model | `Model` label | the agent's own default model |
+| Effort | `Effort` label → the effort in the `Model` label (`Strong · high`) → the tier's effort in `models` | the agent's own default effort |
+| Terminal | `Terminal` label → `--terminal` → `"terminal"` | the window Linear opened |
+
+The first line in Linear's window says which agent, model and terminal were
+chosen, and why a label was not used, if one was not.
+
+### Group names
+
+The names in `labels` are yours: `"agent": "执行"`, `"model": "Modelo"`,
+anything. They must match the label group's name in Linear exactly,
+including case. A group that is not in `labels` is not read.
+
+### Label names in each group
+
+| Group | Label names | Built in, no config needed | Map other names with |
+| -- | -- | -- | -- |
+| `agent` | any | any agent command: `codex`, `claude`, `gemini`, `grok`, `opencode`, `pi`, `aider`, `amp`, `cursor-agent`, `qwen`, … (lowercased, spaces as `-`: `Cursor Agent` → `cursor-agent`) | `"agents": { "克劳德": "claude" }` |
+| `model` | any, optionally `<model> · <effort>` | a model id as the agent takes it: `Model › gpt-6.1-sol · low` | `"models"`, see below |
+| `effort` | any | `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | `"efforts": { "高": "high" }` |
+| `terminal` | any | `Orca`, `Warp`, `Windows Terminal` (or `wt`), `Here` (or `Linear`: the window Linear opened) | `"terminals": { "终端窗口": "wt" }` |
+
+Names are matched without regard to case. Without its group, a single label
+named like a built-in agent or terminal (`Claude`, `Orca`), or like a mapped
+one, works too. A label in the `terminal` group that is neither built in nor
+mapped stops the script with an error, so a typo does not start the agent
+somewhere you did not mean.
+
+- **agents** maps a label name to the command that starts the agent.
+- **terminals** maps a label name to `orca`, `warp`, `wt` or `here`.
+  `"terminal"` and `--terminal` take these names too, and the label names
+  (`"terminal": "Windows Terminal"`).
+- **models**: a name in it is one of:
+  - a **tier**, the shortest to label with: each agent's model for it,
+    `"Strong": { "codex": "gpt-6-astra", "claude": "claude-opus-5-5" }`.
+    The issue's agent picks its model from the tier; an agent the tier does
+    not list starts with its own default. An agent's model can carry its
+    effort, `"codex": { "id": "gpt-6-astra", "effort": "medium" }`.
+  - the id alone, for any agent: `"Luna": "gpt-6-luna"`.
+  - one agent's model: `"Luna": { "id": "gpt-6-luna", "agent": "codex" }`.
+    An issue with only that model label starts that agent, and an issue
+    labelled for another agent starts it with its own default model.
+- **efforts** maps a label word to one of the built-in efforts.
+- The effort travels with a model, so an `Effort` label needs a `Model`
+  label too. Codex gets `-m <id> -c model_reasoning_effort=<effort>`; other
+  agents get `--model <id>`, without the effort. Orca gets
+  `--model <id> --effort <effort>` for any agent.
+
+### A Chinese setup
+
+```json
+{
+  "agent": "codex",
+  "terminal": "orca",
+  "labels": { "agent": "执行", "model": "模型", "effort": "档位", "terminal": "终端" },
+  "agents": { "克劳德": "claude", "双子座": "gemini" },
+  "terminals": { "终端窗口": "wt", "本窗口": "here" },
+  "models": {
+    "轻": { "codex": { "id": "gpt-6-luna", "effort": "high" }, "claude": "claude-haiku-5-5" },
+    "标准": { "codex": { "id": "gpt-6.1-sol", "effort": "low" }, "claude": "claude-sonnet-5-5" },
+    "强": { "codex": { "id": "gpt-6.1-sol", "effort": "high" }, "claude": "claude-opus-5-5" },
+    "最强": { "codex": { "id": "gpt-6-astra", "effort": "medium" }, "claude": "claude-opus-5-5" }
+  },
+  "efforts": { "低": "low", "中": "medium", "高": "high", "极高": "xhigh" }
+}
+```
+
+With these labels in Linear: `执行 › 克劳德`, `模型 › 强`, `档位 › 极高`,
+`终端 › Orca` starts `claude-opus-5-5` with effort `xhigh` in Orca. With
+only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
+
+### Every setting
+
+`args` in `coding-tools.json`:
+
+| Argument | What it does |
+| -- | -- |
+| `--agent <command>` | the default agent, over `"agent"` |
+| `--terminal <name>` | the default terminal, over `"terminal"`: `orca`, `warp`, `wt` or `here` |
+| `--config <file>` | another config file than `~/.linear/nook.json`; it must exist |
+| `--agent-label <group>` | the agent label group, over `labels.agent` |
+| `--terminal-label <group>` | the terminal label group, over `labels.terminal` |
+| `--orca <path>` | Orca's command-line tool, when it is not on PATH |
+
+`nook.json`:
+
+| Key | What it holds |
+| -- | -- |
+| `agent` | the default agent's command |
+| `terminal` | the default terminal |
+| `orca` | Orca's command-line tool |
+| `labels` | `{ agent, model, effort, terminal }`: your label group names |
+| `agents` | label name → agent command |
+| `terminals` | label name → `orca`, `warp`, `wt` or `here` |
+| `models` | label name → tier, id, or one agent's model |
+| `efforts` | label word → `minimal` … `max` |
 
 ## Use
 
