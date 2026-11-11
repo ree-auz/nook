@@ -158,6 +158,12 @@ somewhere you did not mean.
   ["--permission-mode", "plan"] }, "codex": { "Full auto": ["--full-auto"]
   } }`. Like any menu choice, an option holds for one start. Orca starts
   agents itself and takes no agent arguments, so options are not used there.
+- **promptTemplate** puts fixed text around Linear's prompt, for rules every
+  issue shares: `"{prompt}\n\nRead AGENTS.md first. Put {id} in the pull
+  request title."`. It fills in `{prompt}`, `{id}` (`REE-302`), `{branch}`
+  and `{agent}`. One text serves every agent; `{ "default": "…", "claude":
+  "…" }` gives an agent its own. Labels are still read from Linear's own
+  prompt.
 - **agentModels** lists more model ids for one agent, shown on the menu's
   Model line next to the `models` tiers: `{ "claude": ["opus",
   "claude-sonnet-5-5"] }`. When a new model comes out, add its id here; no
@@ -176,8 +182,9 @@ flags of Codex, Claude Code, Grok, Gemini CLI, Qwen Code, GitHub Copilot CLI,
 Cursor Agent, OpenCode, Pi, Factory Droid, Kimi Code, Aider and Amp; its
 `efforts` map five levels for the agents that take an effort; its four
 model tiers name a model for most of them; its `agentModels` list each
-agent's current model ids; and its `presets` show the Options line for
-Claude Code and Codex. Change the label names and model
+agent's current model ids; its `presets` show the Options line for
+Claude Code and Codex; and its `promptTemplate` asks for the issue id in the
+pull request title. Change the label names and model
 ids to yours.
 
 Notes on the flags, from each tool's command-line reference:
@@ -263,6 +270,7 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `efforts` | label word → an effort, or each agent's effort |
 | `agentArgs` | agent → how it takes `{model}`, `{effort}` and `{prompt}` |
 | `presets` | agent → named argument sets, offered on the Options line of the list in Linear's window |
+| `promptTemplate` | text around Linear's prompt, with `{prompt}`, `{id}`, `{branch}` and `{agent}`; or `{ "default", "<agent>" }` |
 | `linear` | `{ apiKey, start, assign }`: move the issue to In Progress (default with a key) and assign it to you (off by default) |
 
 ## Use

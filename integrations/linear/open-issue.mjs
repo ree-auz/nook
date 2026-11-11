@@ -13,7 +13,7 @@ import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { agentCommand, windowsDirect } from "../../src/agents.mjs";
-import { CONFIG_PATH, choose, loadConfig, pickOptions, promptArgs } from "./choose.mjs";
+import { CONFIG_PATH, choose, loadConfig, pickOptions, promptArgs, wrapPrompt } from "./choose.mjs";
 import { AGAIN, AGAIN_SHORT, againChoices, againSetting, nextBranch } from "./again.mjs";
 import { pick } from "../../src/select.mjs";
 import { apiKey, startIssue } from "./start-issue.mjs";
@@ -339,6 +339,8 @@ async function fromLinear(argv) {
     if (again === "new") branch = nextBranch(linearBranch, workspaces);
     if (again === "over" && runNk(["rm", existing.name, "-y"]).status !== 0) throw new Error(`nk rm ${existing.name} failed; nothing started`);
   }
+  // Fixed text around Linear's prompt, from "promptTemplate". Labels were read from Linear's own prompt above.
+  const sent = wrapPrompt(prompt, config.promptTemplate, { id, branch, agent });
   // Linear's "move issue to started status" setting skips custom scripts, so the script does it.
   const key = apiKey(config);
   if (key && config.linear?.start !== false) {
@@ -351,9 +353,9 @@ async function fromLinear(argv) {
   // Default: work in the terminal Linear opened for the script.
   // How the agent takes the prompt: last on its command line, or as "agentArgs" says.
   const template = promptArgs(agent, "{prompt}", config.agentArgs);
-  if (!terminal) return startWork({ branch, agent, prompt, args, template, again });
+  if (!terminal) return startWork({ branch, agent, prompt: sent, args, template, again });
   if (terminal === "orca") {
-    process.exitCode = workInOrca({ branch, agent, prompt, model, orca, again });
+    process.exitCode = workInOrca({ branch, agent, prompt: sent, model, orca, again });
     // Keep Linear's window open when something failed, so its output can be read.
     if (close && process.exitCode === 0 && process.platform === "win32") closeLinearWindow();
     return;
@@ -374,7 +376,7 @@ async function fromLinear(argv) {
   }
   // The prompt is long Markdown with quotes and semicolons, so it travels in a file.
   const file = join(tmpdir(), `nk-linear-${id}-${process.pid}.md`);
-  writeFileSync(file, prompt);
+  writeFileSync(file, sent);
   const agentArgs = [...(args.length ? ["--agent-args", JSON.stringify(args)] : []), ...(template ? ["--prompt-args", JSON.stringify(template)] : [])];
   const inner = [process.execPath, self, "--run", file, branch, agent, ...agentArgs, "--again", inTab];
   const { reason } = open({ dir, id, inner, wezterm, open: openIn });
