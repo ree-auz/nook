@@ -13,7 +13,9 @@ import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { agentCommand, windowsDirect } from "../../src/agents.mjs";
-import { CONFIG_PATH, choose, issueBranch, loadConfig } from "./choose.mjs";
+import { CONFIG_PATH, choose, loadConfig } from "./choose.mjs";
+import { AGAIN, againChoices, againSetting, nextBranch } from "./again.mjs";
+import { pick } from "../../src/select.mjs";
 import { apiKey, startIssue } from "./start-issue.mjs";
 import { normalizeName } from "../../src/names.mjs";
 import crossSpawn from "cross-spawn";
@@ -38,18 +40,30 @@ function runNk(args, opts = {}) {
 
 /** The issue's workspace from `nk ls --json`, if it exists. */
 function findWorkspace(branch) {
-  const listed = spawnSync(process.execPath, [nk, "ls", "--json"], { encoding: "utf8", env: withNodeOnPath() });
-  return listed.status === 0 ? JSON.parse(listed.stdout).find((ws) => !ws.main && (ws.branch === branch || ws.name === normalizeName(branch))) : null;
+  return listWorkspaces().find((ws) => ws.branch === branch || ws.name === normalizeName(branch)) ?? null;
 }
 
-/** Creates the issue's workspace and starts the agent, or reopens it. */
-function startWork({ branch, agent, prompt, args = [] }) {
+/** The repository's workspaces from `nk ls --json`, without the main checkout. */
+function listWorkspaces() {
+  const listed = spawnSync(process.execPath, [nk, "ls", "--json", "--no-pr"], { encoding: "utf8", env: withNodeOnPath() });
+  return listed.status === 0 ? JSON.parse(listed.stdout).filter((ws) => !ws.main) : [];
+}
+
+/**
+ * Creates the issue's workspace and starts the agent, or reopens it as
+ * `again` says: continue (the agent without the prompt), prompt (with it)
+ * or shell (no agent).
+ */
+function startWork({ branch, agent, prompt, args = [], again = "continue" }) {
   const existing = findWorkspace(branch);
   // Arguments after -- go to the agent: the model and effort the labels chose.
   const extra = args.length ? ["--", ...args] : [];
-  // Clicked again for the same issue: reopen the workspace without restarting the task.
+  let result;
+  if (!existing) result = runNk(["-b", branch, agent, "-y", "-p", prompt, ...extra]);
   // -y: the branch name Linear suggests is converted without asking.
-  const result = existing ? runNk([existing.name, agent, ...extra]) : runNk(["-b", branch, agent, "-y", "-p", prompt, ...extra]);
+  else if (again === "shell") result = runNk([existing.name]);
+  else if (again === "prompt") result = runNk([existing.name, agent, "-p", prompt, ...extra]);
+  else result = runNk([existing.name, agent, ...extra]);
   process.exitCode = result.status ?? 1;
 }
 
@@ -61,10 +75,11 @@ export function insideTab([file, branch, agent, ...more]) {
   const cleanup = option(more, "--cleanup");
   if (cleanup) rmSync(cleanup, { force: true });
   const args = option(more, "--agent-args");
+  const again = option(more, "--again");
   // Why this opened in a new window although a tab was asked for.
   const note = option(more, "--note");
   if (note) console.log(note);
-  startWork({ branch, agent, prompt, args: args ? JSON.parse(args) : [] });
+  startWork({ branch, agent, prompt, args: args ? JSON.parse(args) : [], again });
 }
 
 /** Windows Terminal: -w 0 opens a tab in the most recent window (or a new window); -w new, a window. */
@@ -165,7 +180,7 @@ const ANY_PLATFORM = new Set(["wezterm"]);
  * worktrees it did not create. A new workspace gets Linear's prompt; one
  * that exists only gets a new agent session.
  */
-export function workInOrca({ branch, agent, prompt, model = null, orca = "orca", run = runOrca }) {
+export function workInOrca({ branch, agent, prompt, model = null, orca = "orca", again = "continue", run = runOrca }) {
   const existing = findWorkspace(branch);
   if (!existing) {
     const created = runNk(["-b", branch, "-y"]);
@@ -177,7 +192,7 @@ export function workInOrca({ branch, agent, prompt, model = null, orca = "orca",
   const args = ["agent", "launch", "--agent", agent, "--worktree", `path:${ws.path}`, "--focus", "--json"];
   // Orca's --effort needs --model.
   if (model?.id) args.push("--model", model.id, ...(model.effort ? ["--effort", model.effort] : []));
-  if (!existing && prompt) args.push("--prompt", prompt);
+  if ((!existing || again === "prompt") && prompt) args.push("--prompt", prompt);
   return run(orca, args);
 }
 
@@ -212,7 +227,7 @@ function option(argv, name) {
 async function fromLinear(argv) {
   const configPath = option(argv, "--config");
   const config = loadConfig(configPath ?? CONFIG_PATH, { required: Boolean(configPath) });
-  const flags = { agent: option(argv, "--agent"), agentLabel: option(argv, "--agent-label"), terminal: option(argv, "--terminal"), terminalLabel: option(argv, "--terminal-label"), orca: option(argv, "--orca"), wezterm: option(argv, "--wezterm"), open: option(argv, "--open") };
+  const flags = { again: option(argv, "--again"), agent: option(argv, "--agent"), agentLabel: option(argv, "--agent-label"), terminal: option(argv, "--terminal"), terminalLabel: option(argv, "--terminal-label"), orca: option(argv, "--orca"), wezterm: option(argv, "--wezterm"), open: option(argv, "--open") };
   const { agent, model, args, terminal, orca, wezterm, open: openIn, closeLinearWindow: close, notes } = choose(process.env.LINEAR_PROMPT ?? "", flags, config);
   // Say what starts and why, so a label that was not picked up is easy to see.
   const where = { wt: "Windows Terminal", warp: "Warp", wezterm: "WezTerm", orca: "Orca" }[terminal] ?? "this window";
@@ -220,7 +235,10 @@ async function fromLinear(argv) {
   for (const note of notes) console.log(`  ${note}`);
   const { LINEAR_ISSUE_BRANCH_NAME: linearBranch, LINEAR_WORK_DIR: dir, LINEAR_ISSUE_IDENTIFIER: id = "issue", LINEAR_PROMPT: prompt = "" } = process.env;
   if (!linearBranch || !dir) throw new Error("LINEAR_ISSUE_BRANCH_NAME and LINEAR_WORK_DIR are missing; list them under env in coding-tools.json");
-  const branch = issueBranch(linearBranch, agent, config);
+  process.chdir(dir);
+  const plan = await planAgain({ branch: linearBranch, id, setting: againSetting(flags, config), terminal });
+  if (!plan) return;
+  const { branch, again } = plan;
   // Linear's "move issue to started status" setting skips custom scripts, so the script does it.
   const key = apiKey(config);
   if (key && config.linear?.start !== false) {
@@ -231,13 +249,9 @@ async function fromLinear(argv) {
     }
   }
   // Default: work in the terminal Linear opened for the script.
-  if (!terminal) {
-    process.chdir(dir);
-    return startWork({ branch, agent, prompt, args });
-  }
+  if (!terminal) return startWork({ branch, agent, prompt, args, again });
   if (terminal === "orca") {
-    process.chdir(dir);
-    process.exitCode = workInOrca({ branch, agent, prompt, model, orca });
+    process.exitCode = workInOrca({ branch, agent, prompt, model, orca, again });
     // Keep Linear's window open when something failed, so its output can be read.
     if (close && process.exitCode === 0 && process.platform === "win32") closeLinearWindow();
     return;
@@ -249,10 +263,44 @@ async function fromLinear(argv) {
   const file = join(tmpdir(), `nk-linear-${id}-${process.pid}.md`);
   writeFileSync(file, prompt);
   const agentArgs = args.length ? ["--agent-args", JSON.stringify(args)] : [];
-  const inner = [process.execPath, self, "--run", file, branch, agent, ...agentArgs];
+  const inner = [process.execPath, self, "--run", file, branch, agent, ...agentArgs, "--again", again];
   const { reason } = open({ dir, id, inner, wezterm, open: openIn });
   if (reason) console.log(`  ${reason}`);
   if (close) closeLinearWindow();
+}
+
+/**
+ * The issue started again: what to do with its workspace, from "again" or
+ * the list in Linear's window. Returns { branch, again }, or null when the
+ * list was left with Esc. "new" moves to the next free branch, "over"
+ * removes the workspace first (nk rm saves its changes to ~/nook/backup).
+ */
+async function planAgain({ branch, id, setting, terminal }) {
+  const workspaces = listWorkspaces();
+  const existing = workspaces.find((ws) => ws.branch === branch || ws.name === normalizeName(branch));
+  if (!existing) return { branch, again: "continue" };
+  let again = setting;
+  if (again === "ask") {
+    if (!process.stdin.isTTY) again = "continue";
+    else {
+      console.log(`\n${id} already has a workspace: ${existing.name}`);
+      const { result } = pick({ input: process.stdin, output: process.stdout, title: `${id} again`, items: againChoices(terminal), cells: (key) => [AGAIN[key]], text: (key) => AGAIN[key], unicode: process.platform !== "win32" || Boolean(process.env.WT_SESSION) });
+      const chosen = await result;
+      if (!("item" in chosen)) {
+        console.log("Nothing started.");
+        return null;
+      }
+      again = chosen.item;
+    }
+  }
+  if (again === "shell" && terminal === "orca") again = "continue";
+  console.log(`  ${AGAIN[again]}`);
+  if (again === "new") return { branch: nextBranch(branch, workspaces), again };
+  if (again === "over") {
+    const removed = runNk(["rm", existing.name, "-y"]);
+    if (removed.status !== 0) throw new Error(`nk rm ${existing.name} failed; nothing started`);
+  }
+  return { branch, again };
 }
 
 /**

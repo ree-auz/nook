@@ -367,11 +367,15 @@ test("the script moves the issue to its team's first started status", async () =
   await assert.rejects(startIssue({ id: "REE-302", key: "bad", fetch: failing }), /Authentication required/);
 });
 
-test("workspacePerAgent gives each agent its own branch for an issue", async () => {
-  const { issueBranch } = await import("../integrations/linear/choose.mjs");
+test("an issue started again: the choices, the setting and the next branch", async () => {
+  const { againChoices, againSetting, nextBranch } = await import("../integrations/linear/again.mjs");
+  assert.equal(againSetting(), "ask");
+  assert.equal(againSetting({}, { again: "new" }), "new");
+  assert.equal(againSetting({ again: "prompt" }, { again: "new" }), "prompt", "--again wins");
+  assert.throws(() => againSetting({}, { again: "twice" }), /use ask, continue, prompt, new, over, shell/);
+  assert.deepEqual(againChoices("wezterm"), ["continue", "prompt", "new", "over", "shell"]);
+  assert.ok(!againChoices("orca").includes("shell"), "Orca starts agents only");
   const branch = "ree-302-search-home";
-  assert.equal(issueBranch(branch, "codex"), branch, "off by default");
-  assert.equal(issueBranch(branch, "codex", { workspacePerAgent: true }), "ree-302-search-home-codex");
-  assert.equal(issueBranch(branch, "cursor-agent", { workspacePerAgent: true }), "ree-302-search-home-cursor-agent");
-  assert.equal(issueBranch("ree-302-x-grok", "grok", { workspacePerAgent: true }), "ree-302-x-grok", "not twice");
+  assert.equal(nextBranch(branch, [{ branch, name: branch }]), "ree-302-search-home-2");
+  assert.equal(nextBranch(branch, [{ branch, name: branch }, { branch: `${branch}-2`, name: `${branch}-2` }]), "ree-302-search-home-3");
 });

@@ -230,14 +230,3 @@ export function choose(prompt, flags = {}, config = {}) {
   return { agent, model, args, terminal, orca: flags.orca ?? config.orca ?? "orca", wezterm: flags.wezterm ?? config.wezterm ?? "wezterm", open, closeLinearWindow, notes };
 }
 
-/**
- * The workspace branch for an issue. With "workspacePerAgent", each agent
- * gets its own (`ree-302-x-codex`, `ree-302-x-grok`), so the same issue can
- * run with another agent side by side; the issue id stays in the name, so
- * Linear links both. Otherwise the branch Linear suggests.
- */
-export function issueBranch(branch, agent, config = {}) {
-  if (!config.workspacePerAgent) return branch;
-  const suffix = String(agent).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  return suffix && !branch.endsWith(`-${suffix}`) ? `${branch}-${suffix}` : branch;
-}

@@ -223,6 +223,7 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `--terminal-label <group>` | the terminal label group, over `labels.terminal` |
 | `--orca <path>` | Orca's command-line tool, when it is not on PATH |
 | `--wezterm <path>` | WezTerm, when it is not on PATH |
+| `--again <choice>` | what starting an issue that has a workspace does, over `"again"` |
 | `--open tab\|window` | a tab (the default) or a window of its own, over `"open"`; Windows Terminal and WezTerm |
 
 `nook.json`:
@@ -232,7 +233,7 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `agent` | the default agent's command |
 | `terminal` | the default terminal |
 | `open` | `"tab"` (the default) or `"window"`: where Windows Terminal and WezTerm open the issue |
-| `workspacePerAgent` | `true`: each agent gets its own workspace for an issue (branch `<issue branch>-<agent>`), so the same issue can run with another agent side by side |
+| `again` | what starting an issue that has a workspace does: `ask` (the default), `continue`, `prompt`, `new`, `over` or `shell` |
 | `closeLinearWindow` | `false` keeps the window Linear opened after the agent starts in another terminal |
 | `orca` | Orca's command-line tool |
 | `wezterm` | WezTerm's program |
@@ -253,12 +254,19 @@ the issue belongs to; nothing runs there.
 
 The terminal runs `nk -b <issue branch> <agent> -y -p <Linear's prompt>` in
 that folder (`-y` keeps the converted workspace name without asking).
-Choosing the same issue again reopens its workspace and starts the agent
-without the prompt (with `--terminal orca`, a new agent session in Orca;
-earlier sessions stay in Orca's list). To run an issue with a second agent side by
-side, set `"workspacePerAgent": true` and change the agent label: each agent
-then gets its own workspace and branch, `<issue branch>-codex`,
-`<issue branch>-grok`, which still carry the issue id.
+Choosing an issue that already has a workspace asks, in Linear's window,
+what to do (Esc starts nothing):
+
+| Choice | What happens |
+| -- | -- |
+| `continue` | the agent starts in the workspace without Linear's prompt (with Orca, a new session; earlier ones stay in Orca's list) |
+| `prompt` | the agent starts in the workspace with Linear's prompt again; the changes stay |
+| `new` | a new workspace next to it, branch `<issue branch>-2` (`-3`, …): run the issue again with another agent, model or effort and compare; the branch still carries the issue id, so Linear links both pull requests |
+| `over` | `nk rm` removes the workspace and its branch, saving uncommitted changes and unpushed commits to `~/nook/backup` first, then the issue starts fresh |
+| `shell` | only the workspace opens, without an agent (not with Orca) |
+
+`"again": "<choice>"` in the config, or `"--again", "<choice>"` in
+`coding-tools.json`, skips the question.
 
 Linear's **Move issue to started status** setting (Settings → Account →
 Code & reviews) does not apply to custom scripts, so the script moves the
