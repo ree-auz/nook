@@ -13,7 +13,7 @@ import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { agentCommand, windowsDirect } from "../../src/agents.mjs";
-import { CONFIG_PATH, choose, loadConfig } from "./choose.mjs";
+import { CONFIG_PATH, choose, issueBranch, loadConfig } from "./choose.mjs";
 import { apiKey, startIssue } from "./start-issue.mjs";
 import { normalizeName } from "../../src/names.mjs";
 import crossSpawn from "cross-spawn";
@@ -218,8 +218,9 @@ async function fromLinear(argv) {
   const where = { wt: "Windows Terminal", warp: "Warp", wezterm: "WezTerm", orca: "Orca" }[terminal] ?? "this window";
   console.log(`Agent: ${agent} in ${where}${model?.id ? `, model ${model.id}` : ", its default model"}${model?.effort ? `, effort ${model.effort}` : ""}`);
   for (const note of notes) console.log(`  ${note}`);
-  const { LINEAR_ISSUE_BRANCH_NAME: branch, LINEAR_WORK_DIR: dir, LINEAR_ISSUE_IDENTIFIER: id = "issue", LINEAR_PROMPT: prompt = "" } = process.env;
-  if (!branch || !dir) throw new Error("LINEAR_ISSUE_BRANCH_NAME and LINEAR_WORK_DIR are missing; list them under env in coding-tools.json");
+  const { LINEAR_ISSUE_BRANCH_NAME: linearBranch, LINEAR_WORK_DIR: dir, LINEAR_ISSUE_IDENTIFIER: id = "issue", LINEAR_PROMPT: prompt = "" } = process.env;
+  if (!linearBranch || !dir) throw new Error("LINEAR_ISSUE_BRANCH_NAME and LINEAR_WORK_DIR are missing; list them under env in coding-tools.json");
+  const branch = issueBranch(linearBranch, agent, config);
   // Linear's "move issue to started status" setting skips custom scripts, so the script does it.
   const key = apiKey(config);
   if (key && config.linear?.start !== false) {

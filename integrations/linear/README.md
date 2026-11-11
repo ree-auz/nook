@@ -232,6 +232,7 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `agent` | the default agent's command |
 | `terminal` | the default terminal |
 | `open` | `"tab"` (the default) or `"window"`: where Windows Terminal and WezTerm open the issue |
+| `workspacePerAgent` | `true`: each agent gets its own workspace for an issue (branch `<issue branch>-<agent>`), so the same issue can run with another agent side by side |
 | `closeLinearWindow` | `false` keeps the window Linear opened after the agent starts in another terminal |
 | `orca` | Orca's command-line tool |
 | `wezterm` | WezTerm's program |
@@ -254,7 +255,10 @@ The terminal runs `nk -b <issue branch> <agent> -y -p <Linear's prompt>` in
 that folder (`-y` keeps the converted workspace name without asking).
 Choosing the same issue again reopens its workspace and starts the agent
 without the prompt (with `--terminal orca`, a new agent session in Orca;
-earlier sessions stay in Orca's list).
+earlier sessions stay in Orca's list). To run an issue with a second agent side by
+side, set `"workspacePerAgent": true` and change the agent label: each agent
+then gets its own workspace and branch, `<issue branch>-codex`,
+`<issue branch>-grok`, which still carry the issue id.
 
 Linear's **Move issue to started status** setting (Settings → Account →
 Code & reviews) does not apply to custom scripts, so the script moves the

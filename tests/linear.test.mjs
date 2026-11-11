@@ -366,3 +366,12 @@ test("the script moves the issue to its team's first started status", async () =
   const failing = async () => ({ ok: false, status: 401, json: async () => ({ errors: [{ message: "Authentication required" }] }) });
   await assert.rejects(startIssue({ id: "REE-302", key: "bad", fetch: failing }), /Authentication required/);
 });
+
+test("workspacePerAgent gives each agent its own branch for an issue", async () => {
+  const { issueBranch } = await import("../integrations/linear/choose.mjs");
+  const branch = "ree-302-search-home";
+  assert.equal(issueBranch(branch, "codex"), branch, "off by default");
+  assert.equal(issueBranch(branch, "codex", { workspacePerAgent: true }), "ree-302-search-home-codex");
+  assert.equal(issueBranch(branch, "cursor-agent", { workspacePerAgent: true }), "ree-302-search-home-cursor-agent");
+  assert.equal(issueBranch("ree-302-x-grok", "grok", { workspacePerAgent: true }), "ree-302-x-grok", "not twice");
+});
