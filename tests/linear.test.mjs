@@ -290,15 +290,29 @@ test("WezTerm opens a tab in the open WezTerm window, else a window", async () =
   openInWezTerm({ dir: ".", id: "x", inner, run: answer({ clients }), start });
   assert.deepEqual(calls[2].slice(3, 6), ["spawn", "--window-id", "0"]);
 
+  // The link points at a WezTerm that is gone: a running one's socket is tried.
   calls.length = 0;
-  const none = openInWezTerm({ dir: "/work/pipit", id: "REE-270", inner, wezterm: "/opt/wezterm", run: answer({ list: { status: 1, stderr: "failed to connect to gui\n" } }), start });
+  const envs = [];
+  const stale = (command, args, env) => {
+    envs.push(env?.WEZTERM_UNIX_SOCKET);
+    calls.push([command, ...args]);
+    if (args[2] === "list") return env?.WEZTERM_UNIX_SOCKET === "/s/gui-sock-9" ? { status: 0, stdout: panes } : { status: 1, stderr: 'failed to connect to Socket("gui-sock-1")' };
+    return { status: args[2] === "spawn" ? 0 : 1, stdout: "42\n" };
+  };
+  assert.deepEqual(openInWezTerm({ dir: ".", id: "x", inner, run: stale, start, sockets: () => ["/s/gui-sock-8", "/s/gui-sock-9"] }), { opened: "tab", reason: null });
+  assert.deepEqual(envs.slice(0, 3), [undefined, "/s/gui-sock-8", "/s/gui-sock-9"]);
+  assert.ok(envs.slice(3).every((socket) => socket === "/s/gui-sock-9"), "spawn goes to the WezTerm that answered");
+  assert.deepEqual(started, []);
+
+  calls.length = 0;
+  const none = openInWezTerm({ dir: "/work/pipit", id: "REE-270", inner, wezterm: "/opt/wezterm", run: answer({ list: { status: 1, stderr: "failed to connect to gui\n" } }), start, sockets: () => [] });
   assert.equal(none.opened, "window", "no WezTerm open");
   assert.match(none.reason, /No WezTerm window found .*failed to connect to gui/);
   assert.equal(calls.length, 1);
   assert.deepEqual(started, [["/opt/wezterm", "start", "--cwd", "/work/pipit", "--", ...inner, "--note", none.reason]], "the new window says why");
 
   started.length = 0;
-  const refused = openInWezTerm({ dir: ".", id: "x", inner, run: answer({ spawn: { status: 1, stderr: "no such window" } }), start });
+  const refused = openInWezTerm({ dir: ".", id: "x", inner, run: answer({ spawn: { status: 1, stderr: "no such window" } }), start, sockets: () => [] });
   assert.match(refused.reason, /did not open a tab .*no such window/);
   assert.equal(started.length, 1);
 
@@ -326,6 +340,24 @@ test("Windows Terminal opens a tab or a window, and the config chooses", async (
   assert.throws(() => choose("", {}, { open: "pane" }), /use "tab" or "window"/);
   assert.equal(choose("", {}, {}).closeLinearWindow, true);
   assert.equal(choose("", {}, { closeLinearWindow: false }).closeLinearWindow, false);
+});
+
+test("guiSockets lists running WezTerm windows, newest first", async (t) => {
+  const { guiSockets } = await import("../integrations/linear/open-issue.mjs");
+  const { mkdtempSync, writeFileSync, utimesSync, mkdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const home = mkdtempSync(join(tmpdir(), "nk-wez-"));
+  t.after(() => import("node:fs").then(({ rmSync }) => rmSync(home, { recursive: true, force: true })));
+  const dir = join(home, ".local", "share", "wezterm");
+  mkdirSync(dir, { recursive: true });
+  for (const [name, time] of [["gui-sock-1", 1000], ["gui-sock-2", 3000], ["gui-sock-3", 2000], ["default-org.wezfurlong.wezterm", 4000]]) {
+    writeFileSync(join(dir, name), "");
+    utimesSync(join(dir, name), time, time);
+  }
+  const sockets = guiSockets({ home, env: {}, alive: (pid) => pid !== 1 });
+  assert.deepEqual(sockets, [join(dir, "gui-sock-2"), join(dir, "gui-sock-3")], "gone ones and the link are left out");
+  assert.deepEqual(guiSockets({ home: join(home, "nothing"), env: {} }), []);
 });
 
 test("WezTerm is a terminal a label or the default can name", async () => {

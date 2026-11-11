@@ -8,7 +8,7 @@
 //                       [--open tab|window]                                    started by Linear
 //   node open-issue.mjs --run <file> ...     inside the new tab
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -133,16 +133,27 @@ function which(command) {
  * Returns { opened: "tab" | "window", reason }: reason says why a tab was
  * asked for and a window opened.
  */
-export function openInWezTerm({ dir, id, inner, wezterm = "wezterm", open = "tab", run = runQuiet, start = startDetached }) {
+export function openInWezTerm({ dir, id, inner, wezterm = "wezterm", open = "tab", run = runQuiet, start = startDetached, sockets = guiSockets }) {
   const inWindow = (reason) => {
     // The reason goes to the new window too: Linear's window closes.
     start(wezterm, ["start", "--cwd", dir, "--", ...inner, ...(reason ? ["--note", reason] : [])]);
     return { opened: "window", reason };
   };
   if (open === "window") return inWindow(null);
-  const listed = run(wezterm, ["cli", "--no-auto-start", "list", "--format", "json"]);
+  const list = ["cli", "--no-auto-start", "list", "--format", "json"];
+  let env;
+  let listed = run(wezterm, list);
   if (listed.error?.code === "ENOENT") throw new Error(`could not run ${wezterm}. Is WezTerm installed and on PATH? Pass its path with --wezterm`);
   const said = (result) => String(result.stderr ?? "").trim().split(/\r?\n/).pop() || `exit code ${result.status}`;
+  // cli follows a link to the WezTerm started last; once that one is gone,
+  // the link points at nothing. A WezTerm still running has its own socket.
+  for (const socket of listed.status === 0 ? [] : sockets()) {
+    const tried = run(wezterm, list, { ...process.env, WEZTERM_UNIX_SOCKET: socket });
+    if (tried.status === 0) {
+      ({ listed, env } = { listed: tried, env: { ...process.env, WEZTERM_UNIX_SOCKET: socket } });
+      break;
+    }
+  }
   if (listed.status !== 0) return inWindow(`No WezTerm window found to add a tab to (wezterm cli list: ${said(listed)})`);
   let panes = [];
   try {
@@ -150,13 +161,13 @@ export function openInWezTerm({ dir, id, inner, wezterm = "wezterm", open = "tab
   } catch {
     // An older WezTerm without --format json: let spawn choose the window.
   }
-  const windowId = focusedWindow(wezterm, panes, run);
+  const windowId = focusedWindow(wezterm, panes, (command, args) => run(command, args, env));
   const target = windowId === undefined ? [] : ["--window-id", String(windowId)];
-  const spawned = run(wezterm, ["cli", "--no-auto-start", "spawn", ...target, "--cwd", dir, "--", ...inner]);
+  const spawned = run(wezterm, ["cli", "--no-auto-start", "spawn", ...target, "--cwd", dir, "--", ...inner], env);
   if (spawned.status !== 0) return inWindow(`WezTerm did not open a tab (wezterm cli spawn: ${said(spawned)})`);
   const pane = String(spawned.stdout ?? "").trim();
   // Older WezTerm has no set-tab-title; the tab keeps the command's title then.
-  if (/^\d+$/.test(pane)) run(wezterm, ["cli", "--no-auto-start", "set-tab-title", "--pane-id", pane, id]);
+  if (/^\d+$/.test(pane)) run(wezterm, ["cli", "--no-auto-start", "set-tab-title", "--pane-id", pane, id], env);
   return { opened: "tab", reason: null };
 }
 
@@ -182,9 +193,49 @@ function focusedWindow(wezterm, panes, run) {
   return panes.find((pane) => pane.is_active)?.window_id ?? panes[0]?.window_id;
 }
 
+/**
+ * The sockets of running WezTerm windows, newest first: gui-sock-<pid> in
+ * ~/.local/share/wezterm (Windows, macOS) or $XDG_RUNTIME_DIR/wezterm
+ * (Linux), for a pid that is still running.
+ */
+export function guiSockets({ home = homedir(), env = process.env, alive = isRunning } = {}) {
+  const dirs = [join(home, ".local", "share", "wezterm"), ...(env.XDG_RUNTIME_DIR ? [join(env.XDG_RUNTIME_DIR, "wezterm")] : [])];
+  const found = [];
+  for (const dir of dirs) {
+    let names = [];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      const pid = /^gui-sock-(\d+)$/.exec(name)?.[1];
+      if (!pid || !alive(Number(pid))) continue;
+      const path = join(dir, name);
+      let time = 0;
+      try {
+        time = statSync(path).mtimeMs;
+      } catch {
+        // A socket that cannot be read sorts last.
+      }
+      found.push({ path, time });
+    }
+  }
+  return found.sort((a, b) => b.time - a.time).map((socket) => socket.path);
+}
+
+function isRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
+
 /** Runs a command and waits, without a console window or a shell. */
-function runQuiet(command, args) {
-  return spawnSync(command, args, { encoding: "utf8", windowsHide: true });
+function runQuiet(command, args, env = undefined) {
+  return spawnSync(command, args, { encoding: "utf8", windowsHide: true, env });
 }
 
 /** Starts a program that outlives this script. */
