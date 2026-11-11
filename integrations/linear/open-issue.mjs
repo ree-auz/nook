@@ -14,6 +14,7 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { agentCommand, windowsDirect } from "../../src/agents.mjs";
 import { CONFIG_PATH, choose, loadConfig } from "./choose.mjs";
+import { apiKey, startIssue } from "./start-issue.mjs";
 import { normalizeName } from "../../src/names.mjs";
 import crossSpawn from "cross-spawn";
 
@@ -208,7 +209,7 @@ function option(argv, name) {
   return at >= 0 ? argv[at + 1] : undefined;
 }
 
-function fromLinear(argv) {
+async function fromLinear(argv) {
   const configPath = option(argv, "--config");
   const config = loadConfig(configPath ?? CONFIG_PATH, { required: Boolean(configPath) });
   const flags = { agent: option(argv, "--agent"), agentLabel: option(argv, "--agent-label"), terminal: option(argv, "--terminal"), terminalLabel: option(argv, "--terminal-label"), orca: option(argv, "--orca"), wezterm: option(argv, "--wezterm"), open: option(argv, "--open") };
@@ -219,6 +220,15 @@ function fromLinear(argv) {
   for (const note of notes) console.log(`  ${note}`);
   const { LINEAR_ISSUE_BRANCH_NAME: branch, LINEAR_WORK_DIR: dir, LINEAR_ISSUE_IDENTIFIER: id = "issue", LINEAR_PROMPT: prompt = "" } = process.env;
   if (!branch || !dir) throw new Error("LINEAR_ISSUE_BRANCH_NAME and LINEAR_WORK_DIR are missing; list them under env in coding-tools.json");
+  // Linear's "move issue to started status" setting skips custom scripts, so the script does it.
+  const key = apiKey(config);
+  if (key && config.linear?.start !== false) {
+    try {
+      console.log(`  ${await startIssue({ id, key, assign: config.linear?.assign === true })}`);
+    } catch (error) {
+      console.log(`  Could not update ${id} in Linear: ${error.message}`);
+    }
+  }
   // Default: work in the terminal Linear opened for the script.
   if (!terminal) {
     process.chdir(dir);
@@ -260,5 +270,9 @@ function runDirectly() {
 if (runDirectly()) {
   const [first, ...rest] = process.argv.slice(2);
   if (first === "--run") insideTab(rest);
-  else fromLinear(process.argv.slice(2));
+  else
+    fromLinear(process.argv.slice(2)).catch((error) => {
+      console.error(error.message);
+      process.exitCode = 1;
+    });
 }

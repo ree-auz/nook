@@ -3,6 +3,7 @@
   "terminal": "here",
   "open": "tab",
   "closeLinearWindow": true,
+  "linear": { "apiKey": "", "start": true, "assign": false },
   "labels": {
     "agent": "Agent",
     "model": "Model",

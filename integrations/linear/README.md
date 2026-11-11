@@ -241,6 +241,7 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `models` | label name → tier, id, or one agent's model |
 | `efforts` | label word → an effort, or each agent's effort |
 | `agentArgs` | agent → how it takes `{model}` and `{effort}` |
+| `linear` | `{ apiKey, start, assign }`: move the issue to In Progress (default with a key) and assign it to you (off by default) |
 
 ## Use
 
@@ -255,11 +256,18 @@ Choosing the same issue again reopens its workspace and starts the agent
 without the prompt (with `--terminal orca`, a new agent session in Orca;
 earlier sessions stay in Orca's list).
 
-To move the issue to In Progress when you start it, turn on **Move issue to
-started status** for opening an issue in a coding tool, in Linear's
-**Settings → Account → Code & reviews**: it covers the custom script, and the
-self-assignment preference next to it assigns unassigned issues to you. The
-script does not change the issue itself. After that, Linear's GitHub
+Linear's **Move issue to started status** setting (Settings → Account →
+Code & reviews) does not apply to custom scripts, so the script moves the
+issue itself when it has a Linear API key: to the team's first started status
+(In Progress), unless the issue has already started or ended. Create a
+personal API key in Linear's **Settings → Account → Security & access**, then
+either put it in the config file as `"linear": { "apiKey": "lin_api_…" }`, or
+set it as the `LINEAR_API_KEY` environment variable and add
+`"LINEAR_API_KEY"` to `env` in `coding-tools.json` (Linear passes only the
+variables listed there). The key stays on your computer; the script sends it
+only to `api.linear.app`. `"linear": { "assign": true }` also assigns an
+unassigned issue to you; `"start": false` turns the status change off.
+After that, Linear's GitHub
 integration moves the issue along as the branch and its pull request change,
 because the branch name holds the issue identifier. After the
 pull request is merged, `nk clean` removes the workspace.

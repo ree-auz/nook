@@ -328,3 +328,41 @@ test("WezTerm is a terminal a label or the default can name", async () => {
   assert.equal(pick([], { wezterm: "C:\\WezTerm\\wezterm.exe" }, { wezterm: "x" }).wezterm, "C:\\WezTerm\\wezterm.exe", "--wezterm wins");
   assert.throws(() => pick(["终端 › Kitty"]), /use Orca, Warp, WezTerm, Windows Terminal or Here/);
 });
+
+test("the script moves the issue to its team's first started status", async () => {
+  const { apiKey, startIssue } = await import("../integrations/linear/start-issue.mjs");
+  assert.equal(apiKey({ linear: { apiKey: "from-config" } }, { LINEAR_API_KEY: "from-env" }), "from-env");
+  assert.equal(apiKey({ linear: { apiKey: "from-config" } }, {}), "from-config");
+  assert.equal(apiKey({}, {}), null);
+
+  const states = [
+    { id: "s-todo", name: "Todo", type: "unstarted", position: 1 },
+    { id: "s-review", name: "In Review", type: "started", position: 3 },
+    { id: "s-progress", name: "In Progress", type: "started", position: 2 },
+  ];
+  const linear = (issue) => {
+    const sent = [];
+    const fetch = async (url, { headers, body }) => {
+      const { query, variables } = JSON.parse(body);
+      sent.push({ url, auth: headers.Authorization, mutation: query.startsWith("mutation"), variables });
+      const data = query.startsWith("mutation") ? { issueUpdate: { success: true } } : { viewer: { id: "me" }, issue: issue && { id: "uuid-302", team: { states: { nodes: states } }, ...issue } };
+      return { ok: true, json: async () => ({ data }) };
+    };
+    return { sent, fetch };
+  };
+
+  const todo = linear({ state: { type: "unstarted", name: "Todo" }, assignee: null });
+  assert.equal(await startIssue({ id: "REE-302", key: "lin_api_x", fetch: todo.fetch }), "REE-302: Todo → In Progress");
+  assert.deepEqual(todo.sent[1], { url: "https://api.linear.app/graphql", auth: "lin_api_x", mutation: true, variables: { id: "uuid-302", input: { stateId: "s-progress" } } });
+
+  const assign = linear({ state: { type: "unstarted", name: "Todo" }, assignee: null });
+  assert.equal(await startIssue({ id: "REE-302", key: "k", assign: true, fetch: assign.fetch }), "REE-302: Todo → In Progress, assigned to you");
+  assert.deepEqual(assign.sent[1].variables.input, { stateId: "s-progress", assigneeId: "me" });
+
+  const started = linear({ state: { type: "started", name: "In Review" }, assignee: { id: "me" } });
+  assert.equal(await startIssue({ id: "REE-302", key: "k", fetch: started.fetch }), "REE-302: already In Review");
+  assert.equal(started.sent.length, 1, "a started issue is left alone");
+
+  const failing = async () => ({ ok: false, status: 401, json: async () => ({ errors: [{ message: "Authentication required" }] }) });
+  await assert.rejects(startIssue({ id: "REE-302", key: "bad", fetch: failing }), /Authentication required/);
+});
