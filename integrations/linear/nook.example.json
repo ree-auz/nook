@@ -33,13 +33,13 @@
     "grok": { "model": ["-m", "{model}"], "effort": ["--effort", "{effort}"] },
     "gemini": { "model": ["-m", "{model}"] },
     "qwen": { "model": ["-m", "{model}"] },
-    "copilot": { "model": ["--model", "{model}"] },
+    "copilot": { "model": ["--model", "{model}"], "prompt": ["-i", "{prompt}"] },
     "cursor-agent": { "model": ["--model", "{model}"] },
-    "opencode": { "model": ["-m", "{model}"] },
+    "opencode": { "model": ["-m", "{model}"], "prompt": [] },
     "pi": { "model": ["--model", "{model}"], "effort": ["--thinking", "{effort}"] },
     "droid": { "model": ["-m", "{model}"], "effort": ["--reasoning-effort", "{effort}"] },
     "kimi": { "model": ["-m", "{model}"] },
-    "aider": { "model": ["--model", "{model}"], "effort": ["--reasoning-effort", "{effort}"] },
+    "aider": { "model": ["--model", "{model}"], "effort": ["--reasoning-effort", "{effort}"], "prompt": [] },
     "amp": {}
   },
   "efforts": {
@@ -103,5 +103,9 @@
     "pi": ["anthropic/claude-opus-5-5", "anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-5-5", "openai/gpt-6-astra", "openai/gpt-6.1-sol", "openai/gpt-6-luna", "google/gemini-4-argon", "xai/grok-4.7"],
     "aider": ["anthropic/claude-opus-5-5", "anthropic/claude-sonnet-5-5", "anthropic/claude-haiku-5-5", "openai/gpt-6-astra", "openai/gpt-6.1-sol", "openai/gpt-6-luna", "google/gemini-4-argon", "xai/grok-4.7"],
     "droid": ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"]
+  },
+  "presets": {
+    "claude": { "Plan": ["--permission-mode", "plan"], "Accept edits": ["--permission-mode", "acceptEdits"] },
+    "codex": { "Full auto": ["--full-auto"] }
   }
 }
