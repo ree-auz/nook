@@ -79,7 +79,7 @@ test("a model label picks the model, its effort and, alone, its agent", async ()
   };
   const pick = (labels, flags = {}) => choose(labels.map((l) => `<label>${l}</label>`).join("\n"), flags, config);
 
-  assert.deepEqual(pick(["Model › Luna · 高", "Agent › Codex"]), { agent: "codex", model: { id: "gpt-6-luna", effort: "high" }, terminal: null, orca: "orca", notes: [] });
+  assert.deepEqual(pick(["Model › Luna · 高", "Agent › Codex"]), { agent: "codex", model: { id: "gpt-6-luna", effort: "high" }, args: ["-m", "gpt-6-luna", "-c", "model_reasoning_effort=high"], terminal: null, orca: "orca", notes: [] });
   assert.equal(pick(["Model › Opus · high"]).agent, "claude", "the model's agent when no agent label");
   assert.deepEqual(pick(["Model › gpt-6.1-sol · low"]).model, { id: "gpt-6.1-sol", effort: "low" }, "a label that is a model id needs no config");
   assert.deepEqual(pick(["Model › Fast", "Agent › Grok"]).model, { id: "grok-5-fast", effort: null });
@@ -89,7 +89,7 @@ test("a model label picks the model, its effort and, alone, its agent", async ()
   assert.equal(mismatch.model, null);
   assert.match(mismatch.notes[0], /Model › Luna · high is a codex model; grok starts with its own default/);
   assert.match(pick(["Model › Luna · turbo"]).notes[0], /"turbo" is not an effort; add it to "efforts"/);
-  assert.match(pick(["Model › Opus · high"]).notes[0], /effort high is passed only to codex, or to any agent through Orca/);
+  assert.match(pick(["Model › Opus · high"]).notes[0], /"agentArgs" in the config says no effort argument for claude/);
   assert.deepEqual(pick(["Model › Opus · high"], { terminal: "orca" }).notes, [], "Orca takes the effort");
   assert.equal(pick([], { agent: "gemini" }).agent, "gemini", "flags give the default");
 
@@ -195,7 +195,8 @@ test("an effort label group sets the effort", async () => {
   assert.deepEqual(pick(["Model › Strong", "Effort › 高"]).model, { id: "gpt-6-astra", effort: "high" }, "wins over the tier's effort");
   assert.deepEqual(pick(["Model › Strong", "Effort › low"]).model, { id: "gpt-6-astra", effort: "low" });
   assert.match(pick(["Model › Strong", "Effort › 猛"]).notes[0], /Effort › 猛: "猛" is not an effort/);
-  assert.match(pick(["Effort › high"]).notes[0], /needs a model label too/);
+  // An effort alone: the agent's default model with that effort.
+  assert.deepEqual(pick(["Effort › high"]).args, ["-c", "model_reasoning_effort=high"]);
 });
 
 test("agents and terminals map label names in any language", async () => {
@@ -218,4 +219,30 @@ test("agents and terminals map label names in any language", async () => {
   assert.equal(pick([], { terminal: "Windows Terminal" }).terminal, "wt", "the default can be written like a label");
   assert.equal(choose("", {}, { terminal: "终端窗口", terminals: config.terminals }).terminal, "wt", "and through the map");
   assert.equal(choose("", {}, { terminal: "here" }).terminal, null);
+});
+
+test("efforts and arguments differ per agent", async () => {
+  const { choose } = await import("../integrations/linear/choose.mjs");
+  const config = {
+    labels: { agent: "Agent", model: "Model", effort: "Effort" },
+    models: { Strong: { codex: "gpt-6-astra", claude: "opus", gemini: "gemini-pro" } },
+    efforts: { high: "high", xhigh: { codex: "xhigh", claude: "max" } },
+    agentArgs: { claude: { model: ["--model", "{model}"], effort: ["--effort", "{effort}"] } },
+  };
+  const pick = (labels, flags = {}) => choose(labels.map((l) => `<label>${l}</label>`).join("\n"), flags, config);
+  assert.deepEqual(pick(["Model › Strong", "Effort › xhigh", "Agent › Codex"]).args, ["-m", "gpt-6-astra", "-c", "model_reasoning_effort=xhigh"]);
+  assert.deepEqual(pick(["Model › Strong", "Effort › xhigh", "Agent › Claude"]).args, ["--model", "opus", "--effort", "max"]);
+  assert.deepEqual(pick(["Effort › high", "Agent › Claude"]).args, ["--effort", "high"], "an effort without a model");
+  // No value for this agent: its default effort, and a note.
+  const gemini = pick(["Model › Strong", "Effort › xhigh", "Agent › Gemini"]);
+  assert.deepEqual(gemini.args, ["--model", "gemini-pro"]);
+  assert.match(gemini.notes[0], /Effort › xhigh: "efforts" gives no gemini value for it/);
+  // Orca gets the agent's own effort value, and needs a model with it.
+  assert.deepEqual(pick(["Model › Strong", "Effort › xhigh", "Agent › Claude"], { terminal: "orca" }).model, { id: "opus", effort: "max" });
+  assert.match(pick(["Effort › high"], { terminal: "orca" }).notes[0], /Orca takes an effort only with a model/);
+});
+
+test("the preset config parses and covers the built-in agents", async () => {
+  const preset = JSON.parse(readFileSync(fileURLToPath(new URL("../integrations/linear/nook.example.json", import.meta.url)), "utf8"));
+  for (const agent of ["codex", "claude", "grok"]) assert.ok(preset.agentArgs[agent]?.effort, `${agent} has an effort argument`);
 });

@@ -12,7 +12,7 @@ import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { agentCommand, windowsDirect } from "../../src/agents.mjs";
-import { CONFIG_PATH, agentModelArgs, choose, loadConfig } from "./choose.mjs";
+import { CONFIG_PATH, choose, loadConfig } from "./choose.mjs";
 import { normalizeName } from "../../src/names.mjs";
 import crossSpawn from "cross-spawn";
 
@@ -41,10 +41,10 @@ function findWorkspace(branch) {
 }
 
 /** Creates the issue's workspace and starts the agent, or reopens it. */
-function startWork({ branch, agent, prompt, model = null }) {
+function startWork({ branch, agent, prompt, args = [] }) {
   const existing = findWorkspace(branch);
-  // Arguments after -- go to the agent: the model and effort a label chose.
-  const extra = model ? ["--", ...agentModelArgs(agent, model)] : [];
+  // Arguments after -- go to the agent: the model and effort the labels chose.
+  const extra = args.length ? ["--", ...args] : [];
   // Clicked again for the same issue: reopen the workspace without restarting the task.
   // -y: the branch name Linear suggests is converted without asking.
   const result = existing ? runNk([existing.name, agent, ...extra]) : runNk(["-b", branch, agent, "-y", "-p", prompt, ...extra]);
@@ -58,8 +58,8 @@ export function insideTab([file, branch, agent, ...more]) {
   // A Warp tab config written only for this launch.
   const cleanup = option(more, "--cleanup");
   if (cleanup) rmSync(cleanup, { force: true });
-  const id = option(more, "--model");
-  startWork({ branch, agent, prompt, model: id ? { id, effort: option(more, "--effort") ?? null } : null });
+  const args = option(more, "--agent-args");
+  startWork({ branch, agent, prompt, args: args ? JSON.parse(args) : [] });
 }
 
 /** Windows Terminal: -w 0 opens a tab in the most recent window (or a new window). */
@@ -157,17 +157,17 @@ function fromLinear(argv) {
   const configPath = option(argv, "--config");
   const config = loadConfig(configPath ?? CONFIG_PATH, { required: Boolean(configPath) });
   const flags = { agent: option(argv, "--agent"), agentLabel: option(argv, "--agent-label"), terminal: option(argv, "--terminal"), terminalLabel: option(argv, "--terminal-label"), orca: option(argv, "--orca") };
-  const { agent, model, terminal, orca, notes } = choose(process.env.LINEAR_PROMPT ?? "", flags, config);
+  const { agent, model, args, terminal, orca, notes } = choose(process.env.LINEAR_PROMPT ?? "", flags, config);
   // Say what starts and why, so a label that was not picked up is easy to see.
   const where = { wt: "Windows Terminal", warp: "Warp", orca: "Orca" }[terminal] ?? "this window";
-  console.log(`Agent: ${agent} in ${where}${model ? `, model ${model.id}${model.effort ? `, effort ${model.effort}` : ""}` : ", its default model"}`);
+  console.log(`Agent: ${agent} in ${where}${model?.id ? `, model ${model.id}` : ", its default model"}${model?.effort ? `, effort ${model.effort}` : ""}`);
   for (const note of notes) console.log(`  ${note}`);
   const { LINEAR_ISSUE_BRANCH_NAME: branch, LINEAR_WORK_DIR: dir, LINEAR_ISSUE_IDENTIFIER: id = "issue", LINEAR_PROMPT: prompt = "" } = process.env;
   if (!branch || !dir) throw new Error("LINEAR_ISSUE_BRANCH_NAME and LINEAR_WORK_DIR are missing; list them under env in coding-tools.json");
   // Default: work in the terminal Linear opened for the script.
   if (!terminal) {
     process.chdir(dir);
-    return startWork({ branch, agent, prompt, model });
+    return startWork({ branch, agent, prompt, args });
   }
   if (terminal === "orca") {
     process.chdir(dir);
@@ -182,8 +182,8 @@ function fromLinear(argv) {
   // The prompt is long Markdown with quotes and semicolons, so it travels in a file.
   const file = join(tmpdir(), `nk-linear-${id}-${process.pid}.md`);
   writeFileSync(file, prompt);
-  const modelArgs = model ? ["--model", model.id, ...(model.effort ? ["--effort", model.effort] : [])] : [];
-  open({ dir, id, inner: [process.execPath, self, "--run", file, branch, agent, ...modelArgs] });
+  const agentArgs = args.length ? ["--agent-args", JSON.stringify(args)] : [];
+  open({ dir, id, inner: [process.execPath, self, "--run", file, branch, agent, ...agentArgs] });
   closeLinearWindow();
 }
 

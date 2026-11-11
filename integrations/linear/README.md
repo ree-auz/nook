@@ -86,7 +86,7 @@ Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only.
 | -- | -- | -- |
 | Agent | `Agent` label → the agent of a model label → `--agent` → `"agent"` | `codex` |
 | Model | `Model` label | the agent's own default model |
-| Effort | `Effort` label → the effort in the `Model` label (`Strong · high`) → the tier's effort in `models` | the agent's own default effort |
+| Effort | `Effort` label → the effort in the `Model` label (`Strong · high`) → the tier's effort in `models`; each mapped through `efforts` for the agent | the agent's own default effort |
 | Terminal | `Terminal` label → `--terminal` → `"terminal"` | the window Linear opened |
 
 The first line in Linear's window says which agent, model and terminal were
@@ -104,7 +104,7 @@ including case. A group that is not in `labels` is not read.
 | -- | -- | -- | -- |
 | `agent` | any | any agent command: `codex`, `claude`, `gemini`, `grok`, `opencode`, `pi`, `aider`, `amp`, `cursor-agent`, `qwen`, … (lowercased, spaces as `-`: `Cursor Agent` → `cursor-agent`) | `"agents": { "克劳德": "claude" }` |
 | `model` | any, optionally `<model> · <effort>` | a model id as the agent takes it: `Model › gpt-6.1-sol · low` | `"models"`, see below |
-| `effort` | any | `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | `"efforts": { "高": "high" }` |
+| `effort` | any | `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | `"efforts": { "高": "high", "极高": { "codex": "xhigh", "claude": "max" } }` |
 | `terminal` | any | `Orca`, `Warp`, `Windows Terminal` (or `wt`), `Here` (or `Linear`: the window Linear opened) | `"terminals": { "终端窗口": "wt" }` |
 
 Names are matched without regard to case. Without its group, a single label
@@ -127,11 +127,28 @@ somewhere you did not mean.
   - one agent's model: `"Luna": { "id": "gpt-6-luna", "agent": "codex" }`.
     An issue with only that model label starts that agent, and an issue
     labelled for another agent starts it with its own default model.
-- **efforts** maps a label word to one of the built-in efforts.
-- The effort travels with a model, so an `Effort` label needs a `Model`
-  label too. Codex gets `-m <id> -c model_reasoning_effort=<effort>`; other
-  agents get `--model <id>`, without the effort. Orca gets
-  `--model <id> --effort <effort>` for any agent.
+- **efforts** maps a label word to an effort: one value for every agent
+  (`"高": "high"`), or each agent's own, since agents name their levels
+  differently (`"极高": { "codex": "xhigh", "claude": "max" }`). An agent
+  missing from such a mapping starts with its own default effort.
+- **agentArgs** says how each agent takes a model and an effort when it
+  starts in a terminal: `{ "model": ["--model", "{model}"], "effort":
+  ["--effort", "{effort}"] }`, with `{model}` and `{effort}` filled in.
+  Codex is built in (`-m {model}`, `-c model_reasoning_effort={effort}`);
+  any other agent without an entry gets `--model {model}` and no effort.
+  These change rarely, unlike model ids.
+- An `Effort` label works without a `Model` label: the agent keeps its
+  default model and gets the effort. Orca takes `--model <id> --effort
+  <effort>` for any agent, with the agent's own effort value from `efforts`;
+  it needs a model with the effort.
+
+[`nook.example.json`](nook.example.json) is a starting point to copy to
+`~/.linear/nook.json`: its `agentArgs` hold the flags of Codex, Claude Code,
+Grok, Gemini, Cursor Agent and OpenCode, and its `efforts` map five levels
+for them. Change the label names and the model ids to yours. The Codex,
+Claude Code and Grok flags come from their command-line references; Grok's
+effort values and the Gemini, Cursor Agent and OpenCode model flags are
+worth checking with each tool's `--help`.
 
 ### A Chinese setup
 
@@ -148,12 +165,13 @@ somewhere you did not mean.
     "强": { "codex": { "id": "gpt-6.1-sol", "effort": "high" }, "claude": "claude-opus-5-5" },
     "最强": { "codex": { "id": "gpt-6-astra", "effort": "medium" }, "claude": "claude-opus-5-5" }
   },
-  "efforts": { "低": "low", "中": "medium", "高": "high", "极高": "xhigh" }
+  "efforts": { "低": "low", "中": "medium", "高": "high", "极高": { "codex": "xhigh", "claude": "max" } },
+  "agentArgs": { "claude": { "model": ["--model", "{model}"], "effort": ["--effort", "{effort}"] } }
 }
 ```
 
 With these labels in Linear: `执行 › 克劳德`, `模型 › 强`, `档位 › 极高`,
-`终端 › Orca` starts `claude-opus-5-5` with effort `xhigh` in Orca. With
+`终端 › Orca` starts `claude-opus-5-5` with effort `max` in Orca. With
 only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 
 ### Every setting
@@ -180,7 +198,8 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `agents` | label name → agent command |
 | `terminals` | label name → `orca`, `warp`, `wt` or `here` |
 | `models` | label name → tier, id, or one agent's model |
-| `efforts` | label word → `minimal` … `max` |
+| `efforts` | label word → an effort, or each agent's effort |
+| `agentArgs` | agent → how it takes `{model}` and `{effort}` |
 
 ## Use
 
