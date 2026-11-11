@@ -22,7 +22,7 @@ const nk = fileURLToPath(new URL("../../bin/nk.mjs", import.meta.url));
  * or nvm, Linear starts without the shell setup that adds it, and global npm
  * commands (the agent, pnpm for hooks) live next to node.exe.
  */
-export function withNodeOnPath(env = process.env) {
+function withNodeOnPath(env = process.env) {
   const key = Object.keys(env).find((name) => name.toUpperCase() === "PATH") ?? "PATH";
   return { ...env, [key]: [dirname(process.execPath), env[key]].filter(Boolean).join(delimiter) };
 }
@@ -33,19 +33,18 @@ function runNk(args, opts = {}) {
 }
 
 /** The issue's workspace from `nk ls --json`, if it exists. */
-export function findWorkspace(branch) {
+function findWorkspace(branch) {
   const listed = spawnSync(process.execPath, [nk, "ls", "--json"], { encoding: "utf8", env: withNodeOnPath() });
   return listed.status === 0 ? JSON.parse(listed.stdout).find((ws) => !ws.main && (ws.branch === branch || ws.name === normalizeName(branch))) : null;
 }
 
 /** Creates the issue's workspace and starts the agent, or reopens it. */
-export function startWork({ branch, agent, prompt }) {
+function startWork({ branch, agent, prompt }) {
   const existing = findWorkspace(branch);
   // Clicked again for the same issue: reopen the workspace without restarting the task.
   // -y: the branch name Linear suggests is converted without asking.
   const result = existing ? runNk([existing.name, agent]) : runNk(["-b", branch, agent, "-y", "-p", prompt]);
   process.exitCode = result.status ?? 1;
-  return process.exitCode;
 }
 
 /** Inside a tab another terminal opened: the prompt comes in a file. */
@@ -58,7 +57,7 @@ export function insideTab([file, branch, agent, ...more]) {
 }
 
 /** Windows Terminal: -w 0 opens a tab in the most recent window (or a new window). */
-export function openInWindowsTerminal({ dir, id, inner }) {
+function openInWindowsTerminal({ dir, id, inner }) {
   spawn("wt.exe", ["-w", "0", "new-tab", "-d", dir, "--title", id, ...inner], { detached: true, stdio: "ignore" }).unref();
 }
 
@@ -97,7 +96,7 @@ function which(command) {
   return result.status === 0;
 }
 
-export const TERMINALS = { wt: openInWindowsTerminal, warp: openInWarp };
+const TERMINALS = { wt: openInWindowsTerminal, warp: openInWarp };
 
 /**
  * Orca: nk creates the workspace (hooks, ports, database), then Orca starts

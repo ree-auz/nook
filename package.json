@@ -24,8 +24,7 @@
   "type": "module",
   "bin": {
     "nk": "bin/nk.mjs",
-    "nook": "bin/nk.mjs",
-    "nkl": "bin/nkl.mjs"
+    "nook": "bin/nk.mjs"
   },
   "files": [
     "bin",

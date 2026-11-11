@@ -44,15 +44,7 @@ export function press(state, shown, str, key = {}) {
   const move = (by) => ({ ...state, at: shown.length ? shown[(Math.max(index, 0) + by + shown.length) % shown.length] : undefined });
   if (key.ctrl && key.name === "c") return { cancelled: "interrupt" };
   if (key.name === "escape") return { cancelled: "escape" };
-  if (key.name === "return" || key.name === "enter") {
-    if (state.marked?.length) return { done: state.at, marked: state.marked };
-    return index === -1 ? state : { done: state.at };
-  }
-  // With several to choose (state.marked), Tab marks the row or unmarks it and moves on.
-  if (key.name === "tab" && state.marked && index !== -1) {
-    const marked = state.marked.includes(state.at) ? state.marked.filter((item) => item !== state.at) : [...state.marked, state.at];
-    return { ...move(1), marked };
-  }
+  if (key.name === "return" || key.name === "enter") return index === -1 ? state : { done: state.at };
   if (key.name === "up" || (key.ctrl && key.name === "p")) return move(-1);
   if (key.name === "down" || (key.ctrl && key.name === "n")) return move(1);
   if (key.name === "backspace") return { ...state, query: [...state.query].slice(0, -1).join("") };
@@ -67,15 +59,12 @@ export function press(state, shown, str, key = {}) {
  * draw, so a row can gain details while the list is open (call redraw()).
  * text(item): what typing filters on. start: the item chosen at first.
  * unicode: false where the terminal cannot show "…" and arrows.
- * multi: Tab marks rows, and Enter takes the marked ones (or the chosen row
- * when none is marked).
- * Returns { result, redraw }; result resolves to { item } (with multi, also { items }) or { cancelled }.
+ * Returns { result, redraw }; result resolves to { item } or { cancelled }.
  */
-export function pick({ input, output, title, items, cells, text, start, color = false, unicode = true, multi = false }) {
+export function pick({ input, output, title, items, cells, text, start, color = false, unicode = true }) {
   // Older Windows consoles have no "…" and no arrows in their code page.
   const more = unicode ? "…" : "...";
-  /** @type {{ query: string, at: any, marked?: any[] }} */
-  let state = { query: "", at: start ?? items[0], ...(multi ? { marked: [] } : {}) };
+  let state = { query: "", at: start ?? items[0] };
   let drawn = 0;
   let closed = false;
   const paint = (code, value) => (color ? `\x1b[${code}m${value}\x1b[0m` : value);
@@ -91,19 +80,17 @@ export function pick({ input, output, title, items, cells, text, start, color = 
     const visible = shown.slice(from, from + room);
     const rows = visible.map(cells);
     const widths = (rows[0] ?? []).map((_, i) => Math.max(...rows.map((row) => width(row[i]))));
-    const count = `${shown.length === items.length ? "" : `  ${shown.length} of ${items.length}`}${state.marked?.length ? `  ${state.marked.length} marked` : ""}`;
+    const count = shown.length === items.length ? "" : `  ${shown.length} of ${items.length}`;
     const lines = [fit(`${title}${state.query ? `  filter: ${state.query}` : ""}${count}`, columns, more), ""];
     rows.forEach((row, i) => {
       const body = row.map((cell, c) => (c === row.length - 1 ? cell : cell + " ".repeat(widths[c] - width(cell)))).join("  ");
       const chosen = visible[i] === state.at;
-      const marked = state.marked?.includes(visible[i]) ? "+" : " ";
-      const line = fit(`${chosen ? ">" : " "}${multi ? marked : ""} ${body}`.trimEnd(), columns, more);
+      const line = fit(`${chosen ? ">" : " "} ${body}`.trimEnd(), columns, more);
       lines.push(chosen ? paint(1, line) : line);
     });
     if (!shown.length) lines.push(`  nothing matches "${state.query}"`);
     if (shown.length > from + room) lines.push(paint(2, `  ${more} ${shown.length - from - room} more below`));
-    const keys = `${unicode ? "↑↓" : "Up/Down"} move · type to filter${multi ? " · Tab mark" : ""} · Enter choose · Esc cancel`;
-    lines.push("", paint(2, fit(keys, columns, more)));
+    lines.push("", paint(2, fit(`${unicode ? "↑↓" : "Up/Down"} move · type to filter · Enter choose · Esc cancel`, columns, more)));
     return lines;
   };
 
@@ -126,8 +113,7 @@ export function pick({ input, output, title, items, cells, text, start, color = 
         input.pause();
         // The list goes, so the terminal is left as it was; the cursor comes back.
         output.write(`${erase()}\x1b[?25h`);
-        if ("cancelled" in next) return done({ cancelled: next.cancelled });
-        return done(multi ? { item: next.done, items: next.marked ?? [next.done] } : { item: next.done });
+        return done("done" in next ? { item: next.done } : { cancelled: next.cancelled });
       }
       state = next;
       redraw();
