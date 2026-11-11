@@ -79,7 +79,7 @@ test("a model label picks the model, its effort and, alone, its agent", async ()
   };
   const pick = (labels, flags = {}) => choose(labels.map((l) => `<label>${l}</label>`).join("\n"), flags, config);
 
-  assert.deepEqual(pick(["Model › Luna · 高", "Agent › Codex"]), { agent: "codex", model: { id: "gpt-6-luna", effort: "high" }, args: ["-m", "gpt-6-luna", "-c", "model_reasoning_effort=high"], terminal: null, orca: "orca", notes: [] });
+  assert.deepEqual(pick(["Model › Luna · 高", "Agent › Codex"]), { agent: "codex", model: { id: "gpt-6-luna", effort: "high" }, args: ["-m", "gpt-6-luna", "-c", "model_reasoning_effort=high"], terminal: null, orca: "orca", wezterm: "wezterm", notes: [] });
   assert.equal(pick(["Model › Opus · high"]).agent, "claude", "the model's agent when no agent label");
   assert.deepEqual(pick(["Model › gpt-6.1-sol · low"]).model, { id: "gpt-6.1-sol", effort: "low" }, "a label that is a model id needs no config");
   assert.deepEqual(pick(["Model › Fast", "Agent › Grok"]).model, { id: "grok-5-fast", effort: null });
@@ -245,4 +245,43 @@ test("efforts and arguments differ per agent", async () => {
 test("the preset config parses and covers the built-in agents", async () => {
   const preset = JSON.parse(readFileSync(fileURLToPath(new URL("../integrations/linear/nook.example.json", import.meta.url)), "utf8"));
   for (const agent of ["codex", "claude", "grok"]) assert.ok(preset.agentArgs[agent]?.effort, `${agent} has an effort argument`);
+});
+
+test("WezTerm opens a tab in the running WezTerm, else a window", async () => {
+  const { openInWezTerm } = await import("../integrations/linear/open-issue.mjs");
+  const inner = ["C:\\Program Files\\nodejs\\node.exe", "C:\\nook\\open-issue.mjs", "--run", "C:\\Temp\\it's.md", "ree-270-x", "codex"];
+  const calls = [];
+  const started = [];
+  const answer = (status, stdout = "") => (command, args) => {
+    calls.push([command, ...args]);
+    return args[1] === "set-tab-title" ? { status: 0 } : { status, stdout };
+  };
+  const start = (command, args) => started.push([command, ...args]);
+
+  assert.equal(openInWezTerm({ dir: "D:\\Projects\\Pipit", id: "REE-270", inner, run: answer(0, "42\n"), start }), "tab");
+  assert.deepEqual(calls, [
+    ["wezterm", "cli", "--no-auto-start", "spawn", "--cwd", "D:\\Projects\\Pipit", "--", ...inner],
+    ["wezterm", "cli", "set-tab-title", "--pane-id", "42", "REE-270"],
+  ]);
+  assert.deepEqual(started, []);
+
+  calls.length = 0;
+  assert.equal(openInWezTerm({ dir: "/work/pipit", id: "REE-270", inner, wezterm: "/opt/wezterm", run: answer(1), start }), "window", "no WezTerm open");
+  assert.equal(calls.length, 1);
+  assert.deepEqual(started, [["/opt/wezterm", "start", "--cwd", "/work/pipit", "--", ...inner]]);
+
+  const missing = () => ({ status: null, error: Object.assign(new Error("spawn wezterm ENOENT"), { code: "ENOENT" }) });
+  assert.throws(() => openInWezTerm({ dir: ".", id: "x", inner, run: missing, start }), /could not run wezterm.*--wezterm/);
+});
+
+test("WezTerm is a terminal a label or the default can name", async () => {
+  const { choose } = await import("../integrations/linear/choose.mjs");
+  const pick = (labels, flags = {}, config = {}) => choose(labels.map((l) => `<label>${l}</label>`).join("\n"), flags, { labels: { terminal: "终端" }, ...config });
+  assert.equal(pick(["终端 › WezTerm"]).terminal, "wezterm");
+  assert.equal(pick(["WezTerm"]).terminal, "wezterm", "outside the group");
+  assert.equal(pick([], {}, { terminal: "WezTerm" }).terminal, "wezterm");
+  assert.equal(pick(["终端 › 韦兹"], {}, { terminals: { 韦兹: "wezterm" } }).terminal, "wezterm");
+  assert.equal(pick([]).wezterm, "wezterm");
+  assert.equal(pick([], { wezterm: "C:\\WezTerm\\wezterm.exe" }, { wezterm: "x" }).wezterm, "C:\\WezTerm\\wezterm.exe", "--wezterm wins");
+  assert.throws(() => pick(["终端 › Kitty"]), /use Orca, Warp, WezTerm, Windows Terminal or Here/);
 });
