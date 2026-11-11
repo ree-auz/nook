@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { agentCommand, windowsDirect } from "../../src/agents.mjs";
 import { CONFIG_PATH, choose, loadConfig, pickOptions } from "./choose.mjs";
 import { AGAIN, AGAIN_SHORT, againChoices, againSetting, nextBranch } from "./again.mjs";
-import { pick, release } from "../../src/select.mjs";
+import { pick } from "../../src/select.mjs";
 import { apiKey, startIssue } from "./start-issue.mjs";
 import { normalizeName } from "../../src/names.mjs";
 import crossSpawn from "cross-spawn";
@@ -260,12 +260,7 @@ async function fromLinear(argv) {
   let picks = {};
   // The list in Linear's window: always with "confirm", and when the issue already has a workspace and "again" is ask.
   if (process.stdin.isTTY && (config.confirm === true || (existing && setting === "ask"))) {
-    let reviewed;
-    try {
-      reviewed = await review({ id, existing, again, prompt, flags, config });
-    } finally {
-      release(process.stdin);
-    }
+    const reviewed = await review({ id, existing, again, prompt, flags, config });
     if (!reviewed) return console.log("Nothing started.");
     ({ again, picks } = reviewed);
   } else if (again === "ask") again = "continue";
@@ -319,17 +314,6 @@ async function fromLinear(argv) {
   if (close) closeLinearWindow();
 }
 
-/**
- * { item, side? }: a row from a list in Linear's window, or null when it was
- * left with Esc. The lists follow each other, so raw mode stays on between
- * them; fromLinear leaves it when the review ends.
- */
-async function choice(title, items, text, start, { hint, sides } = {}) {
-  const { result } = pick({ input: process.stdin, output: process.stdout, title, items, cells: (item) => [text(item)], text, start, hint, sides, keep: true, unicode: process.platform !== "win32" || Boolean(process.env.WT_SESSION) });
-  const chosen = await result;
-  return "item" in chosen ? chosen : null;
-}
-
 const TERMINAL_SHOWN = { wt: "Windows Terminal", warp: "Warp", wezterm: "WezTerm", orca: "Orca" };
 const DEFAULT = "the agent's default";
 
@@ -344,17 +328,20 @@ function step(values, current, side) {
  * The list in Linear's window before anything starts: Start, then what the
  * labels chose (agent, model, effort, terminal) and, for an issue that has
  * a workspace, what to do with it. Left and Right change a line in place;
- * Enter on a line lists its values. A change holds for this start only.
+ * Enter on a line lists its values, and Esc there goes back. A change holds
+ * for this start only. It is one list that changes in place, never a list
+ * that ends and another that starts (see pick).
  * Returns { again, picks }, or null when left with Esc.
  */
-export async function review({ id, existing, again, prompt, flags, config, ask = choice }) {
+export async function review({ id, existing, again, prompt, flags, config, input = process.stdin, output = process.stdout }) {
   let state = { again: again === "ask" ? "continue" : again, picks: {} };
   const options = pickOptions(config);
-  let at = "start";
-  for (;;) {
+  const one = (item) => [item.text];
+
+  const main = (at = "start") => {
     const now = choose(prompt, { ...flags, picks: state.picks }, config);
     const againKeys = againChoices(now.terminal);
-    const shown = { agent: now.agent, terminal: TERMINAL_SHOWN[now.terminal] ?? "Here" };
+    const current = { agent: now.agent, terminal: TERMINAL_SHOWN[now.terminal] ?? "Here" };
     const rows = [
       { key: "start", text: `Start ${now.agent}` },
       ...(existing ? [{ key: "again", text: `Workspace ${existing.name}: ${AGAIN_SHORT[state.again]}` }] : []),
@@ -363,32 +350,48 @@ export async function review({ id, existing, again, prompt, flags, config, ask =
       { key: "effort", text: `Effort: ${now.model?.effort ?? DEFAULT}` },
       { key: "terminal", text: `Terminal: ${TERMINAL_SHOWN[now.terminal] ?? "this window"}` },
     ];
-    const hint = (r) => (r.key === "again" ? AGAIN[state.again] : r.key === "start" ? `Enter starts ${id}` : "");
-    const chosen = await ask(`${id}: change a line, then Start`, rows, (r) => r.text, rows.find((r) => r.key === at) ?? rows[0], { hint, sides: true });
-    if (!chosen) return null;
-    const { item: row, side } = chosen;
-    at = row.key;
-    if (row.key === "start") {
-      if (side) continue;
-      return state;
-    }
-    if (row.key === "again") {
-      if (side) state = { ...state, again: step(againKeys, state.again, side) };
-      else {
-        const picked = await ask("Workspace", againKeys, (key) => AGAIN_SHORT[key], state.again, { hint: (key) => AGAIN[key] });
-        if (picked) state = { ...state, again: picked.item };
-      }
-      continue;
-    }
-    const values = options[row.key];
-    const current = row.key in state.picks ? state.picks[row.key] : (shown[row.key] ?? undefined);
-    if (side) {
-      state = { ...state, picks: { ...state.picks, [row.key]: step(values, current, side) } };
-      continue;
-    }
-    const value = await ask(row.text.split(":")[0], values, (v) => v ?? DEFAULT, values.includes(current) ? current : undefined);
-    if (value) state = { ...state, picks: { ...state.picks, [row.key]: value.item } };
-  }
+    const valueOf = (key) => (key === "again" ? state.again : key in state.picks ? state.picks[key] : current[key]);
+    const valuesOf = (key) => (key === "again" ? againKeys : options[key]);
+    const set = (key, value) => {
+      state = key === "again" ? { ...state, again: value } : { ...state, picks: { ...state.picks, [key]: value } };
+    };
+    // A sub-list of one line's values; choosing or Esc comes back here.
+    const values = (row) => {
+      const list = valuesOf(row.key).map((value) => ({ value, text: row.key === "again" ? AGAIN_SHORT[value] : (value ?? DEFAULT) }));
+      return {
+        title: row.key === "again" ? "Workspace" : row.text.split(":")[0],
+        items: list,
+        cells: one,
+        text: (item) => item.text,
+        start: list.find((item) => item.value === valueOf(row.key)),
+        hint: row.key === "again" ? (item) => AGAIN[item.value] : undefined,
+        onChoose: (item) => {
+          set(row.key, item.value);
+          return { view: main(row.key) };
+        },
+        onCancel: () => ({ view: main(row.key) }),
+      };
+    };
+    return {
+      title: `${id}: change a line, then Start`,
+      items: rows,
+      cells: one,
+      text: (row) => row.text,
+      start: rows.find((row) => row.key === at) ?? rows[0],
+      sides: true,
+      hint: (row) => (row.key === "again" ? AGAIN[state.again] : row.key === "start" ? `Enter starts ${id}` : ""),
+      onChoose: (row, side) => {
+        if (row.key === "start") return side ? { view: main("start") } : undefined;
+        if (!side) return { view: values(row) };
+        set(row.key, step(valuesOf(row.key), valueOf(row.key), side));
+        return { view: main(row.key) };
+      },
+    };
+  };
+
+  const unicode = process.platform !== "win32" || Boolean(process.env.WT_SESSION);
+  const chosen = await pick({ input, output, unicode, ...main() }).result;
+  return "item" in chosen ? state : null;
 }
 
 /**

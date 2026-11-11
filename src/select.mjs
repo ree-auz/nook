@@ -74,20 +74,25 @@ export function release(input) {
  * unicode: false where the terminal cannot show "…" and arrows.
  * hint(item): a line under the list about the chosen row.
  * sides: Left and Right choose too, with { side }.
- * keep: stay in raw mode after, for a list that follows at once; the caller
- * then calls release(input). Leaving and entering raw mode between two lists
- * is what can leave a Windows console blank.
+ * onChoose(item, side) and onCancel(): may return { view } to show another
+ * list in place (title, items, cells, text, start, hint, sides, onChoose,
+ * onCancel); anything else ends the list. Changing lists inside the key
+ * that asked for it keeps one list on screen: a Windows console can show
+ * nothing for a list drawn after another one ended, until a key is pressed.
  * Returns { result, redraw }; result resolves to { item, side? } or { cancelled }.
  */
-export function pick({ input, output, title, items, cells, text, start, color = false, unicode = true, hint = undefined, sides = false, keep = false }) {
+export function pick({ input, output, color = false, unicode = true, ...first }) {
   // Older Windows consoles have no "…" and no arrows in their code page.
   const more = unicode ? "…" : "...";
-  let state = { query: "", at: start ?? items[0] };
+  /** @type {any} */
+  let view = first;
+  let state = { query: "", at: view.start ?? view.items[0] };
   let drawn = 0;
   let closed = false;
   const paint = (code, value) => (color ? `\x1b[${code}m${value}\x1b[0m` : value);
 
   const frame = () => {
+    const { title, items, cells, text, hint, sides } = view;
     const columns = Math.max(20, (output.columns ?? 80) - 1);
     const shown = filter(items, state.query, text);
     // Typing can filter the chosen row away: the first one left is chosen then.
@@ -125,23 +130,32 @@ export function pick({ input, output, title, items, cells, text, start, color = 
   };
 
   const result = new Promise((done) => {
+    const finish = (value) => {
+      closed = true;
+      input.off("keypress", onKey);
+      output.off?.("resize", redraw);
+      release(input);
+      // The list goes, so the terminal is left as it was; the cursor comes back.
+      output.write(`${erase()}\x1b[?25h`);
+      done(value);
+    };
     const onKey = (str, key) => {
-      const next = press(state, filter(items, state.query, text), str, key, sides);
+      const next = press(state, filter(view.items, state.query, view.text), str, key, view.sides);
       if ("done" in next || "cancelled" in next) {
-        closed = true;
-        input.off("keypress", onKey);
-        output.off?.("resize", redraw);
-        if (!keep) release(input);
-        // The list goes, so the terminal is left as it was; the cursor comes back.
-        output.write(`${erase()}\x1b[?25h`);
-        if ("cancelled" in next) return done({ cancelled: next.cancelled });
-        return done("side" in next ? { item: next.done, side: next.side } : { item: next.done });
+        const after = "done" in next ? view.onChoose?.(next.done, next.side) : next.cancelled === "escape" ? view.onCancel?.() : undefined;
+        if (after?.view) {
+          view = after.view;
+          state = { query: "", at: view.start ?? view.items[0] };
+          return redraw();
+        }
+        if ("cancelled" in next) return finish({ cancelled: next.cancelled });
+        return finish("side" in next ? { item: next.done, side: next.side } : { item: next.done });
       }
       state = next;
       redraw();
     };
     emitKeypressEvents(input);
-    if (!input.isRaw) input.setRawMode?.(true);
+    input.setRawMode?.(true);
     input.on("keypress", onKey);
     output.on?.("resize", redraw);
     input.resume();

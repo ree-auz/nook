@@ -412,34 +412,44 @@ test("choices made in Linear's window win over the labels, for this start only",
 });
 
 test("the list in Linear's window changes a choice, then starts", async () => {
+  const { PassThrough } = await import("node:stream");
   const { review } = await import("../integrations/linear/open-issue.mjs");
   const config = { labels: { agent: "Agent", model: "Model" }, models: { Strong: { codex: "gpt-6-astra", claude: "opus" } } };
   const prompt = "<label>Agent › Codex</label>\n<label>Model › Strong</label>";
-  // Each answer picks a row by its text, or leaves with Esc (null).
-  const run = async (answers, existing = null) => {
-    const shown = [];
-    const ask = async (title, items, text) => {
-      shown.push(items.map(text));
-      const answer = answers.shift();
-      if (answer === null) return null;
-      const [want, side] = Array.isArray(answer) ? answer : [answer];
-      const item = items.find((i) => text(i).startsWith(want));
-      assert.ok(item !== undefined, `no row "${want}" in ${items.map(text).join(" | ")}`);
-      return side ? { item, side } : { item };
-    };
-    return { result: await review({ id: "REE-1", existing, again: "ask", prompt, flags: {}, config, ask }), shown };
+  const [UP, DOWN, LEFT, RIGHT, ENTER, ESC] = ["\x1b[A", "\x1b[B", "\x1b[D", "\x1b[C", "\r", "\x1b"];
+  const run = async (keys, existing = null) => {
+    const input = new PassThrough();
+    const raw = [];
+    Object.assign(input, { isTTY: true, setRawMode: (on) => raw.push(on) });
+    const written = [];
+    const output = { columns: 100, rows: 30, write: (text) => written.push(text), on() {}, off() {} };
+    // One key per write, as a person types: an Esc alone is not the start of an arrow then.
+    const typing = (async () => {
+      let last = "";
+      for (const key of keys) {
+        // readline waits up to 500 ms after a lone Esc for the rest of an escape code.
+        await new Promise((done) => setTimeout(done, last === ESC ? 600 : 5));
+        input.write(key);
+        last = key;
+      }
+    })();
+    const result = await review({ id: "REE-1", existing, again: "ask", prompt, flags: {}, config, input, output });
+    await typing;
+    return { result, screen: written.join(""), raw };
   };
-  const { result, shown } = await run(["Agent", "claude", "Start"]);
-  assert.deepEqual(result, { again: "continue", picks: { agent: "claude" } });
-  assert.ok(shown[2].includes("Model: opus"), "the model follows the new agent");
-  assert.deepEqual((await run(["Model", "the agent's default", "Start"])).result.picks, { model: null });
-  const again = await run(["Workspace", "Run again", "Start"], { name: "ree-1" });
-  assert.equal(again.result.again, "new");
-  assert.equal((await run([null])).result, null, "Esc starts nothing");
-  // Left and Right change a line in place: [row text, side].
-  const sides = await run([["Workspace", 1], ["Workspace", 1], ["Agent", -1], "Start"], { name: "ree-1" });
-  assert.equal(sides.result.again, "new", "two steps right from continue");
-  assert.ok(sides.shown[1][1].startsWith("Workspace ree-1: Start over"));
-  assert.notEqual(sides.result.picks.agent, "codex");
-  assert.ok(sides.shown[3][0].startsWith("Start ") && !sides.shown[3][0].endsWith("codex"), "Start shows the new agent");
+  // Agent → Enter lists the agents; "cl" filters to claude.
+  const listed = await run([DOWN, ENTER, "c", "l", "a", ENTER, UP, ENTER]);
+  assert.deepEqual(listed.result, { again: "continue", picks: { agent: "claude" } });
+  assert.match(listed.screen, /Model: opus/, "the model follows the new agent");
+  assert.deepEqual(listed.raw, [true, false], "raw mode once, for the whole list");
+
+  // Left and Right change a line in place.
+  const sides = await run([DOWN, RIGHT, RIGHT, LEFT, ENTER, DOWN, ENTER, UP, ENTER], { name: "ree-1" });
+  assert.equal(sides.result.again, "new", "right, right, left, then one down in the sub-list");
+  assert.match(sides.screen, /Workspace ree-1: Run again in a new workspace/);
+  assert.match(sides.screen, /Workspace ree-1: Start over in it/);
+
+  // Esc in a sub-list goes back; Esc in the list starts nothing.
+  assert.deepEqual((await run([DOWN, DOWN, ENTER, ESC, UP, UP, ENTER])).result, { again: "continue", picks: {} });
+  assert.equal((await run([ESC])).result, null, "Esc starts nothing");
 });

@@ -110,13 +110,20 @@ test("pick draws the list, follows the keys and leaves the terminal as it was", 
   assert.deepEqual(await pick({ ...options, input: keyboard(CTRL_C), output: screen() }).result, { cancelled: "interrupt" });
   assert.deepEqual(await pick({ ...options, input: keyboard(ESC), output: screen() }).result, { cancelled: "escape" });
 
-  // With sides, Left and Right choose too; with keep, raw mode stays on for the next list.
+  // With sides, Left and Right choose too.
   input = keyboard(`${DOWN}${RIGHT}`);
   output = screen();
-  assert.deepEqual(await pick({ ...options, input, output, sides: true, keep: true, hint: (item) => `about ${item.name}` }).result, { item: items[1], side: 1 });
-  assert.deepEqual(input.raw, [true]);
+  assert.deepEqual(await pick({ ...options, input, output, sides: true, hint: (item) => `about ${item.name}` }).result, { item: items[1], side: 1 });
   assert.match(output.text(), /about beta\n.*←→ change/);
   assert.deepEqual(await pick({ ...options, input: keyboard(`${LEFT}${ENTER}`), output: screen() }).result, { item: items[0] }, "without sides, Left does nothing");
+
+  // onChoose can show another list in place; it ends when a handler returns nothing.
+  input = keyboard(`${DOWN}${ENTER}${ENTER}`);
+  output = screen();
+  const second = { title: "second", items: ["x", "y"], cells: (v) => [v], text: (v) => v, onChoose: () => undefined };
+  assert.deepEqual(await pick({ ...options, input, output, onChoose: () => ({ view: second }) }).result, { item: "x" });
+  assert.match(output.text(), /second/);
+  assert.deepEqual(input.raw, [true, false], "one list on screen: raw mode once");
 });
 
 test("pick keeps the chosen row in sight in a short terminal and cuts long lines", async () => {
