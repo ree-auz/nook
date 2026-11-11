@@ -90,6 +90,15 @@ export function modelFromLabels(prompt, group, { models = {}, efforts = {} } = {
   return { ...found, effort, label: show(label), level };
 }
 
+/** The effort a label of group `group` names, mapped through `efforts`: { effort, label, name } or null. */
+export function effortFromLabels(prompt, group, efforts = {}) {
+  if (!group) return null;
+  const label = labelsFromPrompt(prompt).find((l) => l.group === group);
+  if (!label) return null;
+  const effort = lookup(efforts, label.name) ?? (EFFORTS.includes(label.name.toLowerCase()) ? label.name.toLowerCase() : undefined);
+  return { effort, label: show(label), name: label.name };
+}
+
 /** A tier's model for one agent: { id, effort } or null. */
 function tierModel(tier, agent) {
   const value = lookup(tier, agent);
@@ -134,6 +143,8 @@ export function choose(prompt, flags = {}, config = {}) {
   const labels = { ...config.labels, ...(flags.agentLabel ? { agent: flags.agentLabel } : {}), ...(flags.terminalLabel ? { terminal: flags.terminalLabel } : {}) };
   const notes = [];
   const found = modelFromLabels(prompt, labels.model, config);
+  const effortLabel = effortFromLabels(prompt, labels.effort, config.efforts);
+  if (effortLabel?.effort === undefined && effortLabel) notes.push(`${effortLabel.label}: "${effortLabel.name}" is not an effort; add it to "efforts" in the config (say "${effortLabel.name}": "high")`);
   const fromLabel = agentFromLabels(prompt, labels.agent);
   // An issue with only a model label gets the agent that model belongs to.
   const agent = fromLabel ?? found?.agent ?? flags.agent ?? config.agent ?? "codex";
@@ -146,6 +157,9 @@ export function choose(prompt, flags = {}, config = {}) {
     else if (fromTier) model = { id: fromTier.id, effort: found.effort ?? fromTier.effort };
     else model = { id: found.id, effort: found.effort ?? null };
   }
+  // A label of the effort group wins over the model label's and the tier's effort.
+  if (model && effortLabel?.effort) model = { ...model, effort: effortLabel.effort };
+  else if (!model && effortLabel?.effort && !found) notes.push(`${effortLabel.label} needs a model label too: the effort is passed with a model`);
   const terminalLabel = terminalFromLabels(prompt, labels.terminal);
   const terminal = terminalLabel === undefined ? (flags.terminal ?? config.terminal ?? null) : terminalLabel;
   if (model?.effort && agent !== "codex" && terminal !== "orca") notes.push(`effort ${model.effort} is passed only to codex, or to any agent through Orca; ${agent} starts with its default effort`);

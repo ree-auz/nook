@@ -187,3 +187,13 @@ test("a model tier gives each agent its own model", async () => {
   assert.equal(missing.model, null);
   assert.match(missing.notes[0], /Model › Fast: the config gives no grok model for it; grok starts with its own default/);
 });
+
+test("an effort label group sets the effort", async () => {
+  const { choose } = await import("../integrations/linear/choose.mjs");
+  const config = { labels: { agent: "Agent", model: "Model", effort: "Effort" }, models: { Strong: { codex: { id: "gpt-6-astra", effort: "medium" } } }, efforts: { 高: "high" } };
+  const pick = (labels) => choose(labels.map((l) => `<label>${l}</label>`).join("\n"), {}, config);
+  assert.deepEqual(pick(["Model › Strong", "Effort › 高"]).model, { id: "gpt-6-astra", effort: "high" }, "wins over the tier's effort");
+  assert.deepEqual(pick(["Model › Strong", "Effort › low"]).model, { id: "gpt-6-astra", effort: "low" });
+  assert.match(pick(["Model › Strong", "Effort › 猛"]).notes[0], /Effort › 猛: "猛" is not an effort/);
+  assert.match(pick(["Effort › high"]).notes[0], /needs a model label too/);
+});

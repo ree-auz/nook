@@ -64,10 +64,10 @@ Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only.
    {
      "agent": "codex",
      "terminal": "orca",
-     "labels": { "agent": "Agent", "model": "Model", "terminal": "Terminal" },
+     "labels": { "agent": "Agent", "model": "Model", "effort": "Effort", "terminal": "Terminal" },
      "models": {
-       "Luna": { "id": "gpt-6-luna", "agent": "codex" },
-       "Opus": { "id": "claude-opus-5-5", "agent": "claude" }
+       "Light": { "codex": "gpt-6-luna", "claude": "claude-haiku-5-5" },
+       "Strong": { "codex": "gpt-6-astra", "claude": "claude-opus-5-5" }
      }
    }
    ```
@@ -96,11 +96,14 @@ Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only.
      - one agent's model: `"Luna": { "id": "gpt-6-luna", "agent": "codex" }`.
        An issue with only that model label starts that agent, and an issue
        labelled for another agent starts it with its own default model.
-   - **Effort**: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`. For other
-     words in your labels, map them: `"efforts": { "高": "high" }`. Codex gets
-     `-m <id> -c model_reasoning_effort=<effort>`; other agents get
-     `--model <id>`, without the effort. Orca gets `--model <id> --effort
-     <effort>` for any agent.
+   - **Effort**: a label in the `effort` group, say `Effort › high`, sets
+     the effort; it wins over an effort in the model label (`Strong · high`)
+     and over the tier's. The words built in are `minimal`, `low`, `medium`,
+     `high`, `xhigh` and `max`. For other words in your labels, map them:
+     `"efforts": { "高": "high" }`. The effort travels with a model, so it needs
+     a model label too. Codex gets `-m <id> -c model_reasoning_effort=<effort>`;
+     other agents get `--model <id>`, without the effort. Orca gets
+     `--model <id> --effort <effort>` for any agent.
    - **Terminal**: a label in the `terminal` group named `Orca`, `Warp`,
      `Windows Terminal` or `Here` (the window Linear opened) wins over the
      default. A single label with one of those names works without the group.
