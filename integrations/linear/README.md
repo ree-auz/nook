@@ -54,8 +54,26 @@ Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only.
    - To let each issue pick its agent, label issues from one label group
      (say `Agent › Codex`, `Agent › Claude`) and add `"--agent-label", "Agent"`
      to `args`. Linear's prompt lists the issue's labels, and the script starts
-     the agent named by that group's label (lowercased, spaces as `-`), or the
-     `--agent` one when the issue has none.
+     the agent named by that group's label (lowercased, spaces as `-`). Without
+     `--agent-label`, or when the issue has no label in that group, a single
+     label named like a known agent (Codex, Claude, Grok, Gemini, …) picks it
+     too. Otherwise the `--agent` one starts.
+   - To let each issue pick the model and effort, label issues from another
+     group whose labels read `<model> · <effort>` (say `Model › Luna · 高`,
+     `Model › Sol · low`), and give each model's id:
+     `"--model-label", "Model", "--model", "Luna=gpt-6-luna", "--model", "Sol=gpt-6.1-sol"`.
+     The effort is `低`/`中`/`高`/`极高` or `low`/`medium`/`high`/`xhigh`. Codex
+     gets `-m <id> -c model_reasoning_effort=<effort>`; Orca gets
+     `--model <id> --effort <effort>`. These labels name one agent's models, so
+     they apply only when that agent starts: Codex, or the one given with
+     `"--model-agent", "<agent>"`. Another agent starts with its own default.
+   - To let each issue pick where it runs, label issues from a group whose
+     labels are `Orca`, `Warp`, `Windows Terminal` or `Here` (the window
+     Linear opened) and add `"--terminal-label", "<group>"`. A label wins over
+     `--terminal`. A single label named Orca, Warp or Windows Terminal outside
+     a group works too.
+   - The first line in Linear's window says which agent, model and terminal
+     were chosen, and why a label was not used, if one was not.
    - `env` is an allowlist: Linear only passes the variables listed here.
 
 ## Use
