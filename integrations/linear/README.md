@@ -233,7 +233,7 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `agent` | the default agent's command |
 | `terminal` | the default terminal |
 | `open` | `"tab"` (the default) or `"window"`: where Windows Terminal and WezTerm open the issue |
-| `confirm` | `true`: show the list in Linear's window for every issue, not only for one that has a workspace |
+| `confirm` | `false`: start at once, showing the list in Linear's window only for an issue that has a workspace (with `again` at `ask`); by default the list shows for every issue |
 | `again` | what starting an issue that has a workspace does: `ask` (the default), `continue`, `prompt`, `new`, `over` or `shell` |
 | `closeLinearWindow` | `false` keeps the window Linear opened after the agent starts in another terminal |
 | `orca` | Orca's command-line tool |
@@ -253,11 +253,8 @@ asks you to **Choose a directory**: pick the repository's main checkout (the
 folder where you ran `nk init`). Nook uses it only to know which repository
 the issue belongs to; nothing runs there.
 
-The terminal runs `nk -b <issue branch> <agent> -y -p <Linear's prompt>` in
-that folder (`-y` keeps the converted workspace name without asking).
-Choosing an issue that already has a workspace shows a list in Linear's
-window before anything starts (with `"confirm": true` in the config, every
-issue does):
+Linear's window shows a list before anything starts (with `"confirm": false`
+in the config, only for an issue that already has a workspace):
 
 ```
 REE-302: change a line, then Start
@@ -269,7 +266,14 @@ REE-302: change a line, then Start
   Terminal: WezTerm
 ```
 
-Enter on **Start** starts. Left and Right change the chosen line in place;
+Enter on **Start** starts. With Windows Terminal, Warp or WezTerm, Linear's
+window then makes the workspace (`nk -b <issue branch> -y`: worktree, hooks,
+containers), and the terminal opens with only the agent in it
+(`nk <workspace> <agent> -p <Linear's prompt>`), so there are two windows:
+Linear's, which closes, and the agent's. When something fails, Linear's
+window stays open with the reason until Enter. With "Here", everything runs
+in Linear's window; with Orca, nk makes the workspace and Orca starts the
+agent. Left and Right change the chosen line in place;
 Enter on a line lists its values. A change holds for this start
 only, without touching the issue's labels: the agent, the model (a name from
 `models`, or the agent's default), the effort (a word from `efforts`), the

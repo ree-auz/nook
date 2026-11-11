@@ -309,8 +309,8 @@ async function fromLinear(argv) {
   const setting = againSetting(flags, config);
   let again = existing ? setting : "continue";
   let picks = {};
-  // The list in Linear's window: always with "confirm", and when the issue already has a workspace and "again" is ask.
-  if (process.stdin.isTTY && (config.confirm === true || (existing && setting === "ask"))) {
+  // The list in Linear's window: for every issue unless "confirm" is false, then only when the issue already has a workspace and "again" is ask.
+  if (process.stdin.isTTY && (config.confirm !== false || (existing && setting === "ask"))) {
     const reviewed = await review({ id, existing, again, prompt, flags, config });
     if (!reviewed) return console.log("Nothing started.");
     ({ again, picks } = reviewed);
@@ -347,22 +347,35 @@ async function fromLinear(argv) {
   const open = TERMINALS[terminal];
   if (!open) throw new Error(`Unknown terminal "${terminal}"; use ${[...Object.keys(TERMINALS), "orca"].join(", ")}, or leave --terminal out`);
   if (process.platform !== "win32" && !ANY_PLATFORM.has(terminal)) throw new Error(`--terminal ${terminal} only works on Windows so far; wezterm and orca work everywhere`);
+  // The workspace (worktree, hooks, containers) is made here, in Linear's
+  // window; the terminal only gets the agent. One window for the setup and
+  // its errors, one for the work.
+  let inTab = again;
+  if (!existing || again === "new" || again === "over") {
+    if (runNk(["-b", branch, "-y"]).status !== 0) {
+      process.exitCode = 1;
+      return hold(`nk -b ${branch} failed; nothing started`);
+    }
+    inTab = "prompt";
+  }
   // The prompt is long Markdown with quotes and semicolons, so it travels in a file.
   const file = join(tmpdir(), `nk-linear-${id}-${process.pid}.md`);
   writeFileSync(file, prompt);
   const agentArgs = args.length ? ["--agent-args", JSON.stringify(args)] : [];
-  const inner = [process.execPath, self, "--run", file, branch, agent, ...agentArgs, "--again", again];
+  const inner = [process.execPath, self, "--run", file, branch, agent, ...agentArgs, "--again", inTab];
   const { reason } = open({ dir, id, inner, wezterm, open: openIn });
-  if (reason) {
-    // The agent clears the new window, so Linear's window stays to show why.
-    console.log(`  ${reason}`);
-    if (process.stdin.isTTY) {
-      process.stdout.write("  Press Enter to close this window.");
-      await new Promise((done) => process.stdin.once("data", done).resume());
-      process.stdin.pause();
-    }
-  }
+  // The agent clears the new window, so Linear's window stays to show why.
+  if (reason) await hold(reason);
   if (close) closeLinearWindow();
+}
+
+/** Shows a line in Linear's window and keeps the window until Enter. */
+async function hold(text) {
+  console.log(`  ${text}`);
+  if (!process.stdin.isTTY) return;
+  process.stdout.write("  Press Enter to close this window.");
+  await new Promise((done) => process.stdin.once("data", done).resume());
+  process.stdin.pause();
 }
 
 const TERMINAL_SHOWN = { wt: "Windows Terminal", warp: "Warp", wezterm: "WezTerm", orca: "Orca" };
