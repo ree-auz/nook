@@ -156,7 +156,7 @@ export function openInWezTerm({ dir, id, inner, wezterm = "wezterm", open = "tab
   if (spawned.status !== 0) return inWindow(`WezTerm did not open a tab (wezterm cli spawn: ${said(spawned)})`);
   const pane = String(spawned.stdout ?? "").trim();
   // Older WezTerm has no set-tab-title; the tab keeps the command's title then.
-  if (/^\d+$/.test(pane)) run(wezterm, ["cli", "set-tab-title", "--pane-id", pane, id]);
+  if (/^\d+$/.test(pane)) run(wezterm, ["cli", "--no-auto-start", "set-tab-title", "--pane-id", pane, id]);
   return { opened: "tab", reason: null };
 }
 

@@ -277,7 +277,7 @@ test("WezTerm opens a tab in the open WezTerm window, else a window", async () =
     ["wezterm", "cli", "--no-auto-start", "list", "--format", "json"],
     ["wezterm", "cli", "--no-auto-start", "list-clients", "--format", "json"],
     ["wezterm", "cli", "--no-auto-start", "spawn", "--window-id", "3", "--cwd", "D:\\Projects\\Pipit", "--", ...inner],
-    ["wezterm", "cli", "set-tab-title", "--pane-id", "42", "REE-270"],
+    ["wezterm", "cli", "--no-auto-start", "set-tab-title", "--pane-id", "42", "REE-270"],
   ], "the tab goes into the window of the active pane: outside WezTerm, spawn has no current window");
   assert.deepEqual(started, []);
 
