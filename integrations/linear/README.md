@@ -69,7 +69,7 @@ Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only;
    ```json
    {
      "agent": "codex",
-     "terminal": "orca",
+     "terminal": "here",
      "labels": { "agent": "Agent", "model": "Model", "effort": "Effort", "terminal": "Terminal" },
      "models": {
        "Light": { "codex": "gpt-6-luna", "claude": "claude-haiku-5-5" },
@@ -149,12 +149,37 @@ somewhere you did not mean.
   it needs a model with the effort.
 
 [`nook.example.json`](nook.example.json) is a starting point to copy to
-`~/.linear/nook.json`: its `agentArgs` hold the flags of Codex, Claude Code,
-Grok, Gemini, Cursor Agent and OpenCode, and its `efforts` map five levels
-for them. Change the label names and the model ids to yours. The Codex,
-Claude Code and Grok flags come from their command-line references; Grok's
-effort values and the Gemini, Cursor Agent and OpenCode model flags are
-worth checking with each tool's `--help`.
+`~/.linear/nook.json`. It starts agents in Linear's own window
+(`"terminal": "here"`), which needs nothing else installed; switch it to
+`wt`, `warp`, `wezterm` or `orca` if you use one. Its `agentArgs` hold the
+flags of Codex, Claude Code, Grok, Gemini CLI, Qwen Code, GitHub Copilot CLI,
+Cursor Agent, OpenCode, Pi, Factory Droid, Kimi Code, Aider and Amp; its
+`efforts` map five levels for the agents that take an effort; and its four
+model tiers name a model for most of them. Change the label names and model
+ids to yours.
+
+Notes on the flags, from each tool's command-line reference:
+
+| Agent | Model | Effort |
+| -- | -- | -- |
+| `codex` | `-m` | `-c model_reasoning_effort=…` |
+| `claude` | `--model` | `--effort` (low … max) |
+| `grok` | `-m` | `--effort` (values not documented) |
+| `gemini` | `-m` (`flash-lite`, `flash`, `pro`, `auto` or an id) | none |
+| `qwen` | `-m` | none; set with `/effort` |
+| `copilot` | `--model` | none; `effortLevel` in its settings |
+| `cursor-agent` | `--model` (`agent models` lists ids) | none |
+| `opencode` | `-m provider/model`; `provider/model#high` picks a reasoning variant | none |
+| `pi` | `--model provider/id` | `--thinking` (off … max) |
+| `droid` | `-m` | `--reasoning-effort` (depends on the model) |
+| `kimi` | `-m` | none; `--thinking` only turns thinking on |
+| `aider` | `--model` | `--reasoning-effort` |
+| `amp` | none: pick a mode in Amp | none |
+
+Agents that take no effort flag start with their own effort, with a note in
+Linear's window. Check the flags with each tool's `--help` when one fails;
+model ids change often, and agents with many providers (Copilot, Droid,
+OpenCode, Pi, Aider) take whichever ids your accounts allow.
 
 ### A Chinese setup
 

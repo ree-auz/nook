@@ -1,6 +1,6 @@
 {
   "agent": "codex",
-  "terminal": "orca",
+  "terminal": "here",
   "labels": {
     "agent": "Agent",
     "model": "Model",
@@ -8,8 +8,15 @@
     "terminal": "Terminal"
   },
   "agents": {
+    "Claude Code": "claude",
+    "Gemini CLI": "gemini",
+    "Qwen Code": "qwen",
     "Cursor": "cursor-agent",
-    "Open Code": "opencode"
+    "Cursor Agent": "cursor-agent",
+    "Open Code": "opencode",
+    "GitHub Copilot": "copilot",
+    "Factory": "droid",
+    "Kimi Code": "kimi"
   },
   "terminals": {
     "Tab": "wt",
@@ -20,35 +27,66 @@
     "claude": { "model": ["--model", "{model}"], "effort": ["--effort", "{effort}"] },
     "grok": { "model": ["-m", "{model}"], "effort": ["--effort", "{effort}"] },
     "gemini": { "model": ["-m", "{model}"] },
+    "qwen": { "model": ["-m", "{model}"] },
+    "copilot": { "model": ["--model", "{model}"] },
     "cursor-agent": { "model": ["--model", "{model}"] },
-    "opencode": { "model": ["-m", "{model}"] }
+    "opencode": { "model": ["-m", "{model}"] },
+    "pi": { "model": ["--model", "{model}"], "effort": ["--thinking", "{effort}"] },
+    "droid": { "model": ["-m", "{model}"], "effort": ["--reasoning-effort", "{effort}"] },
+    "kimi": { "model": ["-m", "{model}"] },
+    "aider": { "model": ["--model", "{model}"], "effort": ["--reasoning-effort", "{effort}"] },
+    "amp": {}
   },
   "efforts": {
     "Low": "low",
     "Medium": "medium",
     "High": "high",
-    "Extra high": { "codex": "xhigh", "claude": "xhigh", "grok": "high" },
-    "Max": { "codex": "max", "claude": "max", "grok": "high" }
+    "Extra high": { "codex": "xhigh", "claude": "xhigh", "pi": "xhigh", "droid": "xhigh", "grok": "high", "aider": "high" },
+    "Max": { "codex": "max", "claude": "max", "pi": "max", "droid": "max", "grok": "high", "aider": "high" }
   },
   "models": {
     "Light": {
       "codex": "gpt-6-luna",
-      "claude": "claude-haiku-5-5"
+      "claude": "claude-haiku-5-5",
+      "gemini": "flash-lite",
+      "copilot": "claude-haiku-5.5",
+      "droid": "claude-haiku-5-5",
+      "opencode": "anthropic/claude-haiku-5-5",
+      "pi": "anthropic/claude-haiku-5-5",
+      "aider": "anthropic/claude-haiku-5-5"
     },
     "Standard": {
       "codex": "gpt-6.1-sol",
       "claude": "claude-sonnet-5-5",
-      "gemini": "gemini-3-flash"
+      "gemini": "flash",
+      "grok": "grok-4.7",
+      "copilot": "claude-sonnet-5.5",
+      "droid": "claude-sonnet-5-5",
+      "opencode": "anthropic/claude-sonnet-5-5",
+      "pi": "anthropic/claude-sonnet-5-5",
+      "aider": "anthropic/claude-sonnet-5-5"
     },
     "Strong": {
       "codex": { "id": "gpt-6.1-sol", "effort": "high" },
       "claude": "claude-opus-5-5",
-      "gemini": "gemini-3-pro",
-      "grok": "grok-5"
+      "gemini": "pro",
+      "grok": "grok-4.7",
+      "copilot": "claude-opus-5.5",
+      "droid": "claude-opus-5-5",
+      "opencode": "anthropic/claude-opus-5-5",
+      "pi": "anthropic/claude-opus-5-5",
+      "aider": "anthropic/claude-opus-5-5"
     },
     "Strongest": {
       "codex": { "id": "gpt-6-astra", "effort": "medium" },
-      "claude": { "id": "claude-opus-5-5", "effort": "xhigh" }
+      "claude": { "id": "claude-opus-5-5", "effort": "xhigh" },
+      "gemini": "pro",
+      "grok": { "id": "grok-4.7", "effort": "high" },
+      "copilot": "gpt-6-astra",
+      "droid": { "id": "gpt-6-astra", "effort": "high" },
+      "opencode": "openai/gpt-6-astra",
+      "pi": { "id": "openai/gpt-6-astra", "effort": "high" },
+      "aider": "openai/gpt-6-astra"
     }
   }
 }

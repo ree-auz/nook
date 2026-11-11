@@ -4,7 +4,7 @@ import { NookError } from "./errors.mjs";
 import spawn from "cross-spawn";
 
 /** Command-line coding agents init looks for. Any other command works too. */
-export const KNOWN_AGENTS = ["claude", "codex", "gemini", "grok", "opencode", "pi", "aider", "amp", "cursor-agent", "qwen"];
+export const KNOWN_AGENTS = ["claude", "codex", "gemini", "grok", "opencode", "pi", "aider", "amp", "cursor-agent", "qwen", "copilot", "droid", "kimi"];
 
 function isFile(path) {
   try {
