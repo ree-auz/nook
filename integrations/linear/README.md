@@ -148,6 +148,11 @@ somewhere you did not mean.
   Codex is built in (`-m {model}`, `-c model_reasoning_effort={effort}`);
   any other agent without an entry gets `--model {model}` and no effort.
   These change rarely, unlike model ids.
+- **agentModels** lists more model ids for one agent, shown on the menu's
+  Model line next to the `models` tiers: `{ "claude": ["opus",
+  "claude-sonnet-5-5"] }`. When a new model comes out, add its id here; no
+  nook update is needed. The menu offers only the models and efforts that
+  fit the chosen agent.
 - An `Effort` label works without a `Model` label: the agent keeps its
   default model and gets the effort. Orca takes `--model <id> --effort
   <effort>` for any agent, with the agent's own effort value from `efforts`;
@@ -159,8 +164,9 @@ somewhere you did not mean.
 `wt`, `warp`, `wezterm` or `orca` if you use one. Its `agentArgs` hold the
 flags of Codex, Claude Code, Grok, Gemini CLI, Qwen Code, GitHub Copilot CLI,
 Cursor Agent, OpenCode, Pi, Factory Droid, Kimi Code, Aider and Amp; its
-`efforts` map five levels for the agents that take an effort; and its four
-model tiers name a model for most of them. Change the label names and model
+`efforts` map five levels for the agents that take an effort; its four
+model tiers name a model for most of them; and its `agentModels` list each
+agent's current model ids. Change the label names and model
 ids to yours.
 
 Notes on the flags, from each tool's command-line reference:
