@@ -6,7 +6,8 @@ issue's branch (running the repository's hooks) and starts your agent in it
 with Linear's prompt, in the terminal Linear opens for the script. Nook
 itself knows nothing about Linear: this folder only connects the two.
 
-Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only.
+Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only;
+`--terminal wezterm` and `--terminal orca` work on Windows, macOS and Linux.
 
 ## Set up once
 
@@ -42,6 +43,11 @@ Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only.
      Terminal; the terminal choice in Linear's settings is macOS only). To
      work in Warp instead, add `"--terminal", "warp"` to `args`: the script
      opens a tab in Warp and closes Linear's window.
+   - To work in [WezTerm](https://wezterm.org), add `"--terminal", "wezterm"`:
+     the script opens a tab in the WezTerm window that is open, or a new
+     WezTerm window when none is, and closes Linear's window. If WezTerm is
+     not on PATH, add `"--wezterm", "<full path to wezterm>"` (on Windows,
+     usually `C:\\Program Files\\WezTerm\\wezterm.exe`).
    - To keep agents in [Orca](https://www.onorca.dev) (its accounts and
      sessions), add `"--terminal", "orca"`: Nook creates the workspace and
      runs its hooks in Linear's window, then
@@ -105,7 +111,7 @@ including case. A group that is not in `labels` is not read.
 | `agent` | any | any agent command: `codex`, `claude`, `gemini`, `grok`, `opencode`, `pi`, `aider`, `amp`, `cursor-agent`, `qwen`, … (lowercased, spaces as `-`: `Cursor Agent` → `cursor-agent`) | `"agents": { "克劳德": "claude" }` |
 | `model` | any, optionally `<model> · <effort>` | a model id as the agent takes it: `Model › gpt-6.1-sol · low` | `"models"`, see below |
 | `effort` | any | `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | `"efforts": { "高": "high" }` |
-| `terminal` | any | `Orca`, `Warp`, `Windows Terminal` (or `wt`), `Here` (or `Linear`: the window Linear opened) | `"terminals": { "终端窗口": "wt" }` |
+| `terminal` | any | `Orca`, `Warp`, `WezTerm`, `Windows Terminal` (or `wt`), `Here` (or `Linear`: the window Linear opened) | `"terminals": { "终端窗口": "wt" }` |
 
 Names are matched without regard to case. Without its group, a single label
 named like a built-in agent or terminal (`Claude`, `Orca`), or like a mapped
@@ -114,7 +120,7 @@ mapped stops the script with an error, so a typo does not start the agent
 somewhere you did not mean.
 
 - **agents** maps a label name to the command that starts the agent.
-- **terminals** maps a label name to `orca`, `warp`, `wt` or `here`.
+- **terminals** maps a label name to `orca`, `warp`, `wezterm`, `wt` or `here`.
   `"terminal"` and `--terminal` take these names too, and the label names
   (`"terminal": "Windows Terminal"`).
 - **models**: a name in it is one of:
@@ -141,7 +147,7 @@ somewhere you did not mean.
   "terminal": "orca",
   "labels": { "agent": "执行", "model": "模型", "effort": "档位", "terminal": "终端" },
   "agents": { "克劳德": "claude", "双子座": "gemini" },
-  "terminals": { "终端窗口": "wt", "本窗口": "here" },
+  "terminals": { "终端窗口": "wt", "韦兹": "wezterm", "本窗口": "here" },
   "models": {
     "轻": { "codex": { "id": "gpt-6-luna", "effort": "high" }, "claude": "claude-haiku-5-5" },
     "标准": { "codex": { "id": "gpt-6.1-sol", "effort": "low" }, "claude": "claude-sonnet-5-5" },
@@ -163,11 +169,12 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | Argument | What it does |
 | -- | -- |
 | `--agent <command>` | the default agent, over `"agent"` |
-| `--terminal <name>` | the default terminal, over `"terminal"`: `orca`, `warp`, `wt` or `here` |
+| `--terminal <name>` | the default terminal, over `"terminal"`: `orca`, `warp`, `wezterm`, `wt` or `here` |
 | `--config <file>` | another config file than `~/.linear/nook.json`; it must exist |
 | `--agent-label <group>` | the agent label group, over `labels.agent` |
 | `--terminal-label <group>` | the terminal label group, over `labels.terminal` |
 | `--orca <path>` | Orca's command-line tool, when it is not on PATH |
+| `--wezterm <path>` | WezTerm, when it is not on PATH |
 
 `nook.json`:
 
@@ -176,9 +183,10 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `agent` | the default agent's command |
 | `terminal` | the default terminal |
 | `orca` | Orca's command-line tool |
+| `wezterm` | WezTerm's program |
 | `labels` | `{ agent, model, effort, terminal }`: your label group names |
 | `agents` | label name → agent command |
-| `terminals` | label name → `orca`, `warp`, `wt` or `here` |
+| `terminals` | label name → `orca`, `warp`, `wezterm`, `wt` or `here` |
 | `models` | label name → tier, id, or one agent's model |
 | `efforts` | label word → `minimal` … `max` |
 
@@ -212,7 +220,11 @@ pull request is merged, `nk clean` removes the workspace.
   [tab config](https://docs.warp.dev/terminal/windows/tab-configs/) written to
   `%APPDATA%\warp\Warp\data\tab_configs\` and opened with
   `warp://tab_config/<name>` (the tab deletes it when it starts). A
-  minimized Warp window stays minimized. It then
+  minimized Warp window stays minimized; WezTerm with
+  `wezterm cli --no-auto-start spawn --cwd <folder> -- <command>`, which adds
+  a tab to the open WezTerm window and names it after the issue, or
+  `wezterm start --cwd <folder> -- <command>` when no WezTerm window is open.
+  It then
   closes the window Linear opened.
 - `nk` runs with the same Node, never through `cmd.exe`, which would cut a
   multi-line prompt at its first line break.

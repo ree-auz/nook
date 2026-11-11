@@ -4,7 +4,7 @@
 // (Work on issue -> Custom script). See README.md next to it.
 //
 //   node open-issue.mjs [--config file] [--agent a] [--agent-label g]
-//                       [--terminal wt|warp|orca] [--terminal-label g]   started by Linear
+//                       [--terminal wt|warp|wezterm|orca] [--terminal-label g]   started by Linear
 //   node open-issue.mjs --run <file> ...     inside the new tab
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -102,7 +102,39 @@ function which(command) {
   return result.status === 0;
 }
 
-const TERMINALS = { wt: openInWindowsTerminal, warp: openInWarp };
+/**
+ * WezTerm: a tab in the running WezTerm, else a new window. `wezterm cli
+ * spawn` runs the command itself (no shell) and prints the new pane's id;
+ * --no-auto-start keeps it from starting a hidden mux server when no WezTerm
+ * window is open. Works the same on Windows, macOS and Linux.
+ */
+export function openInWezTerm({ dir, id, inner, wezterm = "wezterm", run = runQuiet, start = startDetached }) {
+  const spawned = run(wezterm, ["cli", "--no-auto-start", "spawn", "--cwd", dir, "--", ...inner]);
+  if (spawned.error?.code === "ENOENT") throw new Error(`could not run ${wezterm}. Is WezTerm installed and on PATH? Pass its path with --wezterm`);
+  if (spawned.status === 0) {
+    const pane = String(spawned.stdout ?? "").trim();
+    // Older WezTerm has no set-tab-title; the tab keeps the command's title then.
+    if (/^\d+$/.test(pane)) run(wezterm, ["cli", "set-tab-title", "--pane-id", pane, id]);
+    return "tab";
+  }
+  // No WezTerm window to add a tab to: open one.
+  start(wezterm, ["start", "--cwd", dir, "--", ...inner]);
+  return "window";
+}
+
+/** Runs a command and waits, without a console window or a shell. */
+function runQuiet(command, args) {
+  return spawnSync(command, args, { encoding: "utf8", windowsHide: true });
+}
+
+/** Starts a program that outlives this script. */
+function startDetached(command, args) {
+  spawn(command, args, { detached: true, stdio: "ignore" }).unref();
+}
+
+const TERMINALS = { wt: openInWindowsTerminal, warp: openInWarp, wezterm: openInWezTerm };
+/** Terminals that open on any platform; the others are Windows only so far. */
+const ANY_PLATFORM = new Set(["wezterm"]);
 
 /**
  * Orca: nk creates the workspace (hooks, ports, database), then Orca starts
@@ -143,6 +175,7 @@ function runOrca(orca, args) {
  * runs in another terminal: its shell is this process's parent.
  */
 function closeLinearWindow() {
+  if (process.platform !== "win32") return;
   const parent = spawnSync("tasklist.exe", ["/FI", `PID eq ${process.ppid}`, "/FO", "CSV", "/NH"], { encoding: "utf8", windowsHide: true });
   if (/^"(powershell|pwsh|cmd)\.exe"/i.test(parent.stdout ?? "")) process.kill(process.ppid);
 }
@@ -156,10 +189,10 @@ function option(argv, name) {
 function fromLinear(argv) {
   const configPath = option(argv, "--config");
   const config = loadConfig(configPath ?? CONFIG_PATH, { required: Boolean(configPath) });
-  const flags = { agent: option(argv, "--agent"), agentLabel: option(argv, "--agent-label"), terminal: option(argv, "--terminal"), terminalLabel: option(argv, "--terminal-label"), orca: option(argv, "--orca") };
-  const { agent, model, terminal, orca, notes } = choose(process.env.LINEAR_PROMPT ?? "", flags, config);
+  const flags = { agent: option(argv, "--agent"), agentLabel: option(argv, "--agent-label"), terminal: option(argv, "--terminal"), terminalLabel: option(argv, "--terminal-label"), orca: option(argv, "--orca"), wezterm: option(argv, "--wezterm") };
+  const { agent, model, terminal, orca, wezterm, notes } = choose(process.env.LINEAR_PROMPT ?? "", flags, config);
   // Say what starts and why, so a label that was not picked up is easy to see.
-  const where = { wt: "Windows Terminal", warp: "Warp", orca: "Orca" }[terminal] ?? "this window";
+  const where = { wt: "Windows Terminal", warp: "Warp", wezterm: "WezTerm", orca: "Orca" }[terminal] ?? "this window";
   console.log(`Agent: ${agent} in ${where}${model ? `, model ${model.id}${model.effort ? `, effort ${model.effort}` : ""}` : ", its default model"}`);
   for (const note of notes) console.log(`  ${note}`);
   const { LINEAR_ISSUE_BRANCH_NAME: branch, LINEAR_WORK_DIR: dir, LINEAR_ISSUE_IDENTIFIER: id = "issue", LINEAR_PROMPT: prompt = "" } = process.env;
@@ -178,12 +211,12 @@ function fromLinear(argv) {
   }
   const open = TERMINALS[terminal];
   if (!open) throw new Error(`Unknown terminal "${terminal}"; use ${[...Object.keys(TERMINALS), "orca"].join(", ")}, or leave --terminal out`);
-  if (process.platform !== "win32") throw new Error("--terminal only works on Windows so far");
+  if (process.platform !== "win32" && !ANY_PLATFORM.has(terminal)) throw new Error(`--terminal ${terminal} only works on Windows so far; wezterm and orca work everywhere`);
   // The prompt is long Markdown with quotes and semicolons, so it travels in a file.
   const file = join(tmpdir(), `nk-linear-${id}-${process.pid}.md`);
   writeFileSync(file, prompt);
   const modelArgs = model ? ["--model", model.id, ...(model.effort ? ["--effort", model.effort] : [])] : [];
-  open({ dir, id, inner: [process.execPath, self, "--run", file, branch, agent, ...modelArgs] });
+  open({ dir, id, inner: [process.execPath, self, "--run", file, branch, agent, ...modelArgs], wezterm });
   closeLinearWindow();
 }
 

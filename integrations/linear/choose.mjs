@@ -13,7 +13,7 @@ export const CONFIG_PATH = join(homedir(), ".linear", "nook.json");
 
 /**
  * The config file, or {} when there is none. Shape:
- * { agent, terminal, orca, labels: { agent, model, effort, terminal },
+ * { agent, terminal, orca, wezterm, labels: { agent, model, effort, terminal },
  *   agents: { "<label name>": "<command>" }, terminals: { "<label name>": "<terminal>" },
  *   models: { "<label name>": "<id>" | { id, agent } | { "<agent>": "<id>" | { id, effort } } },
  *   efforts: { "<word>": "<effort>" } }
@@ -119,11 +119,11 @@ export function agentModelArgs(agent, { id, effort }) {
 }
 
 /** Terminal names a label can use, and what --terminal calls them. */
-export const TERMINAL_NAMES = { wt: "wt", "windows-terminal": "wt", warp: "warp", orca: "orca", here: null, linear: null };
+export const TERMINAL_NAMES = { wt: "wt", "windows-terminal": "wt", warp: "warp", wezterm: "wezterm", orca: "orca", here: null, linear: null };
 
 /**
  * Where the agent runs, from a label: the label in group `group`, else the one
- * label named like a terminal (Orca, Warp, Windows Terminal). "Here" or
+ * label named like a terminal (Orca, Warp, WezTerm, Windows Terminal). "Here" or
  * "Linear" keeps the window Linear opened. `terminals` maps other label names
  * to one of those: { "终端窗口": "wt" }. Returns undefined when no label says.
  */
@@ -140,8 +140,8 @@ export function terminalFromLabels(prompt, group, terminals = {}) {
       const mapped = lookup(terminals, inGroup.name);
       throw new Error(
         mapped
-          ? `"terminals" maps ${show(inGroup)} to "${mapped}", which is not a terminal; use orca, warp, wt or here`
-          : `Label ${show(inGroup)} is not a terminal; use Orca, Warp, Windows Terminal or Here, or map it in "terminals" in the config`,
+          ? `"terminals" maps ${show(inGroup)} to "${mapped}", which is not a terminal; use orca, warp, wezterm, wt or here`
+          : `Label ${show(inGroup)} is not a terminal; use Orca, Warp, WezTerm, Windows Terminal or Here, or map it in "terminals" in the config`,
       );
     }
     return result.terminal;
@@ -186,5 +186,5 @@ export function choose(prompt, flags = {}, config = {}) {
   const terminalLabel = terminalFromLabels(prompt, labels.terminal, config.terminals);
   const terminal = terminalLabel === undefined ? defaultTerminal(flags.terminal ?? config.terminal ?? null, config.terminals) : terminalLabel;
   if (model?.effort && agent !== "codex" && terminal !== "orca") notes.push(`effort ${model.effort} is passed only to codex, or to any agent through Orca; ${agent} starts with its default effort`);
-  return { agent, model, terminal, orca: flags.orca ?? config.orca ?? "orca", notes };
+  return { agent, model, terminal, orca: flags.orca ?? config.orca ?? "orca", wezterm: flags.wezterm ?? config.wezterm ?? "wezterm", notes };
 }
