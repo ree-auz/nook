@@ -13,7 +13,7 @@ import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { agentCommand, windowsDirect } from "../../src/agents.mjs";
-import { CONFIG_PATH, choose, loadConfig } from "./choose.mjs";
+import { CONFIG_PATH, choose, loadConfig, pickOptions } from "./choose.mjs";
 import { AGAIN, againChoices, againSetting, nextBranch } from "./again.mjs";
 import { pick } from "../../src/select.mjs";
 import { apiKey, startIssue } from "./start-issue.mjs";
@@ -228,17 +228,32 @@ async function fromLinear(argv) {
   const configPath = option(argv, "--config");
   const config = loadConfig(configPath ?? CONFIG_PATH, { required: Boolean(configPath) });
   const flags = { again: option(argv, "--again"), agent: option(argv, "--agent"), agentLabel: option(argv, "--agent-label"), terminal: option(argv, "--terminal"), terminalLabel: option(argv, "--terminal-label"), orca: option(argv, "--orca"), wezterm: option(argv, "--wezterm"), open: option(argv, "--open") };
-  const { agent, model, args, terminal, orca, wezterm, open: openIn, closeLinearWindow: close, notes } = choose(process.env.LINEAR_PROMPT ?? "", flags, config);
+  const { LINEAR_ISSUE_BRANCH_NAME: linearBranch, LINEAR_WORK_DIR: dir, LINEAR_ISSUE_IDENTIFIER: id = "issue", LINEAR_PROMPT: prompt = "" } = process.env;
+  if (!linearBranch || !dir) throw new Error("LINEAR_ISSUE_BRANCH_NAME and LINEAR_WORK_DIR are missing; list them under env in coding-tools.json");
+  process.chdir(dir);
+  const workspaces = listWorkspaces();
+  const existing = workspaces.find((ws) => ws.branch === linearBranch || ws.name === normalizeName(linearBranch)) ?? null;
+  const setting = againSetting(flags, config);
+  let again = existing ? setting : "continue";
+  let picks = {};
+  // The list in Linear's window: always with "confirm", and when the issue already has a workspace and "again" is ask.
+  if (process.stdin.isTTY && (config.confirm === true || (existing && setting === "ask"))) {
+    const reviewed = await review({ id, existing, again, prompt, flags, config });
+    if (!reviewed) return console.log("Nothing started.");
+    ({ again, picks } = reviewed);
+  } else if (again === "ask") again = "continue";
+  const { agent, model, args, terminal, orca, wezterm, open: openIn, closeLinearWindow: close, notes } = choose(prompt, { ...flags, picks }, config);
   // Say what starts and why, so a label that was not picked up is easy to see.
   const where = { wt: "Windows Terminal", warp: "Warp", wezterm: "WezTerm", orca: "Orca" }[terminal] ?? "this window";
   console.log(`Agent: ${agent} in ${where}${model?.id ? `, model ${model.id}` : ", its default model"}${model?.effort ? `, effort ${model.effort}` : ""}`);
   for (const note of notes) console.log(`  ${note}`);
-  const { LINEAR_ISSUE_BRANCH_NAME: linearBranch, LINEAR_WORK_DIR: dir, LINEAR_ISSUE_IDENTIFIER: id = "issue", LINEAR_PROMPT: prompt = "" } = process.env;
-  if (!linearBranch || !dir) throw new Error("LINEAR_ISSUE_BRANCH_NAME and LINEAR_WORK_DIR are missing; list them under env in coding-tools.json");
-  process.chdir(dir);
-  const plan = await planAgain({ branch: linearBranch, id, setting: againSetting(flags, config), terminal });
-  if (!plan) return;
-  const { branch, again } = plan;
+  if (again === "shell" && terminal === "orca") again = "continue";
+  let branch = linearBranch;
+  if (existing) {
+    console.log(`  ${existing.name}: ${AGAIN[again]}`);
+    if (again === "new") branch = nextBranch(linearBranch, workspaces);
+    if (again === "over" && runNk(["rm", existing.name, "-y"]).status !== 0) throw new Error(`nk rm ${existing.name} failed; nothing started`);
+  }
   // Linear's "move issue to started status" setting skips custom scripts, so the script does it.
   const key = apiKey(config);
   if (key && config.linear?.start !== false) {
@@ -269,38 +284,45 @@ async function fromLinear(argv) {
   if (close) closeLinearWindow();
 }
 
+/** { item }: a row from a list in Linear's window, or null when it was left with Esc. */
+async function choice(title, items, text, start) {
+  const { result } = pick({ input: process.stdin, output: process.stdout, title, items, cells: (item) => [text(item)], text, start, unicode: process.platform !== "win32" || Boolean(process.env.WT_SESSION) });
+  const chosen = await result;
+  return "item" in chosen ? { item: chosen.item } : null;
+}
+
+const TERMINAL_SHOWN = { wt: "Windows Terminal", warp: "Warp", wezterm: "WezTerm", orca: "Orca" };
+
 /**
- * The issue started again: what to do with its workspace, from "again" or
- * the list in Linear's window. Returns { branch, again }, or null when the
- * list was left with Esc. "new" moves to the next free branch, "over"
- * removes the workspace first (nk rm saves its changes to ~/nook/backup).
+ * The list in Linear's window before anything starts: Start, then what the
+ * labels chose (agent, model, effort, terminal) and, for an issue that has
+ * a workspace, what to do with it. Choosing a line changes it for this start
+ * only. Returns { again, picks }, or null when left with Esc.
  */
-async function planAgain({ branch, id, setting, terminal }) {
-  const workspaces = listWorkspaces();
-  const existing = workspaces.find((ws) => ws.branch === branch || ws.name === normalizeName(branch));
-  if (!existing) return { branch, again: "continue" };
-  let again = setting;
-  if (again === "ask") {
-    if (!process.stdin.isTTY) again = "continue";
-    else {
-      console.log(`\n${id} already has a workspace: ${existing.name}`);
-      const { result } = pick({ input: process.stdin, output: process.stdout, title: `${id} again`, items: againChoices(terminal), cells: (key) => [AGAIN[key]], text: (key) => AGAIN[key], unicode: process.platform !== "win32" || Boolean(process.env.WT_SESSION) });
-      const chosen = await result;
-      if (!("item" in chosen)) {
-        console.log("Nothing started.");
-        return null;
-      }
-      again = chosen.item;
+export async function review({ id, existing, again, prompt, flags, config, ask = choice }) {
+  let state = { again: again === "ask" ? "continue" : again, picks: {} };
+  const options = pickOptions(config);
+  for (;;) {
+    const now = choose(prompt, { ...flags, picks: state.picks }, config);
+    const rows = [
+      { key: "start", text: `Start ${now.agent}` },
+      ...(existing ? [{ key: "again", text: `Workspace ${existing.name}: ${AGAIN[state.again]}` }] : []),
+      { key: "agent", text: `Agent: ${now.agent}` },
+      { key: "model", text: `Model: ${now.model?.id ?? "the agent's default"}` },
+      { key: "effort", text: `Effort: ${now.model?.effort ?? "the agent's default"}` },
+      { key: "terminal", text: `Terminal: ${TERMINAL_SHOWN[now.terminal] ?? "this window"}` },
+    ];
+    const row = (await ask(`${id} · Enter on Start starts; choose a line to change it`, rows, (r) => r.text, rows[0]))?.item;
+    if (!row) return null;
+    if (row.key === "start") return state;
+    if (row.key === "again") {
+      const chosen = await ask("Workspace", againChoices(now.terminal), (key) => AGAIN[key], state.again);
+      if (chosen) state = { ...state, again: chosen.item };
+      continue;
     }
+    const value = await ask(row.text.split(":")[0], options[row.key], (v) => v ?? "the agent's default");
+    if (value) state = { ...state, picks: { ...state.picks, [row.key]: value.item } };
   }
-  if (again === "shell" && terminal === "orca") again = "continue";
-  console.log(`  ${AGAIN[again]}`);
-  if (again === "new") return { branch: nextBranch(branch, workspaces), again };
-  if (again === "over") {
-    const removed = runNk(["rm", existing.name, "-y"]);
-    if (removed.status !== 0) throw new Error(`nk rm ${existing.name} failed; nothing started`);
-  }
-  return { branch, again };
 }
 
 /**

@@ -379,3 +379,49 @@ test("an issue started again: the choices, the setting and the next branch", asy
   assert.equal(nextBranch(branch, [{ branch, name: branch }]), "ree-302-search-home-2");
   assert.equal(nextBranch(branch, [{ branch, name: branch }, { branch: `${branch}-2`, name: `${branch}-2` }]), "ree-302-search-home-3");
 });
+
+test("choices made in Linear's window win over the labels, for this start only", async () => {
+  const { choose, pickOptions } = await import("../integrations/linear/choose.mjs");
+  const config = {
+    labels: { agent: "Agent", model: "Model", effort: "Effort", terminal: "Terminal" },
+    models: { Strong: { codex: "gpt-6-astra", grok: "grok-4.7" } },
+    efforts: { High: "high", Max: { codex: "max", grok: "high" } },
+  };
+  const prompt = ["Agent › Grok", "Model › Strong", "Effort › High", "Terminal › WezTerm"].map((l) => `<label>${l}</label>`).join("\n");
+  const labels = choose(prompt, {}, config);
+  assert.deepEqual([labels.agent, labels.model, labels.terminal], ["grok", { id: "grok-4.7", effort: "high" }, "wezterm"]);
+  const picked = choose(prompt, { picks: { agent: "codex", effort: "Max", terminal: "Here" } }, config);
+  assert.deepEqual([picked.agent, picked.model, picked.terminal], ["codex", { id: "gpt-6-astra", effort: "max" }, null], "the tier follows the picked agent");
+  assert.equal(choose(prompt, { picks: { model: null, effort: null } }, config).model, null, "the agent's default model and effort");
+  assert.equal(choose(prompt, { agentLabel: "Agent", picks: { agent: "claude" } }, config).agent, "claude", "over --agent-label too");
+  const options = pickOptions(config);
+  assert.deepEqual(options.model, [null, "Strong"]);
+  assert.deepEqual(options.effort, [null, "High", "Max"]);
+  assert.ok(options.agent.includes("grok") && options.terminal.includes("WezTerm"));
+});
+
+test("the list in Linear's window changes a choice, then starts", async () => {
+  const { review } = await import("../integrations/linear/open-issue.mjs");
+  const config = { labels: { agent: "Agent", model: "Model" }, models: { Strong: { codex: "gpt-6-astra", claude: "opus" } } };
+  const prompt = "<label>Agent › Codex</label>\n<label>Model › Strong</label>";
+  // Each answer picks a row by its text, or leaves with Esc (null).
+  const run = async (answers, existing = null) => {
+    const shown = [];
+    const ask = async (title, items, text) => {
+      shown.push(items.map(text));
+      const want = answers.shift();
+      if (want === null) return null;
+      const item = items.find((i) => text(i).startsWith(want));
+      assert.ok(item !== undefined, `no row "${want}" in ${items.map(text).join(" | ")}`);
+      return { item };
+    };
+    return { result: await review({ id: "REE-1", existing, again: "ask", prompt, flags: {}, config, ask }), shown };
+  };
+  const { result, shown } = await run(["Agent", "claude", "Start"]);
+  assert.deepEqual(result, { again: "continue", picks: { agent: "claude" } });
+  assert.ok(shown[2].includes("Model: opus"), "the model follows the new agent");
+  assert.deepEqual((await run(["Model", "the agent's default", "Start"])).result.picks, { model: null });
+  const again = await run(["Workspace", "Run again", "Start"], { name: "ree-1" });
+  assert.equal(again.result.again, "new");
+  assert.equal((await run([null])).result, null, "Esc starts nothing");
+});

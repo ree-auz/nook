@@ -233,6 +233,7 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `agent` | the default agent's command |
 | `terminal` | the default terminal |
 | `open` | `"tab"` (the default) or `"window"`: where Windows Terminal and WezTerm open the issue |
+| `confirm` | `true`: show the list in Linear's window for every issue, not only for one that has a workspace |
 | `again` | what starting an issue that has a workspace does: `ask` (the default), `continue`, `prompt`, `new`, `over` or `shell` |
 | `closeLinearWindow` | `false` keeps the window Linear opened after the agent starts in another terminal |
 | `orca` | Orca's command-line tool |
@@ -254,8 +255,25 @@ the issue belongs to; nothing runs there.
 
 The terminal runs `nk -b <issue branch> <agent> -y -p <Linear's prompt>` in
 that folder (`-y` keeps the converted workspace name without asking).
-Choosing an issue that already has a workspace asks, in Linear's window,
-what to do (Esc starts nothing):
+Choosing an issue that already has a workspace shows a list in Linear's
+window before anything starts (with `"confirm": true` in the config, every
+issue does):
+
+```
+REE-302 · Enter on Start starts; choose a line to change it
+> Start grok
+  Workspace ree-302-search-home: Continue: start the agent in the workspace, …
+  Agent: grok
+  Model: grok-4.7
+  Effort: high
+  Terminal: WezTerm
+```
+
+Enter on **Start** starts. Choosing another line changes it for this start
+only, without touching the issue's labels: the agent, the model (a name from
+`models`, or the agent's default), the effort (a word from `efforts`), the
+terminal, and what to do with the workspace. Esc starts nothing. For the
+workspace:
 
 | Choice | What happens |
 | -- | -- |

@@ -4,6 +4,7 @@
   "open": "tab",
   "closeLinearWindow": true,
   "again": "ask",
+  "confirm": false,
   "linear": { "apiKey": "", "start": true, "assign": false },
   "labels": {
     "agent": "Agent",
