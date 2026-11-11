@@ -409,11 +409,12 @@ test("the list in Linear's window changes a choice, then starts", async () => {
     const shown = [];
     const ask = async (title, items, text) => {
       shown.push(items.map(text));
-      const want = answers.shift();
-      if (want === null) return null;
+      const answer = answers.shift();
+      if (answer === null) return null;
+      const [want, side] = Array.isArray(answer) ? answer : [answer];
       const item = items.find((i) => text(i).startsWith(want));
       assert.ok(item !== undefined, `no row "${want}" in ${items.map(text).join(" | ")}`);
-      return { item };
+      return side ? { item, side } : { item };
     };
     return { result: await review({ id: "REE-1", existing, again: "ask", prompt, flags: {}, config, ask }), shown };
   };
@@ -424,4 +425,10 @@ test("the list in Linear's window changes a choice, then starts", async () => {
   const again = await run(["Workspace", "Run again", "Start"], { name: "ree-1" });
   assert.equal(again.result.again, "new");
   assert.equal((await run([null])).result, null, "Esc starts nothing");
+  // Left and Right change a line in place: [row text, side].
+  const sides = await run([["Workspace", 1], ["Workspace", 1], ["Agent", -1], "Start"], { name: "ree-1" });
+  assert.equal(sides.result.again, "new", "two steps right from continue");
+  assert.ok(sides.shown[1][1].startsWith("Workspace ree-1: Start over"));
+  assert.notEqual(sides.result.picks.agent, "codex");
+  assert.ok(sides.shown[3][0].startsWith("Start ") && !sides.shown[3][0].endsWith("codex"), "Start shows the new agent");
 });

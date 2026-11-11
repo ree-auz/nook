@@ -260,16 +260,17 @@ window before anything starts (with `"confirm": true` in the config, every
 issue does):
 
 ```
-REE-302 · Enter on Start starts; choose a line to change it
+REE-302: change a line, then Start
 > Start grok
-  Workspace ree-302-search-home: Continue: start the agent in the workspace, …
+  Workspace ree-302-search-home: Continue
   Agent: grok
   Model: grok-4.7
   Effort: high
   Terminal: WezTerm
 ```
 
-Enter on **Start** starts. Choosing another line changes it for this start
+Enter on **Start** starts. Left and Right change the chosen line in place;
+Enter on a line lists its values. A change holds for this start
 only, without touching the issue's labels: the agent, the model (a name from
 `models`, or the agent's default), the effort (a word from `efforts`), the
 terminal, and what to do with the workspace. Esc starts nothing. For the
@@ -279,8 +280,12 @@ workspace:
 | -- | -- |
 | `continue` | the agent starts in the workspace without Linear's prompt (with Orca, a new session; earlier ones stay in Orca's list) |
 | `prompt` | the agent starts in the workspace with Linear's prompt again; the changes stay |
-| `new` | a new workspace next to it, branch `<issue branch>-2` (`-3`, …): run the issue again with another agent, model or effort and compare; the branch still carries the issue id, so Linear links both pull requests |
-| `over` | `nk rm` removes the workspace and its branch, saving uncommitted changes and unpushed commits to `~/nook/backup` first, then the issue starts fresh |
+| `new` | a new workspace next to it, branch `<issue branch>-2` (`-3`, …) from the base branch: run the issue again with another agent, model or effort and compare; the branch still carries the issue id, so Linear links both pull requests |
+| `over` | `nk rm` removes the workspace and its branch, saving uncommitted changes and unpushed commits to `~/nook/backup` first, then the issue starts fresh from the base branch |
+
+`new` and `over` start from the base branch, so once the issue's pull
+request is merged, the new workspace already has that work and the agent
+finds little to do.
 | `shell` | only the workspace opens, without an agent (not with Orca) |
 
 `"again": "<choice>"` in the config, or `"--again", "<choice>"` in

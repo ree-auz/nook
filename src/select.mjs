@@ -1,7 +1,8 @@
 // @ts-check
 /**
  * A list to choose one row from, on a terminal: arrows move, typing filters,
- * Enter takes the row, Esc or Ctrl+C leaves. Only node's own readline is used.
+ * Enter takes the row, Esc or Ctrl+C leaves; with `sides`, Left and Right
+ * take the row too, to change its value in place. Only node's own readline is used.
  * Everything is drawn on `output` (stderr for nk), so stdout stays free for
  * the answer.
  */
@@ -36,15 +37,17 @@ export function filter(items, query, text) {
 
 /**
  * What a key does to the list. Returns the new state, or { done } with the
- * chosen item, or { cancelled } with the key that left.
+ * chosen item (and { side: -1 or 1 } for Left or Right when `sides`), or
+ * { cancelled } with the key that left.
  * state: { query, at } where `at` is the chosen item (or undefined when nothing matches).
  */
-export function press(state, shown, str, key = {}) {
+export function press(state, shown, str, key = {}, sides = false) {
   const index = shown.indexOf(state.at);
   const move = (by) => ({ ...state, at: shown.length ? shown[(Math.max(index, 0) + by + shown.length) % shown.length] : undefined });
   if (key.ctrl && key.name === "c") return { cancelled: "interrupt" };
   if (key.name === "escape") return { cancelled: "escape" };
   if (key.name === "return" || key.name === "enter") return index === -1 ? state : { done: state.at };
+  if (sides && (key.name === "left" || key.name === "right")) return index === -1 ? state : { done: state.at, side: key.name === "left" ? -1 : 1 };
   if (key.name === "up" || (key.ctrl && key.name === "p")) return move(-1);
   if (key.name === "down" || (key.ctrl && key.name === "n")) return move(1);
   if (key.name === "backspace") return { ...state, query: [...state.query].slice(0, -1).join("") };
@@ -54,14 +57,29 @@ export function press(state, shown, str, key = {}) {
 }
 
 /**
+ * Leaves raw mode. Stop reading first: on Windows, leaving raw mode while a
+ * read waits starts a line-mode read that holds back what is drawn next
+ * until a key is pressed.
+ */
+export function release(input) {
+  input.pause();
+  input.setRawMode?.(false);
+}
+
+/**
  * Shows the list and waits for a choice.
  * items: the rows. cells(item): its columns as texts, read again at every
  * draw, so a row can gain details while the list is open (call redraw()).
  * text(item): what typing filters on. start: the item chosen at first.
  * unicode: false where the terminal cannot show "…" and arrows.
- * Returns { result, redraw }; result resolves to { item } or { cancelled }.
+ * hint(item): a line under the list about the chosen row.
+ * sides: Left and Right choose too, with { side }.
+ * keep: stay in raw mode after, for a list that follows at once; the caller
+ * then calls release(input). Leaving and entering raw mode between two lists
+ * is what can leave a Windows console blank.
+ * Returns { result, redraw }; result resolves to { item, side? } or { cancelled }.
  */
-export function pick({ input, output, title, items, cells, text, start, color = false, unicode = true }) {
+export function pick({ input, output, title, items, cells, text, start, color = false, unicode = true, hint = undefined, sides = false, keep = false }) {
   // Older Windows consoles have no "…" and no arrows in their code page.
   const more = unicode ? "…" : "...";
   let state = { query: "", at: start ?? items[0] };
@@ -74,7 +92,7 @@ export function pick({ input, output, title, items, cells, text, start, color = 
     const shown = filter(items, state.query, text);
     // Typing can filter the chosen row away: the first one left is chosen then.
     if (!shown.includes(state.at)) state = { ...state, at: shown[0] };
-    const room = Math.max(3, (output.rows ?? 24) - 6);
+    const room = Math.max(3, (output.rows ?? 24) - (hint ? 7 : 6));
     const index = Math.max(shown.indexOf(state.at), 0);
     const from = Math.min(Math.max(0, index - room + 1), Math.max(0, shown.length - room));
     const visible = shown.slice(from, from + room);
@@ -90,7 +108,11 @@ export function pick({ input, output, title, items, cells, text, start, color = 
     });
     if (!shown.length) lines.push(`  nothing matches "${state.query}"`);
     if (shown.length > from + room) lines.push(paint(2, `  ${more} ${shown.length - from - room} more below`));
-    lines.push("", paint(2, fit(`${unicode ? "↑↓" : "Up/Down"} move · type to filter · Enter choose · Esc cancel`, columns, more)));
+    const about = state.at === undefined ? "" : (hint?.(state.at) ?? "");
+    lines.push("");
+    if (about) lines.push(fit(about, columns, more));
+    const change = sides ? ` · ${unicode ? "←→" : "Left/Right"} change` : "";
+    lines.push(paint(2, fit(`${unicode ? "↑↓" : "Up/Down"} move${change} · type to filter · Enter choose · Esc cancel`, columns, more)));
     return lines;
   };
 
@@ -104,22 +126,22 @@ export function pick({ input, output, title, items, cells, text, start, color = 
 
   const result = new Promise((done) => {
     const onKey = (str, key) => {
-      const next = press(state, filter(items, state.query, text), str, key);
+      const next = press(state, filter(items, state.query, text), str, key, sides);
       if ("done" in next || "cancelled" in next) {
         closed = true;
         input.off("keypress", onKey);
         output.off?.("resize", redraw);
-        input.setRawMode?.(false);
-        input.pause();
+        if (!keep) release(input);
         // The list goes, so the terminal is left as it was; the cursor comes back.
         output.write(`${erase()}\x1b[?25h`);
-        return done("done" in next ? { item: next.done } : { cancelled: next.cancelled });
+        if ("cancelled" in next) return done({ cancelled: next.cancelled });
+        return done("side" in next ? { item: next.done, side: next.side } : { item: next.done });
       }
       state = next;
       redraw();
     };
     emitKeypressEvents(input);
-    input.setRawMode?.(true);
+    if (!input.isRaw) input.setRawMode?.(true);
     input.on("keypress", onKey);
     output.on?.("resize", redraw);
     input.resume();

@@ -13,6 +13,8 @@ const UP = "\x1b[A";
 const ENTER = "\r";
 const ESC = "\x1b";
 const CTRL_C = "\x03";
+const RIGHT = "\x1b[C";
+const LEFT = "\x1b[D";
 
 /** A keyboard that is a terminal, with `keys` already typed. */
 function keyboard(keys = "") {
@@ -107,6 +109,14 @@ test("pick draws the list, follows the keys and leaves the terminal as it was", 
 
   assert.deepEqual(await pick({ ...options, input: keyboard(CTRL_C), output: screen() }).result, { cancelled: "interrupt" });
   assert.deepEqual(await pick({ ...options, input: keyboard(ESC), output: screen() }).result, { cancelled: "escape" });
+
+  // With sides, Left and Right choose too; with keep, raw mode stays on for the next list.
+  input = keyboard(`${DOWN}${RIGHT}`);
+  output = screen();
+  assert.deepEqual(await pick({ ...options, input, output, sides: true, keep: true, hint: (item) => `about ${item.name}` }).result, { item: items[1], side: 1 });
+  assert.deepEqual(input.raw, [true]);
+  assert.match(output.text(), /about beta\n.*←→ change/);
+  assert.deepEqual(await pick({ ...options, input: keyboard(`${LEFT}${ENTER}`), output: screen() }).result, { item: items[0] }, "without sides, Left does nothing");
 });
 
 test("pick keeps the chosen row in sight in a short terminal and cuts long lines", async () => {

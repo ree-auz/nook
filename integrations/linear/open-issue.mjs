@@ -14,8 +14,8 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { agentCommand, windowsDirect } from "../../src/agents.mjs";
 import { CONFIG_PATH, choose, loadConfig, pickOptions } from "./choose.mjs";
-import { AGAIN, againChoices, againSetting, nextBranch } from "./again.mjs";
-import { pick } from "../../src/select.mjs";
+import { AGAIN, AGAIN_SHORT, againChoices, againSetting, nextBranch } from "./again.mjs";
+import { pick, release } from "../../src/select.mjs";
 import { apiKey, startIssue } from "./start-issue.mjs";
 import { normalizeName } from "../../src/names.mjs";
 import crossSpawn from "cross-spawn";
@@ -238,7 +238,12 @@ async function fromLinear(argv) {
   let picks = {};
   // The list in Linear's window: always with "confirm", and when the issue already has a workspace and "again" is ask.
   if (process.stdin.isTTY && (config.confirm === true || (existing && setting === "ask"))) {
-    const reviewed = await review({ id, existing, again, prompt, flags, config });
+    let reviewed;
+    try {
+      reviewed = await review({ id, existing, again, prompt, flags, config });
+    } finally {
+      release(process.stdin);
+    }
     if (!reviewed) return console.log("Nothing started.");
     ({ again, picks } = reviewed);
   } else if (again === "ask") again = "continue";
@@ -284,43 +289,74 @@ async function fromLinear(argv) {
   if (close) closeLinearWindow();
 }
 
-/** { item }: a row from a list in Linear's window, or null when it was left with Esc. */
-async function choice(title, items, text, start) {
-  const { result } = pick({ input: process.stdin, output: process.stdout, title, items, cells: (item) => [text(item)], text, start, unicode: process.platform !== "win32" || Boolean(process.env.WT_SESSION) });
+/**
+ * { item, side? }: a row from a list in Linear's window, or null when it was
+ * left with Esc. The lists follow each other, so raw mode stays on between
+ * them; fromLinear leaves it when the review ends.
+ */
+async function choice(title, items, text, start, { hint, sides } = {}) {
+  const { result } = pick({ input: process.stdin, output: process.stdout, title, items, cells: (item) => [text(item)], text, start, hint, sides, keep: true, unicode: process.platform !== "win32" || Boolean(process.env.WT_SESSION) });
   const chosen = await result;
-  return "item" in chosen ? { item: chosen.item } : null;
+  return "item" in chosen ? chosen : null;
 }
 
 const TERMINAL_SHOWN = { wt: "Windows Terminal", warp: "Warp", wezterm: "WezTerm", orca: "Orca" };
+const DEFAULT = "the agent's default";
+
+/** The value `side` steps away from `current` in `values`, wrapping around. */
+function step(values, current, side) {
+  const at = values.indexOf(current);
+  const from = at === -1 ? (side > 0 ? -1 : 0) : at;
+  return values[(from + side + values.length) % values.length];
+}
 
 /**
  * The list in Linear's window before anything starts: Start, then what the
  * labels chose (agent, model, effort, terminal) and, for an issue that has
- * a workspace, what to do with it. Choosing a line changes it for this start
- * only. Returns { again, picks }, or null when left with Esc.
+ * a workspace, what to do with it. Left and Right change a line in place;
+ * Enter on a line lists its values. A change holds for this start only.
+ * Returns { again, picks }, or null when left with Esc.
  */
 export async function review({ id, existing, again, prompt, flags, config, ask = choice }) {
   let state = { again: again === "ask" ? "continue" : again, picks: {} };
   const options = pickOptions(config);
+  let at = "start";
   for (;;) {
     const now = choose(prompt, { ...flags, picks: state.picks }, config);
+    const againKeys = againChoices(now.terminal);
+    const shown = { agent: now.agent, terminal: TERMINAL_SHOWN[now.terminal] ?? "Here" };
     const rows = [
       { key: "start", text: `Start ${now.agent}` },
-      ...(existing ? [{ key: "again", text: `Workspace ${existing.name}: ${AGAIN[state.again]}` }] : []),
+      ...(existing ? [{ key: "again", text: `Workspace ${existing.name}: ${AGAIN_SHORT[state.again]}` }] : []),
       { key: "agent", text: `Agent: ${now.agent}` },
-      { key: "model", text: `Model: ${now.model?.id ?? "the agent's default"}` },
-      { key: "effort", text: `Effort: ${now.model?.effort ?? "the agent's default"}` },
+      { key: "model", text: `Model: ${now.model?.id ?? DEFAULT}` },
+      { key: "effort", text: `Effort: ${now.model?.effort ?? DEFAULT}` },
       { key: "terminal", text: `Terminal: ${TERMINAL_SHOWN[now.terminal] ?? "this window"}` },
     ];
-    const row = (await ask(`${id} · Enter on Start starts; choose a line to change it`, rows, (r) => r.text, rows[0]))?.item;
-    if (!row) return null;
-    if (row.key === "start") return state;
+    const hint = (r) => (r.key === "again" ? AGAIN[state.again] : r.key === "start" ? `Enter starts ${id}` : "");
+    const chosen = await ask(`${id}: change a line, then Start`, rows, (r) => r.text, rows.find((r) => r.key === at) ?? rows[0], { hint, sides: true });
+    if (!chosen) return null;
+    const { item: row, side } = chosen;
+    at = row.key;
+    if (row.key === "start") {
+      if (side) continue;
+      return state;
+    }
     if (row.key === "again") {
-      const chosen = await ask("Workspace", againChoices(now.terminal), (key) => AGAIN[key], state.again);
-      if (chosen) state = { ...state, again: chosen.item };
+      if (side) state = { ...state, again: step(againKeys, state.again, side) };
+      else {
+        const picked = await ask("Workspace", againKeys, (key) => AGAIN_SHORT[key], state.again, { hint: (key) => AGAIN[key] });
+        if (picked) state = { ...state, again: picked.item };
+      }
       continue;
     }
-    const value = await ask(row.text.split(":")[0], options[row.key], (v) => v ?? "the agent's default");
+    const values = options[row.key];
+    const current = row.key in state.picks ? state.picks[row.key] : (shown[row.key] ?? undefined);
+    if (side) {
+      state = { ...state, picks: { ...state.picks, [row.key]: step(values, current, side) } };
+      continue;
+    }
+    const value = await ask(row.text.split(":")[0], values, (v) => v ?? DEFAULT, values.includes(current) ? current : undefined);
     if (value) state = { ...state, picks: { ...state.picks, [row.key]: value.item } };
   }
 }

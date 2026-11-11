@@ -9,9 +9,18 @@ import { normalizeName } from "../../src/names.mjs";
 export const AGAIN = {
   continue: "Continue: start the agent in the workspace, without Linear's prompt",
   prompt: "Start over in the workspace: the agent gets Linear's prompt again; the changes stay",
-  new: "Run again next to it: a new workspace and branch, for another agent, model or effort",
-  over: "Replace it: remove the workspace (nk rm backs up its changes first), then start fresh",
+  new: "Run again next to it: a new workspace and branch from the base branch, for another agent, model or effort",
+  over: "Replace it: remove the workspace (nk rm backs up its changes first), then start fresh from the base branch",
   shell: "Only open the workspace: no agent",
+};
+
+/** Short names for the list; AGAIN says more under it. */
+export const AGAIN_SHORT = {
+  continue: "Continue",
+  prompt: "Start over in it",
+  new: "Run again in a new workspace",
+  over: "Replace it",
+  shell: "Only open it",
 };
 
 /** The "again" setting: one of AGAIN's keys, or "ask". */
