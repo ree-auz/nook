@@ -244,7 +244,15 @@ test("efforts and arguments differ per agent", async () => {
 
 test("the preset config parses and covers the built-in agents", async () => {
   const preset = JSON.parse(readFileSync(fileURLToPath(new URL("../integrations/linear/nook.example.json", import.meta.url)), "utf8"));
-  for (const agent of ["codex", "claude", "grok"]) assert.ok(preset.agentArgs[agent]?.effort, `${agent} has an effort argument`);
+  for (const agent of ["codex", "claude", "grok", "pi", "droid", "aider"]) assert.ok(preset.agentArgs[agent]?.effort, `${agent} has an effort argument`);
+  const { KNOWN_AGENTS } = await import("../src/agents.mjs");
+  for (const agent of KNOWN_AGENTS) assert.ok(preset.agentArgs[agent], `${agent} has an agentArgs entry`);
+  const { choose } = await import("../integrations/linear/choose.mjs");
+  const pick = (labels) => choose(labels.map((l) => `<label>${l}</label>`).join("\n"), {}, preset);
+  assert.equal(pick([]).terminal, null, "starts in Linear's window, not in a terminal someone may not have");
+  assert.deepEqual(pick(["Agent › Pi", "Model › Strong", "Effort › Max"]).args, ["--model", "anthropic/claude-opus-5-5", "--thinking", "max"]);
+  assert.deepEqual(pick(["Agent › GitHub Copilot", "Model › Light"]).args, ["--model", "claude-haiku-5.5"]);
+  assert.deepEqual(pick(["Agent › Amp", "Model › Strong"]).args, [], "Amp takes no model flag");
 });
 
 test("WezTerm opens a tab in the running WezTerm, else a window", async () => {
