@@ -47,7 +47,12 @@ Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only;
      the script opens a tab in the WezTerm window that is open, or a new
      WezTerm window when none is, and closes Linear's window. If WezTerm is
      not on PATH, add `"--wezterm", "<full path to wezterm>"` (on Windows,
-     usually `C:\\Program Files\\WezTerm\\wezterm.exe`).
+     usually `C:\\Program Files\\WezTerm\\wezterm.exe`). When a WezTerm
+     window is open but a new one opens anyway, the new window's first line
+     says why.
+   - Windows Terminal and WezTerm open a tab by default. For a window of its
+     own per issue, add `"--open", "window"` (or `"open": "window"` in the
+     config file below). Warp always opens a tab.
    - To keep agents in [Orca](https://www.onorca.dev) (its accounts and
      sessions), add `"--terminal", "orca"`: Nook creates the workspace and
      runs its hooks in Linear's window, then
@@ -218,6 +223,7 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `--terminal-label <group>` | the terminal label group, over `labels.terminal` |
 | `--orca <path>` | Orca's command-line tool, when it is not on PATH |
 | `--wezterm <path>` | WezTerm, when it is not on PATH |
+| `--open tab\|window` | a tab (the default) or a window of its own, over `"open"`; Windows Terminal and WezTerm |
 
 `nook.json`:
 
@@ -225,6 +231,8 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | -- | -- |
 | `agent` | the default agent's command |
 | `terminal` | the default terminal |
+| `open` | `"tab"` (the default) or `"window"`: where Windows Terminal and WezTerm open the issue |
+| `closeLinearWindow` | `false` keeps the window Linear opened after the agent starts in another terminal |
 | `orca` | Orca's command-line tool |
 | `wezterm` | WezTerm's program |
 | `labels` | `{ agent, model, effort, terminal }`: your label group names |
@@ -247,8 +255,13 @@ Choosing the same issue again reopens its workspace and starts the agent
 without the prompt (with `--terminal orca`, a new agent session in Orca;
 earlier sessions stay in Orca's list).
 
-Linear's GitHub integration moves the issue along as the branch and its pull
-request change, because the branch name holds the issue identifier. After the
+To move the issue to In Progress when you start it, turn on **Move issue to
+started status** for opening an issue in a coding tool, in Linear's
+**Settings → Account → Code & reviews**: it covers the custom script, and the
+self-assignment preference next to it assigns unassigned issues to you. The
+script does not change the issue itself. After that, Linear's GitHub
+integration moves the issue along as the branch and its pull request change,
+because the branch name holds the issue identifier. After the
 pull request is merged, `nk clean` removes the workspace.
 
 ## How it works
@@ -259,15 +272,18 @@ pull request is merged, `nk clean` removes the workspace.
 - With `--terminal`, the prompt is long Markdown with quotes and semicolons,
   so the script writes it to a temporary file and opens a tab in the chosen
   folder that runs the same script again: Windows Terminal with
-  `wt.exe -w 0 new-tab -d <folder>`; Warp, whose `warp://` links cannot run a
+  `wt.exe -w 0 new-tab -d <folder>` (`-w new` for a window); Warp, whose `warp://` links cannot run a
   command, through a
   [tab config](https://docs.warp.dev/terminal/windows/tab-configs/) written to
   `%APPDATA%\warp\Warp\data\tab_configs\` and opened with
   `warp://tab_config/<name>` (the tab deletes it when it starts). A
   minimized Warp window stays minimized; WezTerm with
-  `wezterm cli --no-auto-start spawn --cwd <folder> -- <command>`, which adds
-  a tab to the open WezTerm window and names it after the issue, or
-  `wezterm start --cwd <folder> -- <command>` when no WezTerm window is open.
+  `wezterm cli --no-auto-start list --format json` to find the open window,
+  then `wezterm cli --no-auto-start spawn --window-id <id> --cwd <folder> -- <command>`,
+  which adds a tab to it and names it after the issue (outside WezTerm, spawn
+  has no current window of its own), or
+  `wezterm start --cwd <folder> -- <command>` when no WezTerm window is open,
+  with `"open": "window"`, or when the tab could not be opened.
   It then
   closes the window Linear opened.
 - `nk` runs with the same Node, never through `cmd.exe`, which would cut a

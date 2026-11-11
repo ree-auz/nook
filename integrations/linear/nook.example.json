@@ -1,6 +1,8 @@
 {
   "agent": "codex",
   "terminal": "here",
+  "open": "tab",
+  "closeLinearWindow": true,
   "labels": {
     "agent": "Agent",
     "model": "Model",

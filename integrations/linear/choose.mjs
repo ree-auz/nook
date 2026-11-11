@@ -13,7 +13,7 @@ export const CONFIG_PATH = join(homedir(), ".linear", "nook.json");
 
 /**
  * The config file, or {} when there is none. Shape:
- * { agent, terminal, orca, wezterm, labels: { agent, model, effort, terminal },
+ * { agent, terminal, open, closeLinearWindow, orca, wezterm, labels: { agent, model, effort, terminal },
  *   agents: { "<label name>": "<command>" }, terminals: { "<label name>": "<terminal>" },
  *   models: { "<label name>": "<id>" | { id, agent } | { "<agent>": "<id>" | { id, effort } } },
  *   efforts: { "<word>": "<effort>" | { "<agent>": "<effort>" } },
@@ -223,5 +223,9 @@ export function choose(prompt, flags = {}, config = {}) {
     notes.push(`"agentArgs" in the config says no effort argument for ${agent}; it starts with its default effort`);
   // The agent's own arguments, for when it starts in a terminal rather than in Orca.
   const args = model ? agentModelArgs(agent, model, config.agentArgs) : [];
-  return { agent, model, args, terminal, orca: flags.orca ?? config.orca ?? "orca", wezterm: flags.wezterm ?? config.wezterm ?? "wezterm", notes };
+  const open = flags.open ?? config.open ?? "tab";
+  if (open !== "tab" && open !== "window") throw new Error(`"open" is "${open}"; use "tab" or "window"`);
+  // Linear's window closes once the agent runs elsewhere, unless the config keeps it.
+  const closeLinearWindow = config.closeLinearWindow !== false;
+  return { agent, model, args, terminal, orca: flags.orca ?? config.orca ?? "orca", wezterm: flags.wezterm ?? config.wezterm ?? "wezterm", open, closeLinearWindow, notes };
 }

@@ -45,7 +45,7 @@ test("for Warp, a tab config runs the launcher in the chosen folder", async (t) 
   const appData = tempDir(t);
   const opened = [];
   const inner = ["C:\\Program Files\\nodejs\\node.exe", "C:\\nook\\open-issue.mjs", "--run", "C:\\Temp\\it's.md", "ree-270-x", "codex"];
-  const config = openInWarp({ dir: "D:\\Projects\\Pipit", id: "REE-270", inner, env: { APPDATA: appData }, start: (uri) => opened.push(uri) });
+  const { config } = openInWarp({ dir: "D:\\Projects\\Pipit", id: "REE-270", inner, env: { APPDATA: appData }, start: (uri) => opened.push(uri) });
   assert.match(config, /nk-ree-270-\d+\.toml$/);
   const tab = parse(readFileSync(config, "utf8"));
   assert.deepEqual(opened, [`warp://tab_config/${tab.name}`]);
@@ -79,7 +79,7 @@ test("a model label picks the model, its effort and, alone, its agent", async ()
   };
   const pick = (labels, flags = {}) => choose(labels.map((l) => `<label>${l}</label>`).join("\n"), flags, config);
 
-  assert.deepEqual(pick(["Model › Luna · 高", "Agent › Codex"]), { agent: "codex", model: { id: "gpt-6-luna", effort: "high" }, args: ["-m", "gpt-6-luna", "-c", "model_reasoning_effort=high"], terminal: null, orca: "orca", wezterm: "wezterm", notes: [] });
+  assert.deepEqual(pick(["Model › Luna · 高", "Agent › Codex"]), { agent: "codex", model: { id: "gpt-6-luna", effort: "high" }, args: ["-m", "gpt-6-luna", "-c", "model_reasoning_effort=high"], terminal: null, orca: "orca", wezterm: "wezterm", open: "tab", closeLinearWindow: true, notes: [] });
   assert.equal(pick(["Model › Opus · high"]).agent, "claude", "the model's agent when no agent label");
   assert.deepEqual(pick(["Model › gpt-6.1-sol · low"]).model, { id: "gpt-6.1-sol", effort: "low" }, "a label that is a model id needs no config");
   assert.deepEqual(pick(["Model › Fast", "Agent › Grok"]).model, { id: "grok-5-fast", effort: null });
@@ -255,31 +255,66 @@ test("the preset config parses and covers the built-in agents", async () => {
   assert.deepEqual(pick(["Agent › Amp", "Model › Strong"]).args, [], "Amp takes no model flag");
 });
 
-test("WezTerm opens a tab in the running WezTerm, else a window", async () => {
+test("WezTerm opens a tab in the open WezTerm window, else a window", async () => {
   const { openInWezTerm } = await import("../integrations/linear/open-issue.mjs");
   const inner = ["C:\\Program Files\\nodejs\\node.exe", "C:\\nook\\open-issue.mjs", "--run", "C:\\Temp\\it's.md", "ree-270-x", "codex"];
   const calls = [];
   const started = [];
-  const answer = (status, stdout = "") => (command, args) => {
+  const panes = JSON.stringify([
+    { window_id: 0, tab_id: 0, pane_id: 0, is_active: false },
+    { window_id: 3, tab_id: 5, pane_id: 7, is_active: true },
+  ]);
+  // answers: what list and spawn return; set-tab-title always works.
+  const answer = ({ list = { status: 0, stdout: panes }, spawn = { status: 0, stdout: "42\n" } } = {}) => (command, args) => {
     calls.push([command, ...args]);
-    return args[1] === "set-tab-title" ? { status: 0 } : { status, stdout };
+    return { list, spawn, "set-tab-title": { status: 0 } }[args[args[1] === "--no-auto-start" ? 2 : 1]];
   };
   const start = (command, args) => started.push([command, ...args]);
 
-  assert.equal(openInWezTerm({ dir: "D:\\Projects\\Pipit", id: "REE-270", inner, run: answer(0, "42\n"), start }), "tab");
+  assert.deepEqual(openInWezTerm({ dir: "D:\\Projects\\Pipit", id: "REE-270", inner, run: answer(), start }), { opened: "tab", reason: null });
   assert.deepEqual(calls, [
-    ["wezterm", "cli", "--no-auto-start", "spawn", "--cwd", "D:\\Projects\\Pipit", "--", ...inner],
+    ["wezterm", "cli", "--no-auto-start", "list", "--format", "json"],
+    ["wezterm", "cli", "--no-auto-start", "spawn", "--window-id", "3", "--cwd", "D:\\Projects\\Pipit", "--", ...inner],
     ["wezterm", "cli", "set-tab-title", "--pane-id", "42", "REE-270"],
-  ]);
+  ], "the tab goes into the window of the active pane: outside WezTerm, spawn has no current window");
   assert.deepEqual(started, []);
 
   calls.length = 0;
-  assert.equal(openInWezTerm({ dir: "/work/pipit", id: "REE-270", inner, wezterm: "/opt/wezterm", run: answer(1), start }), "window", "no WezTerm open");
+  const none = openInWezTerm({ dir: "/work/pipit", id: "REE-270", inner, wezterm: "/opt/wezterm", run: answer({ list: { status: 1, stderr: "failed to connect to gui\n" } }), start });
+  assert.equal(none.opened, "window", "no WezTerm open");
+  assert.match(none.reason, /No WezTerm window found .*failed to connect to gui/);
   assert.equal(calls.length, 1);
-  assert.deepEqual(started, [["/opt/wezterm", "start", "--cwd", "/work/pipit", "--", ...inner]]);
+  assert.deepEqual(started, [["/opt/wezterm", "start", "--cwd", "/work/pipit", "--", ...inner, "--note", none.reason]], "the new window says why");
+
+  started.length = 0;
+  const refused = openInWezTerm({ dir: ".", id: "x", inner, run: answer({ spawn: { status: 1, stderr: "no such window" } }), start });
+  assert.match(refused.reason, /did not open a tab .*no such window/);
+  assert.equal(started.length, 1);
+
+  started.length = 0;
+  calls.length = 0;
+  assert.deepEqual(openInWezTerm({ dir: ".", id: "x", inner, open: "window", run: answer(), start }), { opened: "window", reason: null });
+  assert.equal(calls.length, 0, "open: window does not look for a window");
+  assert.deepEqual(started, [["wezterm", "start", "--cwd", ".", "--", ...inner]]);
 
   const missing = () => ({ status: null, error: Object.assign(new Error("spawn wezterm ENOENT"), { code: "ENOENT" }) });
   assert.throws(() => openInWezTerm({ dir: ".", id: "x", inner, run: missing, start }), /could not run wezterm.*--wezterm/);
+});
+
+test("Windows Terminal opens a tab or a window, and the config chooses", async () => {
+  const { openInWindowsTerminal } = await import("../integrations/linear/open-issue.mjs");
+  const { choose } = await import("../integrations/linear/choose.mjs");
+  const started = [];
+  const start = (command, args) => started.push([command, ...args]);
+  openInWindowsTerminal({ dir: "D:\\p", id: "REE-1", inner: ["node"], start });
+  openInWindowsTerminal({ dir: "D:\\p", id: "REE-1", inner: ["node"], open: "window", start });
+  assert.deepEqual(started.map((call) => call.slice(1, 3)), [["-w", "0"], ["-w", "new"]]);
+  assert.equal(choose("", {}, {}).open, "tab");
+  assert.equal(choose("", {}, { open: "window" }).open, "window");
+  assert.equal(choose("", { open: "tab" }, { open: "window" }).open, "tab", "--open wins");
+  assert.throws(() => choose("", {}, { open: "pane" }), /use "tab" or "window"/);
+  assert.equal(choose("", {}, {}).closeLinearWindow, true);
+  assert.equal(choose("", {}, { closeLinearWindow: false }).closeLinearWindow, false);
 });
 
 test("WezTerm is a terminal a label or the default can name", async () => {
