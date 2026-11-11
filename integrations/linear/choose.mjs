@@ -19,7 +19,8 @@ export const CONFIG_PATH = join(homedir(), ".linear", "nook.json");
  *   agentModels: { "<agent>": ["<id>", ...] }: more models the list in Linear's window offers,
  *   efforts: { "<word>": "<effort>" | { "<agent>": "<effort>" } },
  *   agentArgs: { "<agent>": { model: [...args with {model}], effort: [...args with {effort}], prompt: [...args with {prompt}] } },
- *   presets: { "<agent>": { "<name>": [...args] } }: named argument sets the list in Linear's window offers }
+ *   presets: { "<agent>": { "<name>": [...args] } }: named argument sets the list in Linear's window offers,
+ *   promptTemplate: "<text with {prompt}>" | { default: "<text>", "<agent>": "<text>" } }
  */
 export function loadConfig(path = CONFIG_PATH, { required = false } = {}) {
   let text;
@@ -145,6 +146,20 @@ export function promptArgs(agent, prompt, agentArgs = {}) {
   const template = argsOf(agent, agentArgs).prompt;
   if (!Array.isArray(template)) return null;
   return template.map((arg) => arg.replaceAll("{prompt}", prompt));
+}
+
+/**
+ * The prompt the agent gets: Linear's prompt inside "promptTemplate", with
+ * {prompt}, {id} (REE-302), {branch} and {agent} filled in. The template is
+ * one text for every agent, or { "default": ..., "<agent>": ... }. No
+ * template, or none for this agent, leaves the prompt as it is. The values
+ * are filled in one pass, so a "{id}" inside Linear's prompt stays as written.
+ */
+export function wrapPrompt(prompt, template, values = {}) {
+  const text = typeof template === "string" ? template : template && typeof template === "object" ? (lookup(template, values.agent ?? "") ?? template.default) : null;
+  if (typeof text !== "string") return prompt;
+  const all = { ...values, prompt };
+  return text.replace(/\{(prompt|id|branch|agent)\}/g, (whole, key) => all[key] ?? whole);
 }
 
 /** One agent's named argument sets from "presets": { "<name>": [...args] }. */

@@ -107,5 +107,6 @@
   "presets": {
     "claude": { "Plan": ["--permission-mode", "plan"], "Accept edits": ["--permission-mode", "acceptEdits"] },
     "codex": { "Full auto": ["--full-auto"] }
-  }
+  },
+  "promptTemplate": "{prompt}\n\nPut {id} in the pull request title."
 }

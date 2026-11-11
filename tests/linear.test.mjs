@@ -67,6 +67,18 @@ test("agentArgs can say how an agent takes the prompt", (t) => {
   assert.deepEqual(run("two", []), [], "an empty template: no prompt at all");
 });
 
+test("promptTemplate puts fixed text around Linear's prompt", async () => {
+  const { wrapPrompt } = await import("../integrations/linear/choose.mjs");
+  const values = { id: "REE-1", branch: "ree-1-x", agent: "claude" };
+  assert.equal(wrapPrompt("Do {id}", undefined, values), "Do {id}", "no template: as it is");
+  assert.equal(wrapPrompt("Do it", "{prompt}\n\nRead CLAUDE.md. {id} on {branch}, {agent}.", values), "Do it\n\nRead CLAUDE.md. REE-1 on ree-1-x, claude.");
+  assert.equal(wrapPrompt("Keep {id} and {prompt}", "[{id}] {prompt}", values), "[REE-1] Keep {id} and {prompt}", "one pass: the prompt's own braces stay");
+  assert.equal(wrapPrompt("p", { Claude: "C: {prompt}", default: "D: {prompt}" }, values), "C: p", "per agent, ignoring case");
+  assert.equal(wrapPrompt("p", { default: "D: {prompt}" }, { ...values, agent: "grok" }), "D: p");
+  assert.equal(wrapPrompt("p", { codex: "X" }, values), "p", "no entry and no default: as it is");
+  assert.equal(wrapPrompt("p", "{unknown} {prompt}", values), "{unknown} p");
+});
+
 test("prompt templates and option presets per agent", async () => {
   const { choose, pickOptions, promptArgs } = await import("../integrations/linear/choose.mjs");
   const { agentPart } = await import("../integrations/linear/open-issue.mjs");
@@ -187,7 +199,9 @@ test("for Orca, nk creates the workspace and Orca starts the agent in it", (t) =
     GIT_COMMITTER_EMAIL: "t@example.com",
   };
   const config = join(root, "nook.json");
-  writeFileSync(config, JSON.stringify({ labels: { model: "Model" }, models: { Sol: "gpt-6.1-sol" } }));
+  // promptTemplate: fixed text around Linear's prompt, by agent.
+  const promptTemplate = { default: "unused", codex: "{prompt}\nOn {branch}: put {id} in the PR title." };
+  writeFileSync(config, JSON.stringify({ labels: { model: "Model" }, models: { Sol: "gpt-6.1-sol" }, promptTemplate }));
   const run = () => {
     const r = spawnSync(process.execPath, [script, "--config", config, "--terminal", "orca", "--orca", orca, "--agent", "codex"], { cwd: root, encoding: "utf8", env });
     assert.equal(r.status, 0, r.stdout + r.stderr);
@@ -199,7 +213,8 @@ test("for Orca, nk creates the workspace and Orca starts the agent in it", (t) =
   run();
   const calls = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line));
   const launch = ["agent", "launch", "--agent", "codex", "--worktree", `path:${ws}`, "--focus", "--json", "--model", "gpt-6.1-sol", "--effort", "medium"];
-  assert.deepEqual(calls, [["open", "--json"], [...launch, "--prompt", env.LINEAR_PROMPT], ["open", "--json"], launch]);
+  const sent = `${env.LINEAR_PROMPT}\nOn ree-auz/ree-280-orca: put REE-280 in the PR title.`;
+  assert.deepEqual(calls, [["open", "--json"], [...launch, "--prompt", sent], ["open", "--json"], launch]);
 });
 
 test("the launcher runs when started through a linked folder, like fnm's aliases\\default", (t) => {
