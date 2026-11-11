@@ -1,26 +1,58 @@
 {
   "agent": "codex",
   "terminal": "orca",
-  "labels": { "agent": "Agent", "model": "Model", "effort": "Effort", "terminal": "Terminal" },
+  "labels": {
+    "agent": "Agent",
+    "model": "Model",
+    "effort": "Effort",
+    "terminal": "Terminal"
+  },
+  "agents": {
+    "Cursor": "cursor-agent",
+    "Open Code": "opencode"
+  },
+  "terminals": {
+    "Tab": "wt",
+    "Window": "here"
+  },
   "models": {
     "Light": {
-      "codex": { "id": "gpt-6-luna", "effort": "high" },
+      "codex": {
+        "id": "gpt-6-luna",
+        "effort": "high"
+      },
       "claude": "claude-haiku-5-5"
     },
     "Standard": {
-      "codex": { "id": "gpt-6.1-sol", "effort": "low" },
+      "codex": {
+        "id": "gpt-6.1-sol",
+        "effort": "low"
+      },
       "claude": "claude-sonnet-5-5",
       "gemini": "gemini-3-flash"
     },
     "Strong": {
-      "codex": { "id": "gpt-6.1-sol", "effort": "high" },
+      "codex": {
+        "id": "gpt-6.1-sol",
+        "effort": "high"
+      },
       "claude": "claude-opus-5-5",
       "gemini": "gemini-3-pro",
       "grok": "grok-5"
     },
     "Strongest": {
-      "codex": { "id": "gpt-6-astra", "effort": "medium" },
-      "claude": { "id": "claude-opus-5-5", "effort": "xhigh" }
+      "codex": {
+        "id": "gpt-6-astra",
+        "effort": "medium"
+      },
+      "claude": {
+        "id": "claude-opus-5-5",
+        "effort": "xhigh"
+      }
     }
+  },
+  "efforts": {
+    "Quick": "low",
+    "Deep": "xhigh"
   }
 }

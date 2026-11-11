@@ -197,3 +197,25 @@ test("an effort label group sets the effort", async () => {
   assert.match(pick(["Model › Strong", "Effort › 猛"]).notes[0], /Effort › 猛: "猛" is not an effort/);
   assert.match(pick(["Effort › high"]).notes[0], /needs a model label too/);
 });
+
+test("agents and terminals map label names in any language", async () => {
+  const { choose } = await import("../integrations/linear/choose.mjs");
+  const config = {
+    labels: { agent: "执行", terminal: "终端" },
+    agents: { 克劳德: "claude", "Cursor 代理": "cursor-agent" },
+    terminals: { 终端窗口: "Windows Terminal", 本窗口: "here", 坏的: "kitty" },
+  };
+  const pick = (labels, flags = {}) => choose(labels.map((l) => `<label>${l}</label>`).join("\n"), flags, config);
+  assert.equal(pick(["执行 › 克劳德"]).agent, "claude");
+  assert.equal(pick(["执行 › cursor 代理"]).agent, "cursor-agent", "names match without case");
+  assert.equal(pick(["执行 › Codex"]).agent, "codex", "unmapped names still work as the command");
+  assert.equal(pick(["克劳德"]).agent, "claude", "a mapped name works outside the group");
+  assert.equal(pick(["终端 › 终端窗口"]).terminal, "wt");
+  assert.equal(pick(["终端 › 本窗口"], { terminal: "orca" }).terminal, null, "here wins over the default");
+  assert.equal(pick(["终端 › Orca"]).terminal, "orca", "built-in names need no map");
+  assert.throws(() => pick(["终端 › 坏的"]), /maps 终端 › 坏的 to "kitty", which is not a terminal/);
+  assert.throws(() => pick(["终端 › 随便"]), /is not a terminal; .* or map it in "terminals"/);
+  assert.equal(pick([], { terminal: "Windows Terminal" }).terminal, "wt", "the default can be written like a label");
+  assert.equal(choose("", {}, { terminal: "终端窗口", terminals: config.terminals }).terminal, "wt", "and through the map");
+  assert.equal(choose("", {}, { terminal: "here" }).terminal, null);
+});
