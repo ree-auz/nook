@@ -13,7 +13,7 @@ import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { agentCommand, windowsDirect } from "../../src/agents.mjs";
-import { CONFIG_PATH, choose, loadConfig, pickOptions } from "./choose.mjs";
+import { CONFIG_PATH, choose, loadConfig, pickOptions, promptArgs } from "./choose.mjs";
 import { AGAIN, AGAIN_SHORT, againChoices, againSetting, nextBranch } from "./again.mjs";
 import { pick } from "../../src/select.mjs";
 import { apiKey, startIssue } from "./start-issue.mjs";
@@ -54,17 +54,28 @@ function listWorkspaces() {
  * `again` says: continue (the agent without the prompt), prompt (with it)
  * or shell (no agent).
  */
-function startWork({ branch, agent, prompt, args = [], again = "continue" }) {
+function startWork({ branch, agent, prompt, args = [], template = null, again = "continue" }) {
   const existing = findWorkspace(branch);
-  // Arguments after -- go to the agent: the model and effort the labels chose.
-  const extra = args.length ? ["--", ...args] : [];
+  const part = (withPrompt) => agentPart({ prompt, args, template, withPrompt });
   let result;
-  if (!existing) result = runNk(["-b", branch, agent, "-y", "-p", prompt, ...extra]);
+  if (!existing) result = runNk(["-b", branch, agent, "-y", ...part(true)]);
   // -y: the branch name Linear suggests is converted without asking.
   else if (again === "shell") result = runNk([existing.name]);
-  else if (again === "prompt") result = runNk([existing.name, agent, "-p", prompt, ...extra]);
-  else result = runNk([existing.name, agent, ...extra]);
+  else if (again === "prompt") result = runNk([existing.name, agent, ...part(true)]);
+  else result = runNk([existing.name, agent, ...part(false)]);
   process.exitCode = result.status ?? 1;
+}
+
+/**
+ * What follows the agent on nk's command line. Arguments after -- go to the
+ * agent: options, model and effort. The prompt goes with -p, last on the
+ * agent's command line, unless "agentArgs" gives the agent a "prompt"
+ * template (`template`, with "{prompt}" not yet filled in).
+ */
+export function agentPart({ prompt, args = [], template = null, withPrompt }) {
+  const filled = withPrompt && template ? template.map((arg) => arg.replaceAll("{prompt}", prompt)) : [];
+  const all = [...args, ...filled];
+  return [...(withPrompt && !template && prompt ? ["-p", prompt] : []), ...(all.length ? ["--", ...all] : [])];
 }
 
 /** Inside a tab another terminal opened: the prompt comes in a file. */
@@ -75,11 +86,12 @@ export function insideTab([file, branch, agent, ...more]) {
   const cleanup = option(more, "--cleanup");
   if (cleanup) rmSync(cleanup, { force: true });
   const args = option(more, "--agent-args");
+  const template = option(more, "--prompt-args");
   const again = option(more, "--again");
   // Why this opened in a new window although a tab was asked for.
   const note = option(more, "--note");
   if (note) console.log(note);
-  startWork({ branch, agent, prompt, args: args ? JSON.parse(args) : [], again });
+  startWork({ branch, agent, prompt, args: args ? JSON.parse(args) : [], template: template ? JSON.parse(template) : null, again });
 }
 
 /** Windows Terminal: -w 0 opens a tab in the most recent window (or a new window); -w new, a window. */
@@ -315,10 +327,10 @@ async function fromLinear(argv) {
     if (!reviewed) return console.log("Nothing started.");
     ({ again, picks } = reviewed);
   } else if (again === "ask") again = "continue";
-  const { agent, model, args, terminal, orca, wezterm, open: openIn, closeLinearWindow: close, notes } = choose(prompt, { ...flags, picks }, config);
+  const { agent, model, args, preset, terminal, orca, wezterm, open: openIn, closeLinearWindow: close, notes } = choose(prompt, { ...flags, picks }, config);
   // Say what starts and why, so a label that was not picked up is easy to see.
   const where = { wt: "Windows Terminal", warp: "Warp", wezterm: "WezTerm", orca: "Orca" }[terminal] ?? "this window";
-  console.log(`Agent: ${agent} in ${where}${model?.id ? `, model ${model.id}` : ", its default model"}${model?.effort ? `, effort ${model.effort}` : ""}`);
+  console.log(`Agent: ${agent} in ${where}${model?.id ? `, model ${model.id}` : ", its default model"}${model?.effort ? `, effort ${model.effort}` : ""}${preset ? `, options ${preset.name}` : ""}`);
   for (const note of notes) console.log(`  ${note}`);
   if (again === "shell" && terminal === "orca") again = "continue";
   let branch = linearBranch;
@@ -337,7 +349,9 @@ async function fromLinear(argv) {
     }
   }
   // Default: work in the terminal Linear opened for the script.
-  if (!terminal) return startWork({ branch, agent, prompt, args, again });
+  // How the agent takes the prompt: last on its command line, or as "agentArgs" says.
+  const template = promptArgs(agent, "{prompt}", config.agentArgs);
+  if (!terminal) return startWork({ branch, agent, prompt, args, template, again });
   if (terminal === "orca") {
     process.exitCode = workInOrca({ branch, agent, prompt, model, orca, again });
     // Keep Linear's window open when something failed, so its output can be read.
@@ -361,7 +375,7 @@ async function fromLinear(argv) {
   // The prompt is long Markdown with quotes and semicolons, so it travels in a file.
   const file = join(tmpdir(), `nk-linear-${id}-${process.pid}.md`);
   writeFileSync(file, prompt);
-  const agentArgs = args.length ? ["--agent-args", JSON.stringify(args)] : [];
+  const agentArgs = [...(args.length ? ["--agent-args", JSON.stringify(args)] : []), ...(template ? ["--prompt-args", JSON.stringify(template)] : [])];
   const inner = [process.execPath, self, "--run", file, branch, agent, ...agentArgs, "--again", inTab];
   const { reason } = open({ dir, id, inner, wezterm, open: openIn });
   // The agent clears the new window, so Linear's window stays to show why.
@@ -380,6 +394,7 @@ async function hold(text) {
 
 const TERMINAL_SHOWN = { wt: "Windows Terminal", warp: "Warp", wezterm: "WezTerm", orca: "Orca" };
 const DEFAULT = "the agent's default";
+const NONE = "none";
 
 /**
  * The list in Linear's window before anything starts: Start, then what the
@@ -406,16 +421,23 @@ export async function review({ id, existing, again, prompt, flags, config, input
         { key: "model", text: `Model: ${now.model?.id ?? DEFAULT}` },
         { key: "effort", text: `Effort: ${now.model?.effort ?? DEFAULT}` },
         { key: "terminal", text: `Terminal: ${TERMINAL_SHOWN[now.terminal] ?? "this window"}` },
+        ...(pickOptions(config, now.agent).preset.length > 1 ? [{ key: "preset", text: `Options: ${now.preset?.name ?? NONE}` }] : []),
       ],
     };
   };
-  const withValue = (at, key, value) => (key === "again" ? { ...at, again: value } : { ...at, picks: { ...at.picks, [key]: value } });
+  const withValue = (at, key, value) => {
+    if (key === "again") return { ...at, again: value };
+    // Options belong to one agent, so another agent starts without them.
+    const picks = { ...at.picks, [key]: value };
+    if (key === "agent") delete picks.preset;
+    return { ...at, picks };
+  };
   const shownAs = (at, key) => linesFor(at).rows.find((row) => row.key === key)?.text;
 
   const main = (at = "start") => {
     const { now, rows } = linesFor(state);
     const againKeys = againChoices(now.terminal);
-    const current = { agent: now.agent, terminal: TERMINAL_SHOWN[now.terminal] ?? "Here" };
+    const current = { agent: now.agent, terminal: TERMINAL_SHOWN[now.terminal] ?? "Here", preset: null };
     const valueOf = (key) => (key === "again" ? state.again : key in state.picks ? state.picks[key] : current[key]);
     const options = pickOptions(config, now.agent);
     const valuesOf = (key) => (key === "again" ? againKeys : options[key]);
@@ -441,7 +463,7 @@ export async function review({ id, existing, again, prompt, flags, config, input
     };
     // A sub-list of one line's values; choosing or Esc comes back here.
     const values = (row) => {
-      const list = valuesOf(row.key).map((value) => ({ value, text: row.key === "again" ? AGAIN_SHORT[value] : (value ?? DEFAULT) }));
+      const list = valuesOf(row.key).map((value) => ({ value, text: row.key === "again" ? AGAIN_SHORT[value] : (value ?? (row.key === "preset" ? NONE : DEFAULT)) }));
       return {
         title: row.key === "again" ? "Workspace" : row.text.split(":")[0],
         items: list,

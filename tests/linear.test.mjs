@@ -40,6 +40,62 @@ test("the Linear launcher creates the workspace once, then reopens it", (t) => {
   assert.deepEqual(JSON.parse(readFileSync(join(ws, "agent.json"), "utf8")), [], "reopened without the task prompt");
 });
 
+test("agentArgs can say how an agent takes the prompt", (t) => {
+  const root = tempDir(t);
+  const home = join(root, "nook-home");
+  const repo = makeRepo(join(root, "demo"), { ".gitignore": "agent.json\n" });
+  assert.equal(nk(["init", "--yes", "--allow-hooks"], { cwd: repo, home }).status, 0);
+  const configPath = join(home, "config.toml");
+  const config = parse(readFileSync(configPath, "utf8"));
+  config.agents = { ...config.agents, node: { args: ["-e", "require('fs').writeFileSync('agent.json', JSON.stringify(process.argv.slice(1)))"] } };
+  writeFileSync(configPath, stringify(config));
+  const prompt = 'Fix "it"\nsecond line';
+  const run = (branch, template, again = "continue") => {
+    const file = join(root, `prompt-${Math.random()}.md`);
+    writeFileSync(file, prompt);
+    const r = spawnSync(process.execPath, [script, "--run", file, branch, "node", "--agent-args", JSON.stringify(["--"]), "--prompt-args", JSON.stringify(template), "--again", again], {
+      cwd: repo,
+      encoding: "utf8",
+      env: { ...process.env, NOOK_HOME: home, GIT_AUTHOR_NAME: "Test", GIT_AUTHOR_EMAIL: "t@example.com", GIT_COMMITTER_NAME: "Test", GIT_COMMITTER_EMAIL: "t@example.com" },
+    });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    return JSON.parse(readFileSync(join(home, "workspace", "demo", branch, "agent.json"), "utf8"));
+  };
+  assert.deepEqual(run("one", ["--task", "{prompt}"]), ["--task", prompt], "the template, with the prompt filled in");
+  assert.deepEqual(run("one", ["--task", "{prompt}"]), [], "continue: no prompt, so no template");
+  assert.deepEqual(run("one", ["--task", "{prompt}"], "prompt"), ["--task", prompt]);
+  assert.deepEqual(run("two", []), [], "an empty template: no prompt at all");
+});
+
+test("prompt templates and option presets per agent", async () => {
+  const { choose, pickOptions, promptArgs } = await import("../integrations/linear/choose.mjs");
+  const { agentPart } = await import("../integrations/linear/open-issue.mjs");
+  const agentArgs = { copilot: { model: ["--model", "{model}"], prompt: ["-i", "{prompt}"] }, aider: { prompt: [] } };
+  assert.equal(promptArgs("claude", "do it", agentArgs), null, "no template: the prompt goes last");
+  assert.deepEqual(promptArgs("copilot", "do it", agentArgs), ["-i", "do it"]);
+  assert.deepEqual(promptArgs("aider", "do it", agentArgs), []);
+
+  assert.deepEqual(agentPart({ prompt: "p", args: ["-m", "x"], withPrompt: true }), ["-p", "p", "--", "-m", "x"]);
+  assert.deepEqual(agentPart({ prompt: "p", args: ["-m", "x"], template: ["-i", "{prompt}"], withPrompt: true }), ["--", "-m", "x", "-i", "p"]);
+  assert.deepEqual(agentPart({ prompt: "p", template: ["-i", "{prompt}"], withPrompt: false }), []);
+  assert.deepEqual(agentPart({ prompt: "p", template: [], withPrompt: true }), []);
+
+  const config = {
+    labels: { model: "Model" },
+    presets: { claude: { Plan: ["--permission-mode", "plan"] }, codex: { "Full auto": ["--full-auto"] } },
+  };
+  const prompt = "<label>Model › opus</label>";
+  const planned = choose(prompt, { agent: "claude", picks: { preset: "plan" } }, config);
+  assert.deepEqual(planned.args, ["--permission-mode", "plan", "--model", "opus"], "options first, then model");
+  assert.equal(planned.preset.name, "plan");
+  const missing = choose(prompt, { agent: "codex", picks: { preset: "Plan" } }, config);
+  assert.equal(missing.preset, null);
+  assert.match(missing.notes.join("\n"), /no codex entry "Plan"/);
+  assert.match(choose("", { agent: "claude", terminal: "orca", picks: { preset: "Plan" } }, config).notes.join("\n"), /Orca takes no agent arguments/);
+  assert.deepEqual(pickOptions(config, "codex").preset, [null, "Full auto"]);
+  assert.deepEqual(pickOptions(config, "grok").preset, [null]);
+});
+
 test("for Warp, a tab config runs the launcher in the chosen folder", async (t) => {
   const { openInWarp } = await import("../integrations/linear/open-issue.mjs");
   const appData = tempDir(t);
@@ -79,7 +135,7 @@ test("a model label picks the model, its effort and, alone, its agent", async ()
   };
   const pick = (labels, flags = {}) => choose(labels.map((l) => `<label>${l}</label>`).join("\n"), flags, config);
 
-  assert.deepEqual(pick(["Model › Luna · 高", "Agent › Codex"]), { agent: "codex", model: { id: "gpt-6-luna", effort: "high" }, args: ["-m", "gpt-6-luna", "-c", "model_reasoning_effort=high"], terminal: null, orca: "orca", wezterm: "wezterm", open: "tab", closeLinearWindow: true, notes: [] });
+  assert.deepEqual(pick(["Model › Luna · 高", "Agent › Codex"]), { agent: "codex", model: { id: "gpt-6-luna", effort: "high" }, args: ["-m", "gpt-6-luna", "-c", "model_reasoning_effort=high"], preset: null, terminal: null, orca: "orca", wezterm: "wezterm", open: "tab", closeLinearWindow: true, notes: [] });
   assert.equal(pick(["Model › Opus · high"]).agent, "claude", "the model's agent when no agent label");
   assert.deepEqual(pick(["Model › gpt-6.1-sol · low"]).model, { id: "gpt-6.1-sol", effort: "low" }, "a label that is a model id needs no config");
   assert.deepEqual(pick(["Model › Fast", "Agent › Grok"]).model, { id: "grok-5-fast", effort: null });
@@ -505,6 +561,29 @@ test("the list in Linear's window changes a choice, then starts", async () => {
     assert.ok(result.picks.effort !== undefined, "Effort changed");
     const after = choose(labelled, { picks: result.picks }, example).model?.effort ?? null;
     assert.notEqual(after, "high", `one ${side === RIGHT ? "Right" : "Left"} leaves high`);
+  }
+
+  // An agent with presets gets an Options line; another agent drops the choice.
+  {
+    const withPresets = { ...config, presets: { codex: { "Full auto": ["--full-auto"] } } };
+    const typed = async (keys) => {
+      const input = new PassThrough();
+      Object.assign(input, { isTTY: true, setRawMode() {} });
+      const written = [];
+      const output = { columns: 100, rows: 30, write: (text) => written.push(text), on() {}, off() {} };
+      const done = review({ id: "REE-1", existing: null, again: "ask", prompt, flags: {}, config: withPresets, input, output });
+      for (const key of keys) {
+        await new Promise((ok) => setTimeout(ok, 5));
+        input.write(key);
+      }
+      return { result: await done, screen: written.join("") };
+    };
+    const chosen = await typed([UP, RIGHT, DOWN, ENTER]);
+    assert.match(chosen.screen, /Options: none/);
+    assert.match(chosen.screen, /Options: Full auto/);
+    assert.deepEqual(chosen.result.picks, { preset: "Full auto" });
+    const switched = await typed([UP, RIGHT, UP, UP, UP, UP, RIGHT, UP, ENTER]);
+    assert.equal(switched.result.picks.preset, undefined, "a new agent starts without the old one's options");
   }
 
   // Esc in a sub-list goes back; Esc in the list starts nothing.

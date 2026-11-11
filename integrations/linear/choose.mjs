@@ -18,7 +18,8 @@ export const CONFIG_PATH = join(homedir(), ".linear", "nook.json");
  *   models: { "<label name>": "<id>" | { id, agent } | { "<agent>": "<id>" | { id, effort } } },
  *   agentModels: { "<agent>": ["<id>", ...] }: more models the list in Linear's window offers,
  *   efforts: { "<word>": "<effort>" | { "<agent>": "<effort>" } },
- *   agentArgs: { "<agent>": { model: [...args with {model}], effort: [...args with {effort}] } } }
+ *   agentArgs: { "<agent>": { model: [...args with {model}], effort: [...args with {effort}], prompt: [...args with {prompt}] } },
+ *   presets: { "<agent>": { "<name>": [...args] } }: named argument sets the list in Linear's window offers }
  */
 export function loadConfig(path = CONFIG_PATH, { required = false } = {}) {
   let text;
@@ -135,6 +136,23 @@ function argsOf(agent, agentArgs = {}) {
 }
 
 /**
+ * How an agent takes the issue's prompt, from "prompt" in its "agentArgs"
+ * entry: null when it has none, so the prompt goes last on the command line;
+ * otherwise the template with "{prompt}" replaced. An empty template means
+ * the agent gets no prompt.
+ */
+export function promptArgs(agent, prompt, agentArgs = {}) {
+  const template = argsOf(agent, agentArgs).prompt;
+  if (!Array.isArray(template)) return null;
+  return template.map((arg) => arg.replaceAll("{prompt}", prompt));
+}
+
+/** One agent's named argument sets from "presets": { "<name>": [...args] }. */
+export function presetsOf(config = {}, agent) {
+  return lookup(config.presets, agent) ?? {};
+}
+
+/**
  * Each agent's own arguments for a model and effort, when it starts in a
  * terminal: "{model}" and "{effort}" in the templates are replaced. An agent
  * with no effort template gets no effort.
@@ -225,12 +243,22 @@ export function choose(issuePrompt, flags = {}, issueConfig = {}) {
   if (model?.effort && terminal !== "orca" && !argsOf(agent, config.agentArgs).effort)
     notes.push(`"agentArgs" in the config says no effort argument for ${agent}; it starts with its default effort`);
   // The agent's own arguments, for when it starts in a terminal rather than in Orca.
-  const args = model ? agentModelArgs(agent, model, config.agentArgs) : [];
+  const modelArgs = model ? agentModelArgs(agent, model, config.agentArgs) : [];
+  // A preset chosen in Linear's window: a named set of the agent's own arguments.
+  const presetName = flags.picks?.preset ?? null;
+  let preset = null;
+  if (presetName) {
+    const found = lookup(presetsOf(config, agent), presetName);
+    if (Array.isArray(found)) preset = { name: presetName, args: found };
+    else notes.push(`"presets" has no ${agent} entry "${presetName}"; ${agent} starts without it`);
+  }
+  if (preset && terminal === "orca") notes.push(`Orca takes no agent arguments; options "${preset.name}" are not used`);
+  const args = [...(preset?.args ?? []), ...modelArgs];
   const open = flags.open ?? config.open ?? "tab";
   if (open !== "tab" && open !== "window") throw new Error(`"open" is "${open}"; use "tab" or "window"`);
   // Linear's window closes once the agent runs elsewhere, unless the config keeps it.
   const closeLinearWindow = config.closeLinearWindow !== false;
-  return { agent, model, args, terminal, orca: flags.orca ?? config.orca ?? "orca", wezterm: flags.wezterm ?? config.wezterm ?? "wezterm", open, closeLinearWindow, notes };
+  return { agent, model, args, preset, terminal, orca: flags.orca ?? config.orca ?? "orca", wezterm: flags.wezterm ?? config.wezterm ?? "wezterm", open, closeLinearWindow, notes };
 }
 
 
@@ -277,5 +305,6 @@ export function pickOptions(config = {}, agent = null) {
     model: [null, ...new Set([...models, ...ids])],
     effort: [null, ...efforts],
     terminal: ["Here", "Windows Terminal", "Warp", "WezTerm", "Orca"],
+    preset: agent ? [null, ...Object.keys(presetsOf(config, agent))] : [null],
   };
 }

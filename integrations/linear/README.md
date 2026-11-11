@@ -147,7 +147,17 @@ somewhere you did not mean.
   ["--effort", "{effort}"] }`, with `{model}` and `{effort}` filled in.
   Codex is built in (`-m {model}`, `-c model_reasoning_effort={effort}`);
   any other agent without an entry gets `--model {model}` and no effort.
-  These change rarely, unlike model ids.
+  These change rarely, unlike model ids. A `prompt` template says how the
+  agent takes Linear's prompt: `["-i", "{prompt}"]` for GitHub Copilot,
+  whose `-p` runs once and exits. Without one, the prompt goes last on the
+  command line; `[]` starts the agent without it, for agents that read a
+  last argument as something else (OpenCode takes a project folder there,
+  Aider a file to edit).
+- **presets** names sets of an agent's own arguments, offered on the menu's
+  Options line when the chosen agent has some: `{ "claude": { "Plan":
+  ["--permission-mode", "plan"] }, "codex": { "Full auto": ["--full-auto"]
+  } }`. Like any menu choice, an option holds for one start. Orca starts
+  agents itself and takes no agent arguments, so options are not used there.
 - **agentModels** lists more model ids for one agent, shown on the menu's
   Model line next to the `models` tiers: `{ "claude": ["opus",
   "claude-sonnet-5-5"] }`. When a new model comes out, add its id here; no
@@ -165,8 +175,9 @@ somewhere you did not mean.
 flags of Codex, Claude Code, Grok, Gemini CLI, Qwen Code, GitHub Copilot CLI,
 Cursor Agent, OpenCode, Pi, Factory Droid, Kimi Code, Aider and Amp; its
 `efforts` map five levels for the agents that take an effort; its four
-model tiers name a model for most of them; and its `agentModels` list each
-agent's current model ids. Change the label names and model
+model tiers name a model for most of them; its `agentModels` list each
+agent's current model ids; and its `presets` show the Options line for
+Claude Code and Codex. Change the label names and model
 ids to yours.
 
 Notes on the flags, from each tool's command-line reference:
@@ -250,7 +261,8 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `models` | label name → tier, id, or one agent's model |
 | `agentModels` | agent → more model ids the list in Linear's window offers for it (the list shows only the `models` entries and ids the chosen agent has) |
 | `efforts` | label word → an effort, or each agent's effort |
-| `agentArgs` | agent → how it takes `{model}` and `{effort}` |
+| `agentArgs` | agent → how it takes `{model}`, `{effort}` and `{prompt}` |
+| `presets` | agent → named argument sets, offered on the Options line of the list in Linear's window |
 | `linear` | `{ apiKey, start, assign }`: move the issue to In Progress (default with a key) and assign it to you (off by default) |
 
 ## Use
@@ -271,8 +283,10 @@ REE-302: change a line, then Start
   Model: grok-4.7
   Effort: high
   Terminal: WezTerm
+  Options: none
 ```
 
+The Options line shows only when `presets` has entries for the agent.
 Enter on **Start** starts. With Windows Terminal, Warp or WezTerm, Linear's
 window then makes the workspace (`nk -b <issue branch> -y`: worktree, hooks,
 containers), and the terminal opens with only the agent in it
@@ -284,7 +298,8 @@ agent. Left and Right change the chosen line in place;
 Enter on a line lists its values. A change holds for this start
 only, without touching the issue's labels: the agent, the model (a name from
 `models`, or the agent's default), the effort (a word from `efforts`), the
-terminal, and what to do with the workspace. Esc starts nothing. For the
+terminal, the options (a name from `presets`), and what to do with the
+workspace. Esc starts nothing. For the
 workspace:
 
 | Choice | What happens |
