@@ -8,13 +8,13 @@
 //                       [--open tab|window]                                    started by Linear
 //   node open-issue.mjs --run <file> ...     inside the new tab
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { agentCommand, windowsDirect } from "../../src/agents.mjs";
 import { CONFIG_PATH, choose, loadConfig, pickOptions } from "./choose.mjs";
-import { AGAIN, againChoices, againSetting, nextBranch } from "./again.mjs";
+import { AGAIN, AGAIN_SHORT, againChoices, againSetting, nextBranch } from "./again.mjs";
 import { pick } from "../../src/select.mjs";
 import { apiKey, startIssue } from "./start-issue.mjs";
 import { normalizeName } from "../../src/names.mjs";
@@ -133,16 +133,27 @@ function which(command) {
  * Returns { opened: "tab" | "window", reason }: reason says why a tab was
  * asked for and a window opened.
  */
-export function openInWezTerm({ dir, id, inner, wezterm = "wezterm", open = "tab", run = runQuiet, start = startDetached }) {
+export function openInWezTerm({ dir, id, inner, wezterm = "wezterm", open = "tab", run = runQuiet, start = startDetached, sockets = guiSockets }) {
   const inWindow = (reason) => {
     // The reason goes to the new window too: Linear's window closes.
     start(wezterm, ["start", "--cwd", dir, "--", ...inner, ...(reason ? ["--note", reason] : [])]);
     return { opened: "window", reason };
   };
   if (open === "window") return inWindow(null);
-  const listed = run(wezterm, ["cli", "--no-auto-start", "list", "--format", "json"]);
+  const list = ["cli", "--no-auto-start", "list", "--format", "json"];
+  let env;
+  let listed = run(wezterm, list);
   if (listed.error?.code === "ENOENT") throw new Error(`could not run ${wezterm}. Is WezTerm installed and on PATH? Pass its path with --wezterm`);
   const said = (result) => String(result.stderr ?? "").trim().split(/\r?\n/).pop() || `exit code ${result.status}`;
+  // cli follows a link to the WezTerm started last; once that one is gone,
+  // the link points at nothing. A WezTerm still running has its own socket.
+  for (const socket of listed.status === 0 ? [] : sockets()) {
+    const tried = run(wezterm, list, { ...process.env, WEZTERM_UNIX_SOCKET: socket });
+    if (tried.status === 0) {
+      ({ listed, env } = { listed: tried, env: { ...process.env, WEZTERM_UNIX_SOCKET: socket } });
+      break;
+    }
+  }
   if (listed.status !== 0) return inWindow(`No WezTerm window found to add a tab to (wezterm cli list: ${said(listed)})`);
   let panes = [];
   try {
@@ -150,19 +161,81 @@ export function openInWezTerm({ dir, id, inner, wezterm = "wezterm", open = "tab
   } catch {
     // An older WezTerm without --format json: let spawn choose the window.
   }
-  const windowId = panes.find((pane) => pane.is_active)?.window_id ?? panes[0]?.window_id;
+  const windowId = focusedWindow(wezterm, panes, (command, args) => run(command, args, env));
   const target = windowId === undefined ? [] : ["--window-id", String(windowId)];
-  const spawned = run(wezterm, ["cli", "--no-auto-start", "spawn", ...target, "--cwd", dir, "--", ...inner]);
+  const spawned = run(wezterm, ["cli", "--no-auto-start", "spawn", ...target, "--cwd", dir, "--", ...inner], env);
   if (spawned.status !== 0) return inWindow(`WezTerm did not open a tab (wezterm cli spawn: ${said(spawned)})`);
   const pane = String(spawned.stdout ?? "").trim();
   // Older WezTerm has no set-tab-title; the tab keeps the command's title then.
-  if (/^\d+$/.test(pane)) run(wezterm, ["cli", "set-tab-title", "--pane-id", pane, id]);
+  if (/^\d+$/.test(pane)) run(wezterm, ["cli", "--no-auto-start", "set-tab-title", "--pane-id", pane, id], env);
   return { opened: "tab", reason: null };
 }
 
+/**
+ * The window to add a tab to: the one with the focused pane of the WezTerm
+ * window used last (list-clients knows it). "is_active" in the pane list
+ * only means active in its own tab, so every window has one; it is the
+ * fallback for a WezTerm without list-clients.
+ */
+function focusedWindow(wezterm, panes, run) {
+  const listed = run(wezterm, ["cli", "--no-auto-start", "list-clients", "--format", "json"]);
+  let clients = [];
+  try {
+    if (listed.status === 0) clients = JSON.parse(listed.stdout || "[]");
+  } catch {
+    // An older WezTerm: the pane list alone decides.
+  }
+  const idle = (client) => (client.idle_time?.secs ?? Infinity) + (client.idle_time?.nanos ?? 0) / 1e9;
+  for (const client of [...clients].sort((a, b) => idle(a) - idle(b))) {
+    const pane = panes.find((p) => p.pane_id === client.focused_pane_id);
+    if (pane) return pane.window_id;
+  }
+  return panes.find((pane) => pane.is_active)?.window_id ?? panes[0]?.window_id;
+}
+
+/**
+ * The sockets of running WezTerm windows, newest first: gui-sock-<pid> in
+ * ~/.local/share/wezterm (Windows, macOS) or $XDG_RUNTIME_DIR/wezterm
+ * (Linux), for a pid that is still running.
+ */
+export function guiSockets({ home = homedir(), env = process.env, alive = isRunning } = {}) {
+  const dirs = [join(home, ".local", "share", "wezterm"), ...(env.XDG_RUNTIME_DIR ? [join(env.XDG_RUNTIME_DIR, "wezterm")] : [])];
+  const found = [];
+  for (const dir of dirs) {
+    let names = [];
+    try {
+      names = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      const pid = /^gui-sock-(\d+)$/.exec(name)?.[1];
+      if (!pid || !alive(Number(pid))) continue;
+      const path = join(dir, name);
+      let time = 0;
+      try {
+        time = statSync(path).mtimeMs;
+      } catch {
+        // A socket that cannot be read sorts last.
+      }
+      found.push({ path, time });
+    }
+  }
+  return found.sort((a, b) => b.time - a.time).map((socket) => socket.path);
+}
+
+function isRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+}
+
 /** Runs a command and waits, without a console window or a shell. */
-function runQuiet(command, args) {
-  return spawnSync(command, args, { encoding: "utf8", windowsHide: true });
+function runQuiet(command, args, env = undefined) {
+  return spawnSync(command, args, { encoding: "utf8", windowsHide: true, env });
 }
 
 /** Starts a program that outlives this script. */
@@ -236,8 +309,8 @@ async function fromLinear(argv) {
   const setting = againSetting(flags, config);
   let again = existing ? setting : "continue";
   let picks = {};
-  // The list in Linear's window: always with "confirm", and when the issue already has a workspace and "again" is ask.
-  if (process.stdin.isTTY && (config.confirm === true || (existing && setting === "ask"))) {
+  // The list in Linear's window: for every issue unless "confirm" is false, then only when the issue already has a workspace and "again" is ask.
+  if (process.stdin.isTTY && (config.confirm !== false || (existing && setting === "ask"))) {
     const reviewed = await review({ id, existing, again, prompt, flags, config });
     if (!reviewed) return console.log("Nothing started.");
     ({ again, picks } = reviewed);
@@ -274,55 +347,135 @@ async function fromLinear(argv) {
   const open = TERMINALS[terminal];
   if (!open) throw new Error(`Unknown terminal "${terminal}"; use ${[...Object.keys(TERMINALS), "orca"].join(", ")}, or leave --terminal out`);
   if (process.platform !== "win32" && !ANY_PLATFORM.has(terminal)) throw new Error(`--terminal ${terminal} only works on Windows so far; wezterm and orca work everywhere`);
+  // The workspace (worktree, hooks, containers) is made here, in Linear's
+  // window; the terminal only gets the agent. One window for the setup and
+  // its errors, one for the work.
+  let inTab = again;
+  if (!existing || again === "new" || again === "over") {
+    if (runNk(["-b", branch, "-y"]).status !== 0) {
+      process.exitCode = 1;
+      return hold(`nk -b ${branch} failed; nothing started`);
+    }
+    inTab = "prompt";
+  }
   // The prompt is long Markdown with quotes and semicolons, so it travels in a file.
   const file = join(tmpdir(), `nk-linear-${id}-${process.pid}.md`);
   writeFileSync(file, prompt);
   const agentArgs = args.length ? ["--agent-args", JSON.stringify(args)] : [];
-  const inner = [process.execPath, self, "--run", file, branch, agent, ...agentArgs, "--again", again];
+  const inner = [process.execPath, self, "--run", file, branch, agent, ...agentArgs, "--again", inTab];
   const { reason } = open({ dir, id, inner, wezterm, open: openIn });
-  if (reason) console.log(`  ${reason}`);
+  // The agent clears the new window, so Linear's window stays to show why.
+  if (reason) await hold(reason);
   if (close) closeLinearWindow();
 }
 
-/** { item }: a row from a list in Linear's window, or null when it was left with Esc. */
-async function choice(title, items, text, start) {
-  const { result } = pick({ input: process.stdin, output: process.stdout, title, items, cells: (item) => [text(item)], text, start, unicode: process.platform !== "win32" || Boolean(process.env.WT_SESSION) });
-  const chosen = await result;
-  return "item" in chosen ? { item: chosen.item } : null;
+/** Shows a line in Linear's window and keeps the window until Enter. */
+async function hold(text) {
+  console.log(`  ${text}`);
+  if (!process.stdin.isTTY) return;
+  process.stdout.write("  Press Enter to close this window.");
+  await new Promise((done) => process.stdin.once("data", done).resume());
+  process.stdin.pause();
 }
 
 const TERMINAL_SHOWN = { wt: "Windows Terminal", warp: "Warp", wezterm: "WezTerm", orca: "Orca" };
+const DEFAULT = "the agent's default";
 
 /**
  * The list in Linear's window before anything starts: Start, then what the
  * labels chose (agent, model, effort, terminal) and, for an issue that has
- * a workspace, what to do with it. Choosing a line changes it for this start
- * only. Returns { again, picks }, or null when left with Esc.
+ * a workspace, what to do with it. Left and Right change a line in place;
+ * Enter on a line lists its values, and Esc there goes back. A change holds
+ * for this start only. It is one list that changes in place, never a list
+ * that ends and another that starts (see pick).
+ * Returns { again, picks }, or null when left with Esc.
  */
-export async function review({ id, existing, again, prompt, flags, config, ask = choice }) {
+export async function review({ id, existing, again, prompt, flags, config, input = process.stdin, output = process.stdout }) {
   let state = { again: again === "ask" ? "continue" : again, picks: {} };
-  const options = pickOptions(config);
-  for (;;) {
-    const now = choose(prompt, { ...flags, picks: state.picks }, config);
-    const rows = [
-      { key: "start", text: `Start ${now.agent}` },
-      ...(existing ? [{ key: "again", text: `Workspace ${existing.name}: ${AGAIN[state.again]}` }] : []),
-      { key: "agent", text: `Agent: ${now.agent}` },
-      { key: "model", text: `Model: ${now.model?.id ?? "the agent's default"}` },
-      { key: "effort", text: `Effort: ${now.model?.effort ?? "the agent's default"}` },
-      { key: "terminal", text: `Terminal: ${TERMINAL_SHOWN[now.terminal] ?? "this window"}` },
-    ];
-    const row = (await ask(`${id} · Enter on Start starts; choose a line to change it`, rows, (r) => r.text, rows[0]))?.item;
-    if (!row) return null;
-    if (row.key === "start") return state;
-    if (row.key === "again") {
-      const chosen = await ask("Workspace", againChoices(now.terminal), (key) => AGAIN[key], state.again);
-      if (chosen) state = { ...state, again: chosen.item };
-      continue;
-    }
-    const value = await ask(row.text.split(":")[0], options[row.key], (v) => v ?? "the agent's default");
-    if (value) state = { ...state, picks: { ...state.picks, [row.key]: value.item } };
-  }
+  const one = (item) => [item.text];
+
+  /** The lines for a state: what Start would do with it. */
+  const linesFor = (at) => {
+    const now = choose(prompt, { ...flags, picks: at.picks }, config);
+    return {
+      now,
+      rows: [
+        { key: "start", text: `Start ${now.agent}` },
+        ...(existing ? [{ key: "again", text: `Workspace ${existing.name}: ${AGAIN_SHORT[at.again]}` }] : []),
+        { key: "agent", text: `Agent: ${now.agent}` },
+        { key: "model", text: `Model: ${now.model?.id ?? DEFAULT}` },
+        { key: "effort", text: `Effort: ${now.model?.effort ?? DEFAULT}` },
+        { key: "terminal", text: `Terminal: ${TERMINAL_SHOWN[now.terminal] ?? "this window"}` },
+      ],
+    };
+  };
+  const withValue = (at, key, value) => (key === "again" ? { ...at, again: value } : { ...at, picks: { ...at.picks, [key]: value } });
+  const shownAs = (at, key) => linesFor(at).rows.find((row) => row.key === key)?.text;
+
+  const main = (at = "start") => {
+    const { now, rows } = linesFor(state);
+    const againKeys = againChoices(now.terminal);
+    const current = { agent: now.agent, terminal: TERMINAL_SHOWN[now.terminal] ?? "Here" };
+    const valueOf = (key) => (key === "again" ? state.again : key in state.picks ? state.picks[key] : current[key]);
+    const options = pickOptions(config, now.agent);
+    const valuesOf = (key) => (key === "again" ? againKeys : options[key]);
+    const set = (key, value) => {
+      state = withValue(state, key, value);
+    };
+    /**
+     * Left or Right: the next value that changes what the line shows. A label
+     * can set a value the list names differently (effort "high" from a model
+     * tier, while the list has "High" or the agent's default), and two values
+     * can show the same; stepping only by position looked stuck then.
+     */
+    const stepShown = (key, side) => {
+      const list = valuesOf(key);
+      const before = shownAs(state, key);
+      const known = list.indexOf(valueOf(key));
+      let at = known !== -1 ? known : list.findIndex((value) => shownAs(withValue(state, key, value), key) === before);
+      if (at === -1) at = side > 0 ? -1 : list.length;
+      for (let n = 1; n <= list.length; n++) {
+        const value = list[(((at + side * n) % list.length) + list.length) % list.length];
+        if (shownAs(withValue(state, key, value), key) !== before) return set(key, value);
+      }
+    };
+    // A sub-list of one line's values; choosing or Esc comes back here.
+    const values = (row) => {
+      const list = valuesOf(row.key).map((value) => ({ value, text: row.key === "again" ? AGAIN_SHORT[value] : (value ?? DEFAULT) }));
+      return {
+        title: row.key === "again" ? "Workspace" : row.text.split(":")[0],
+        items: list,
+        cells: one,
+        text: (item) => item.text,
+        start: list.find((item) => item.value === valueOf(row.key)),
+        hint: row.key === "again" ? (item) => AGAIN[item.value] : undefined,
+        onChoose: (item) => {
+          set(row.key, item.value);
+          return { view: main(row.key) };
+        },
+        onCancel: () => ({ view: main(row.key) }),
+      };
+    };
+    return {
+      title: `${id}: change a line, then Start`,
+      items: rows,
+      cells: one,
+      text: (row) => row.text,
+      start: rows.find((row) => row.key === at) ?? rows[0],
+      sides: true,
+      hint: (row) => (row.key === "again" ? AGAIN[state.again] : row.key === "start" ? `Enter starts ${id}` : ""),
+      onChoose: (row, side) => {
+        if (row.key === "start") return side ? { view: main("start") } : undefined;
+        if (!side) return { view: values(row) };
+        stepShown(row.key, side);
+        return { view: main(row.key) };
+      },
+    };
+  };
+
+  const unicode = process.platform !== "win32" || Boolean(process.env.WT_SESSION);
+  const chosen = await pick({ input, output, unicode, ...main() }).result;
+  return "item" in chosen ? state : null;
 }
 
 /**

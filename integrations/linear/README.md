@@ -148,6 +148,11 @@ somewhere you did not mean.
   Codex is built in (`-m {model}`, `-c model_reasoning_effort={effort}`);
   any other agent without an entry gets `--model {model}` and no effort.
   These change rarely, unlike model ids.
+- **agentModels** lists more model ids for one agent, shown on the menu's
+  Model line next to the `models` tiers: `{ "claude": ["opus",
+  "claude-sonnet-5-5"] }`. When a new model comes out, add its id here; no
+  nook update is needed. The menu offers only the models and efforts that
+  fit the chosen agent.
 - An `Effort` label works without a `Model` label: the agent keeps its
   default model and gets the effort. Orca takes `--model <id> --effort
   <effort>` for any agent, with the agent's own effort value from `efforts`;
@@ -159,8 +164,9 @@ somewhere you did not mean.
 `wt`, `warp`, `wezterm` or `orca` if you use one. Its `agentArgs` hold the
 flags of Codex, Claude Code, Grok, Gemini CLI, Qwen Code, GitHub Copilot CLI,
 Cursor Agent, OpenCode, Pi, Factory Droid, Kimi Code, Aider and Amp; its
-`efforts` map five levels for the agents that take an effort; and its four
-model tiers name a model for most of them. Change the label names and model
+`efforts` map five levels for the agents that take an effort; its four
+model tiers name a model for most of them; and its `agentModels` list each
+agent's current model ids. Change the label names and model
 ids to yours.
 
 Notes on the flags, from each tool's command-line reference:
@@ -233,7 +239,7 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `agent` | the default agent's command |
 | `terminal` | the default terminal |
 | `open` | `"tab"` (the default) or `"window"`: where Windows Terminal and WezTerm open the issue |
-| `confirm` | `true`: show the list in Linear's window for every issue, not only for one that has a workspace |
+| `confirm` | `false`: start at once, showing the list in Linear's window only for an issue that has a workspace (with `again` at `ask`); by default the list shows for every issue |
 | `again` | what starting an issue that has a workspace does: `ask` (the default), `continue`, `prompt`, `new`, `over` or `shell` |
 | `closeLinearWindow` | `false` keeps the window Linear opened after the agent starts in another terminal |
 | `orca` | Orca's command-line tool |
@@ -242,6 +248,7 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `agents` | label name → agent command |
 | `terminals` | label name → `orca`, `warp`, `wezterm`, `wt` or `here` |
 | `models` | label name → tier, id, or one agent's model |
+| `agentModels` | agent → more model ids the list in Linear's window offers for it (the list shows only the `models` entries and ids the chosen agent has) |
 | `efforts` | label word → an effort, or each agent's effort |
 | `agentArgs` | agent → how it takes `{model}` and `{effort}` |
 | `linear` | `{ apiKey, start, assign }`: move the issue to In Progress (default with a key) and assign it to you (off by default) |
@@ -253,23 +260,28 @@ asks you to **Choose a directory**: pick the repository's main checkout (the
 folder where you ran `nk init`). Nook uses it only to know which repository
 the issue belongs to; nothing runs there.
 
-The terminal runs `nk -b <issue branch> <agent> -y -p <Linear's prompt>` in
-that folder (`-y` keeps the converted workspace name without asking).
-Choosing an issue that already has a workspace shows a list in Linear's
-window before anything starts (with `"confirm": true` in the config, every
-issue does):
+Linear's window shows a list before anything starts (with `"confirm": false`
+in the config, only for an issue that already has a workspace):
 
 ```
-REE-302 · Enter on Start starts; choose a line to change it
+REE-302: change a line, then Start
 > Start grok
-  Workspace ree-302-search-home: Continue: start the agent in the workspace, …
+  Workspace ree-302-search-home: Continue
   Agent: grok
   Model: grok-4.7
   Effort: high
   Terminal: WezTerm
 ```
 
-Enter on **Start** starts. Choosing another line changes it for this start
+Enter on **Start** starts. With Windows Terminal, Warp or WezTerm, Linear's
+window then makes the workspace (`nk -b <issue branch> -y`: worktree, hooks,
+containers), and the terminal opens with only the agent in it
+(`nk <workspace> <agent> -p <Linear's prompt>`), so there are two windows:
+Linear's, which closes, and the agent's. When something fails, Linear's
+window stays open with the reason until Enter. With "Here", everything runs
+in Linear's window; with Orca, nk makes the workspace and Orca starts the
+agent. Left and Right change the chosen line in place;
+Enter on a line lists its values. A change holds for this start
 only, without touching the issue's labels: the agent, the model (a name from
 `models`, or the agent's default), the effort (a word from `efforts`), the
 terminal, and what to do with the workspace. Esc starts nothing. For the
@@ -279,8 +291,12 @@ workspace:
 | -- | -- |
 | `continue` | the agent starts in the workspace without Linear's prompt (with Orca, a new session; earlier ones stay in Orca's list) |
 | `prompt` | the agent starts in the workspace with Linear's prompt again; the changes stay |
-| `new` | a new workspace next to it, branch `<issue branch>-2` (`-3`, …): run the issue again with another agent, model or effort and compare; the branch still carries the issue id, so Linear links both pull requests |
-| `over` | `nk rm` removes the workspace and its branch, saving uncommitted changes and unpushed commits to `~/nook/backup` first, then the issue starts fresh |
+| `new` | a new workspace next to it, branch `<issue branch>-2` (`-3`, …) from the base branch: run the issue again with another agent, model or effort and compare; the branch still carries the issue id, so Linear links both pull requests |
+| `over` | `nk rm` removes the workspace and its branch, saving uncommitted changes and unpushed commits to `~/nook/backup` first, then the issue starts fresh from the base branch |
+
+`new` and `over` start from the base branch, so once the issue's pull
+request is merged, the new workspace already has that work and the agent
+finds little to do.
 | `shell` | only the workspace opens, without an agent (not with Orca) |
 
 `"again": "<choice>"` in the config, or `"--again", "<choice>"` in

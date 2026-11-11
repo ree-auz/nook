@@ -265,29 +265,54 @@ test("WezTerm opens a tab in the open WezTerm window, else a window", async () =
     { window_id: 3, tab_id: 5, pane_id: 7, is_active: true },
   ]);
   // answers: what list and spawn return; set-tab-title always works.
-  const answer = ({ list = { status: 0, stdout: panes }, spawn = { status: 0, stdout: "42\n" } } = {}) => (command, args) => {
+  // No list-clients by default, as in an older WezTerm.
+  const answer = ({ list = { status: 0, stdout: panes }, spawn = { status: 0, stdout: "42\n" }, clients = { status: 1 } } = {}) => (command, args) => {
     calls.push([command, ...args]);
-    return { list, spawn, "set-tab-title": { status: 0 } }[args[args[1] === "--no-auto-start" ? 2 : 1]];
+    return { list, spawn, "list-clients": clients, "set-tab-title": { status: 0 } }[args[args[1] === "--no-auto-start" ? 2 : 1]];
   };
   const start = (command, args) => started.push([command, ...args]);
 
   assert.deepEqual(openInWezTerm({ dir: "D:\\Projects\\Pipit", id: "REE-270", inner, run: answer(), start }), { opened: "tab", reason: null });
   assert.deepEqual(calls, [
     ["wezterm", "cli", "--no-auto-start", "list", "--format", "json"],
+    ["wezterm", "cli", "--no-auto-start", "list-clients", "--format", "json"],
     ["wezterm", "cli", "--no-auto-start", "spawn", "--window-id", "3", "--cwd", "D:\\Projects\\Pipit", "--", ...inner],
-    ["wezterm", "cli", "set-tab-title", "--pane-id", "42", "REE-270"],
+    ["wezterm", "cli", "--no-auto-start", "set-tab-title", "--pane-id", "42", "REE-270"],
   ], "the tab goes into the window of the active pane: outside WezTerm, spawn has no current window");
   assert.deepEqual(started, []);
 
+  // Every window has an active pane; the focused one of the client used last wins.
   calls.length = 0;
-  const none = openInWezTerm({ dir: "/work/pipit", id: "REE-270", inner, wezterm: "/opt/wezterm", run: answer({ list: { status: 1, stderr: "failed to connect to gui\n" } }), start });
+  const clients = { status: 0, stdout: JSON.stringify([
+    { pid: 1, focused_pane_id: 7, idle_time: { secs: 300, nanos: 0 } },
+    { pid: 2, focused_pane_id: 0, idle_time: { secs: 2, nanos: 0 } },
+  ]) };
+  openInWezTerm({ dir: ".", id: "x", inner, run: answer({ clients }), start });
+  assert.deepEqual(calls[2].slice(3, 6), ["spawn", "--window-id", "0"]);
+
+  // The link points at a WezTerm that is gone: a running one's socket is tried.
+  calls.length = 0;
+  const envs = [];
+  const stale = (command, args, env) => {
+    envs.push(env?.WEZTERM_UNIX_SOCKET);
+    calls.push([command, ...args]);
+    if (args[2] === "list") return env?.WEZTERM_UNIX_SOCKET === "/s/gui-sock-9" ? { status: 0, stdout: panes } : { status: 1, stderr: 'failed to connect to Socket("gui-sock-1")' };
+    return { status: args[2] === "spawn" ? 0 : 1, stdout: "42\n" };
+  };
+  assert.deepEqual(openInWezTerm({ dir: ".", id: "x", inner, run: stale, start, sockets: () => ["/s/gui-sock-8", "/s/gui-sock-9"] }), { opened: "tab", reason: null });
+  assert.deepEqual(envs.slice(0, 3), [undefined, "/s/gui-sock-8", "/s/gui-sock-9"]);
+  assert.ok(envs.slice(3).every((socket) => socket === "/s/gui-sock-9"), "spawn goes to the WezTerm that answered");
+  assert.deepEqual(started, []);
+
+  calls.length = 0;
+  const none = openInWezTerm({ dir: "/work/pipit", id: "REE-270", inner, wezterm: "/opt/wezterm", run: answer({ list: { status: 1, stderr: "failed to connect to gui\n" } }), start, sockets: () => [] });
   assert.equal(none.opened, "window", "no WezTerm open");
   assert.match(none.reason, /No WezTerm window found .*failed to connect to gui/);
   assert.equal(calls.length, 1);
   assert.deepEqual(started, [["/opt/wezterm", "start", "--cwd", "/work/pipit", "--", ...inner, "--note", none.reason]], "the new window says why");
 
   started.length = 0;
-  const refused = openInWezTerm({ dir: ".", id: "x", inner, run: answer({ spawn: { status: 1, stderr: "no such window" } }), start });
+  const refused = openInWezTerm({ dir: ".", id: "x", inner, run: answer({ spawn: { status: 1, stderr: "no such window" } }), start, sockets: () => [] });
   assert.match(refused.reason, /did not open a tab .*no such window/);
   assert.equal(started.length, 1);
 
@@ -315,6 +340,24 @@ test("Windows Terminal opens a tab or a window, and the config chooses", async (
   assert.throws(() => choose("", {}, { open: "pane" }), /use "tab" or "window"/);
   assert.equal(choose("", {}, {}).closeLinearWindow, true);
   assert.equal(choose("", {}, { closeLinearWindow: false }).closeLinearWindow, false);
+});
+
+test("guiSockets lists running WezTerm windows, newest first", async (t) => {
+  const { guiSockets } = await import("../integrations/linear/open-issue.mjs");
+  const { mkdtempSync, writeFileSync, utimesSync, mkdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const home = mkdtempSync(join(tmpdir(), "nk-wez-"));
+  t.after(() => import("node:fs").then(({ rmSync }) => rmSync(home, { recursive: true, force: true })));
+  const dir = join(home, ".local", "share", "wezterm");
+  mkdirSync(dir, { recursive: true });
+  for (const [name, time] of [["gui-sock-1", 1000], ["gui-sock-2", 3000], ["gui-sock-3", 2000], ["default-org.wezfurlong.wezterm", 4000]]) {
+    writeFileSync(join(dir, name), "");
+    utimesSync(join(dir, name), time, time);
+  }
+  const sockets = guiSockets({ home, env: {}, alive: (pid) => pid !== 1 });
+  assert.deepEqual(sockets, [join(dir, "gui-sock-2"), join(dir, "gui-sock-3")], "gone ones and the link are left out");
+  assert.deepEqual(guiSockets({ home: join(home, "nothing"), env: {} }), []);
 });
 
 test("WezTerm is a terminal a label or the default can name", async () => {
@@ -398,30 +441,73 @@ test("choices made in Linear's window win over the labels, for this start only",
   assert.deepEqual(options.model, [null, "Strong"]);
   assert.deepEqual(options.effort, [null, "High", "Max"]);
   assert.ok(options.agent.includes("grok") && options.terminal.includes("WezTerm"));
+  // For one agent: only what it has, then its own ids; a picked id is used as is.
+  const more = { ...config, models: { ...config.models, Light: { codex: "gpt-6-luna" } }, agentModels: { grok: ["grok-4.7", "grok-5-mini"] } };
+  assert.deepEqual(pickOptions(more, "grok").model, [null, "Strong", "grok-4.7", "grok-5-mini"]);
+  assert.deepEqual(pickOptions(more, "claude").model, [null]);
+  assert.deepEqual(pickOptions(more, "claude").effort, [null, "High"], "Max names no effort for claude");
+  assert.deepEqual(choose(prompt, { picks: { model: "grok-5-mini" } }, more).model, { id: "grok-5-mini", effort: "high" });
 });
 
 test("the list in Linear's window changes a choice, then starts", async () => {
+  const { PassThrough } = await import("node:stream");
+  const { choose } = await import("../integrations/linear/choose.mjs");
   const { review } = await import("../integrations/linear/open-issue.mjs");
   const config = { labels: { agent: "Agent", model: "Model" }, models: { Strong: { codex: "gpt-6-astra", claude: "opus" } } };
   const prompt = "<label>Agent › Codex</label>\n<label>Model › Strong</label>";
-  // Each answer picks a row by its text, or leaves with Esc (null).
-  const run = async (answers, existing = null) => {
-    const shown = [];
-    const ask = async (title, items, text) => {
-      shown.push(items.map(text));
-      const want = answers.shift();
-      if (want === null) return null;
-      const item = items.find((i) => text(i).startsWith(want));
-      assert.ok(item !== undefined, `no row "${want}" in ${items.map(text).join(" | ")}`);
-      return { item };
-    };
-    return { result: await review({ id: "REE-1", existing, again: "ask", prompt, flags: {}, config, ask }), shown };
+  const [UP, DOWN, LEFT, RIGHT, ENTER, ESC] = ["\x1b[A", "\x1b[B", "\x1b[D", "\x1b[C", "\r", "\x1b"];
+  const run = async (keys, existing = null) => {
+    const input = new PassThrough();
+    const raw = [];
+    Object.assign(input, { isTTY: true, setRawMode: (on) => raw.push(on) });
+    const written = [];
+    const output = { columns: 100, rows: 30, write: (text) => written.push(text), on() {}, off() {} };
+    // One key per write, as a person types: an Esc alone is not the start of an arrow then.
+    const typing = (async () => {
+      let last = "";
+      for (const key of keys) {
+        // readline waits up to 500 ms after a lone Esc for the rest of an escape code.
+        await new Promise((done) => setTimeout(done, last === ESC ? 600 : 5));
+        input.write(key);
+        last = key;
+      }
+    })();
+    const result = await review({ id: "REE-1", existing, again: "ask", prompt, flags: {}, config, input, output });
+    await typing;
+    return { result, screen: written.join(""), raw };
   };
-  const { result, shown } = await run(["Agent", "claude", "Start"]);
-  assert.deepEqual(result, { again: "continue", picks: { agent: "claude" } });
-  assert.ok(shown[2].includes("Model: opus"), "the model follows the new agent");
-  assert.deepEqual((await run(["Model", "the agent's default", "Start"])).result.picks, { model: null });
-  const again = await run(["Workspace", "Run again", "Start"], { name: "ree-1" });
-  assert.equal(again.result.again, "new");
-  assert.equal((await run([null])).result, null, "Esc starts nothing");
+  // Agent → Enter lists the agents; "cl" filters to claude.
+  const listed = await run([DOWN, ENTER, "c", "l", "a", ENTER, UP, ENTER]);
+  assert.deepEqual(listed.result, { again: "continue", picks: { agent: "claude" } });
+  assert.match(listed.screen, /Model: opus/, "the model follows the new agent");
+  assert.deepEqual(listed.raw, [true, false], "raw mode once, for the whole list");
+
+  // Left and Right change a line in place.
+  const sides = await run([DOWN, RIGHT, RIGHT, LEFT, ENTER, DOWN, ENTER, UP, ENTER], { name: "ree-1" });
+  assert.equal(sides.result.again, "new", "right, right, left, then one down in the sub-list");
+  assert.match(sides.screen, /Workspace ree-1: Run again in a new workspace/);
+  assert.match(sides.screen, /Workspace ree-1: Start over in it/);
+
+  // A label's effort the list names differently: one Right already changes the line.
+  const example = JSON.parse(readFileSync(new URL("../integrations/linear/nook.example.json", import.meta.url), "utf8"));
+  const labelled = ["Agent › Grok", "Model › Strong", "Effort › High"].map((l) => `<label>${l}</label>`).join("\n");
+  for (const side of [RIGHT, LEFT]) {
+    const input = new PassThrough();
+    Object.assign(input, { isTTY: true, setRawMode() {} });
+    const written = [];
+    const output = { columns: 100, rows: 30, write: (text) => written.push(text), on() {}, off() {} };
+    const done = review({ id: "REE-1", existing: null, again: "ask", prompt: labelled, flags: {}, config: example, input, output });
+    for (const key of [DOWN, DOWN, DOWN, side, UP, UP, UP, ENTER]) {
+      await new Promise((ok) => setTimeout(ok, 5));
+      input.write(key);
+    }
+    const result = await done;
+    assert.ok(result.picks.effort !== undefined, "Effort changed");
+    const after = choose(labelled, { picks: result.picks }, example).model?.effort ?? null;
+    assert.notEqual(after, "high", `one ${side === RIGHT ? "Right" : "Left"} leaves high`);
+  }
+
+  // Esc in a sub-list goes back; Esc in the list starts nothing.
+  assert.deepEqual((await run([DOWN, DOWN, ENTER, ESC, UP, UP, ENTER])).result, { again: "continue", picks: {} });
+  assert.equal((await run([ESC])).result, null, "Esc starts nothing");
 });

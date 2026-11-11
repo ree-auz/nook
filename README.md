@@ -91,7 +91,8 @@ Without an agent, `nk -b` and `nk <name>` print the workspace path, so
 
 `nk init` records the agents it finds on PATH and asks nothing about them:
 each one starts with its own default command. To always pass extra
-arguments to one agent, set `args` under `[agents.<name>]` in `config.toml`.
+arguments to one agent, set `args` under `[agents.<name>]` in `config.toml`;
+set `path` there to run a binary that is not on PATH.
 
 ## Home folder
 
