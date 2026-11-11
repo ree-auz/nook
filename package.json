@@ -1,6 +1,6 @@
 {
   "name": "@ree-auz/nook",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "One isolated workspace per task: git worktree, ports and env files, with any AI coding agent inside. Clean up with one command.",
   "keywords": [
     "git-worktree",
