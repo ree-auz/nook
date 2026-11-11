@@ -4,9 +4,20 @@ import { NookError } from "./errors.mjs";
 import { line, useColor } from "./ui.mjs";
 
 /**
+ * Ctrl+C at a question: stop quietly, as a shell does, not with a stack trace.
+ * @returns {never}
+ */
+function cancelled(error, output) {
+  if (error?.code !== "ABORT_ERR") throw error;
+  output.write("\n");
+  process.exit(130);
+}
+
+/**
  * Asks questions on the terminal. With `yes`, every question takes its default.
  * Without a terminal and without `yes`, asking is an error, so scripts never hang.
  */
+
 export function createPrompter({ yes = false, input = process.stdin, output = process.stderr } = {}) {
   const interactive = Boolean(input.isTTY);
   // Questions get a mark like every other line, so their text lines up.
@@ -18,6 +29,8 @@ export function createPrompter({ yes = false, input = process.stdin, output = pr
     const rl = createInterface({ input, output });
     try {
       return (await rl.question(question)).trim();
+    } catch (error) {
+      return cancelled(error, output);
     } finally {
       rl.close();
     }
@@ -39,6 +52,8 @@ export function createPrompter({ yes = false, input = process.stdin, output = pr
         const pending = rl.question(mark(`${question}: `));
         rl.write(initial);
         return (await pending).trim() || initial;
+      } catch (error) {
+        return cancelled(error, output);
       } finally {
         rl.close();
       }
