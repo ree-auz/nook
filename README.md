@@ -280,7 +280,9 @@ changed, such as line endings `.gitattributes` would change, are the
 repository's and do not count), or when remove leaves a Docker
 container, volume, network or built image behind.
 
-A passing test records the hooks, the CI files and the Compose file. If any of them changes, `nk -b`
+A passing test records the hooks, the setup nk reads from CI (tools, env, services, install steps)
+and the Compose file. Comments, test and lint steps, and CI-only actions such as uploading artifacts
+do not count. If any of them changes, `nk -b`
 stops before creating a workspace (pass `--untested` to start anyway), and
 `nk <name>`, `nk hooks`, `nk doctor` and `nk rm` say so: run `nk hooks write`
 again for a CI or Compose change, then `nk hooks test`.

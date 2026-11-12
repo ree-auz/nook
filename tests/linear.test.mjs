@@ -516,7 +516,10 @@ test("choices made in Linear's window win over the labels, for this start only",
   const more = { ...config, models: { ...config.models, Light: { codex: "gpt-6-luna" } }, agentModels: { grok: ["grok-4.7", "grok-5-mini"] } };
   assert.deepEqual(pickOptions(more, "grok").model, [null, "Strong", "grok-4.7", "grok-5-mini"]);
   assert.deepEqual(pickOptions(more, "claude").model, [null]);
-  assert.deepEqual(pickOptions(more, "claude").effort, [null, "High"], "Max names no effort for claude");
+  assert.deepEqual(pickOptions(more, "claude", "orca").effort, [null, "High"], "Max names no effort for claude");
+  assert.deepEqual(pickOptions(more, "claude").effort, [null], "no effort arguments for claude in agentArgs");
+  const withArgs = { ...more, agentArgs: { claude: { effort: ["--effort", "{effort}"] } } };
+  assert.deepEqual(pickOptions(withArgs, "claude").effort, [null, "High"]);
   assert.deepEqual(choose(prompt, { picks: { model: "grok-5-mini" } }, more).model, { id: "grok-5-mini", effort: "high" });
 });
 

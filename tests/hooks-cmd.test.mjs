@@ -167,7 +167,15 @@ test("hooks write turns CI into hooks that pass hooks test; a CI change then sto
     assert.ok(state().containers[0].args.join(" ").includes(`-p 127.0.0.1:${port}:5432`));
   }
 
-  write(repo, { ".github/workflows/ci.yml": workflow.replace("node-version: 22", "node-version: 24") });
+  // A comment, a test step and an artifact upload do not change how a workspace is set up.
+  const edited = workflow.replace("      - run: npm test\n", "      # tests\n      - run: npm test -- --maxWorkers=8\n        env:\n          WORKERS: ${{ runner.os == 'Linux' && '4' || '2' }}\n      - uses: actions/upload-artifact@v4\n        if: failure()\n");
+  write(repo, { ".github/workflows/ci.yml": edited });
+  sh("git", ["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qam", "test steps only"], repo);
+  r = run(["-b", "tests-only"]);
+  assert.equal(r.status, 0, r.all);
+  assert.doesNotMatch(r.all, /changed since nk hooks test/);
+
+  write(repo, { ".github/workflows/ci.yml": edited.replace("node-version: 22", "node-version: 24") });
   sh("git", ["-c", "user.name=T", "-c", "user.email=t@e", "commit", "-qam", "newer postgres"], repo);
   r = run(["-b", "second"]);
   assert.equal(r.status, 1);

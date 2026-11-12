@@ -341,48 +341,59 @@ async function fromLinear(argv) {
   }
   // Fixed text around Linear's prompt, from "promptTemplate". Labels were read from Linear's own prompt above.
   const sent = wrapPrompt(prompt, config.promptTemplate, { id, branch, agent });
-  // Linear's "move issue to started status" setting skips custom scripts, so the script does it.
-  const key = apiKey(config);
-  if (key && config.linear?.start !== false) {
-    try {
-      console.log(`  ${await startIssue({ id, key, assign: config.linear?.assign === true })}`);
-    } catch (error) {
-      console.log(`  Could not update ${id} in Linear: ${error.message}`);
-    }
-  }
-  // Default: work in the terminal Linear opened for the script.
-  // How the agent takes the prompt: last on its command line, or as "agentArgs" says.
-  const template = promptArgs(agent, "{prompt}", config.agentArgs);
-  if (!terminal) return startWork({ branch, agent, prompt: sent, args, template, again });
-  if (terminal === "orca") {
-    process.exitCode = workInOrca({ branch, agent, prompt: sent, model, orca, again });
-    // Keep Linear's window open when something failed, so its output can be read.
-    if (close && process.exitCode === 0 && process.platform === "win32") closeLinearWindow();
-    return;
-  }
-  const open = TERMINALS[terminal];
-  if (!open) throw new Error(`Unknown terminal "${terminal}"; use ${[...Object.keys(TERMINALS), "orca"].join(", ")}, or leave --terminal out`);
-  if (process.platform !== "win32" && !ANY_PLATFORM.has(terminal)) throw new Error(`--terminal ${terminal} only works on Windows so far; wezterm and orca work everywhere`);
+  const open = terminal && terminal !== "orca" ? TERMINALS[terminal] : null;
+  if (terminal && terminal !== "orca" && !open) throw new Error(`Unknown terminal "${terminal}"; use ${[...Object.keys(TERMINALS), "orca"].join(", ")}, or leave --terminal out`);
+  if (open && process.platform !== "win32" && !ANY_PLATFORM.has(terminal)) throw new Error(`--terminal ${terminal} only works on Windows so far; wezterm and orca work everywhere`);
   // The workspace (worktree, hooks, containers) is made here, in Linear's
-  // window; the terminal only gets the agent. One window for the setup and
-  // its errors, one for the work.
-  let inTab = again;
+  // window, before anything else: one window for the setup and its errors,
+  // and a setup that fails leaves the issue as it was in Linear.
+  let mode = again;
   if (!existing || again === "new" || again === "over") {
     if (runNk(["-b", branch, "-y"]).status !== 0) {
       process.exitCode = 1;
-      return hold(`nk -b ${branch} failed; nothing started`);
+      return hold(`nk -b ${branch} failed; nothing started, and ${id} is unchanged in Linear`);
     }
-    inTab = "prompt";
+    // A new workspace always gets Linear's prompt, whatever the issue's status in Linear.
+    mode = "prompt";
   }
+  // Linear's "move issue to started status" setting skips custom scripts, so the script does it, once work can start.
+  const markStarted = () => moveToStarted(id, config);
+  // How the agent takes the prompt: last on its command line, or as "agentArgs" says.
+  const template = promptArgs(agent, "{prompt}", config.agentArgs);
+  // Default: work in the terminal Linear opened for the script.
+  if (!terminal) {
+    await markStarted();
+    return startWork({ branch, agent, prompt: sent, args, template, again: mode });
+  }
+  if (terminal === "orca") {
+    process.exitCode = workInOrca({ branch, agent, prompt: sent, model, orca, again: mode });
+    // Keep Linear's window open when something failed, so its output can be read.
+    if (process.exitCode !== 0) return hold(`Orca did not start ${agent} (exit code ${process.exitCode}); its answer is above. The workspace is ready: start again from Linear to retry`);
+    await markStarted();
+    if (close && process.platform === "win32") closeLinearWindow();
+    return;
+  }
+  await markStarted();
   // The prompt is long Markdown with quotes and semicolons, so it travels in a file.
   const file = join(tmpdir(), `nk-linear-${id}-${process.pid}.md`);
   writeFileSync(file, sent);
   const agentArgs = [...(args.length ? ["--agent-args", JSON.stringify(args)] : []), ...(template ? ["--prompt-args", JSON.stringify(template)] : [])];
-  const inner = [process.execPath, self, "--run", file, branch, agent, ...agentArgs, "--again", inTab];
+  const inner = [process.execPath, self, "--run", file, branch, agent, ...agentArgs, "--again", mode];
   const { reason } = open({ dir, id, inner, wezterm, open: openIn });
   // The agent clears the new window, so Linear's window stays to show why.
   if (reason) await hold(reason);
   if (close) closeLinearWindow();
+}
+
+/** Moves the issue to its team's started status, when an API key is set; a failure is only reported. */
+async function moveToStarted(id, config) {
+  const key = apiKey(config);
+  if (!key || config.linear?.start === false) return;
+  try {
+    console.log(`  ${await startIssue({ id, key, assign: config.linear?.assign === true })}`);
+  } catch (error) {
+    console.log(`  Could not update ${id} in Linear: ${error.message}`);
+  }
 }
 
 /** Shows a line in Linear's window and keeps the window until Enter. */
@@ -423,7 +434,7 @@ export async function review({ id, existing, again, prompt, flags, config, input
         { key: "model", text: `Model: ${now.model?.id ?? DEFAULT}` },
         { key: "effort", text: `Effort: ${now.model?.effort ?? DEFAULT}` },
         { key: "terminal", text: `Terminal: ${TERMINAL_SHOWN[now.terminal] ?? "this window"}` },
-        ...(pickOptions(config, now.agent).preset.length > 1 ? [{ key: "preset", text: `Options: ${now.preset?.name ?? NONE}` }] : []),
+        ...(pickOptions(config, now.agent, now.terminal).preset.length > 1 ? [{ key: "preset", text: `Options: ${now.preset?.name ?? NONE}` }] : []),
       ],
     };
   };
@@ -441,7 +452,7 @@ export async function review({ id, existing, again, prompt, flags, config, input
     const againKeys = againChoices(now.terminal);
     const current = { agent: now.agent, terminal: TERMINAL_SHOWN[now.terminal] ?? "Here", preset: null };
     const valueOf = (key) => (key === "again" ? state.again : key in state.picks ? state.picks[key] : current[key]);
-    const options = pickOptions(config, now.agent);
+    const options = pickOptions(config, now.agent, now.terminal);
     const valuesOf = (key) => (key === "again" ? againKeys : options[key]);
     const set = (key, value) => {
       state = withValue(state, key, value);

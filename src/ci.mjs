@@ -72,8 +72,34 @@ export function workflowFiles(repoPath) {
   return listed.ok ? listed.out.split(/\r?\n/).filter((file) => WORKFLOW.test(file)) : [];
 }
 
-/** A fingerprint of the CI files (workflows and local actions) and the Compose files, so nk can tell when they changed after the hooks were tested. */
+/**
+ * A fingerprint of what nk reads from CI and Compose to set up a workspace, so nk can tell when
+ * that changed after the hooks were tested. It covers the setup CI's main job would give
+ * (tools, env, services, install steps, steps nk could not translate) and the Compose files
+ * as parsed. Comments, test and lint steps, and CI-only actions (uploading artifacts) leave it as
+ * it was: they do not change how a workspace is set up. Starts with "setup:"; an older value
+ * without it is a hash of the raw files (rawCiHash).
+ */
 export function ciHash(repoPath) {
+  const compose = composeFile(repoPath);
+  const composeFiles = [compose, overrideFile(repoPath, compose)].filter(Boolean);
+  const { files, best, errors } = planFromCi(repoPath);
+  if (!files.length && !composeFiles.length) return null;
+  const setup = best && { source: best.source, job: best.job, tools: best.tools, env: best.env, services: best.services, create: best.create, remove: best.remove, untranslated: best.untranslated };
+  const read = (file) => {
+    const text = readFileSync(join(repoPath, file), "utf8");
+    try {
+      return parse(text);
+    } catch {
+      return text.replace(/\r\n/g, "\n");
+    }
+  };
+  const all = { setup, errors: errors.map((plan) => plan.source), compose: composeFiles.map((file) => [file, read(file)]) };
+  return `setup:${createHash("sha256").update(JSON.stringify(all)).digest("hex")}`;
+}
+
+/** The fingerprint older versions saved: the CI and Compose files byte for byte. */
+export function rawCiHash(repoPath) {
   const compose = composeFile(repoPath);
   const listed = gitTry(["ls-files", ".github/actions"], { cwd: repoPath });
   const actions = listed.ok ? listed.out.split(/\r?\n/).filter((file) => /\/action\.ya?ml$/.test(file)) : [];

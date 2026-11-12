@@ -9,7 +9,7 @@ import { allocatePort } from "../ports.mjs";
 import { copyShared } from "../shared.mjs";
 import { resolveRepo, workspaceEnv } from "../context.mjs";
 import { describeOccupants, findOccupants, stopProcesses } from "../occupancy.mjs";
-import { ciHash } from "../ci.mjs";
+import { ciHash, rawCiHash } from "../ci.mjs";
 import { dockerCli, dockerSnapshot, findComposeProjects, removeComposeProject, snapshotDiff } from "../compose.mjs";
 import { deleteFolder } from "./rm.mjs";
 
@@ -22,7 +22,10 @@ export function uncheckedHooks(repo) {
 
 /** CI changed since the hooks last passed a test (only known once a test has passed). */
 export function ciChanged(repo) {
-  return Boolean(repo.checked_ci) && ciHash(repo.path) !== repo.checked_ci;
+  if (!repo.checked_ci) return false;
+  // A value saved before nk fingerprinted the setup rather than the files.
+  if (!String(repo.checked_ci).startsWith("setup:")) return rawCiHash(repo.path) !== repo.checked_ci;
+  return ciHash(repo.path) !== repo.checked_ci;
 }
 
 /**
