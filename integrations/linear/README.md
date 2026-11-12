@@ -34,7 +34,10 @@ Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only;
      `fnm default`), not the temporary `fnm_multishells` folder. The script
      puts that Node's folder first on PATH, so global npm commands such as
      `codex` and `pnpm` are found even though Linear starts without your
-     shell setup.
+     shell setup. That is also why typing `nk` or `fnm` in Linear's window
+     can say the command is not found: what your PowerShell profile adds
+     (`fnm env | Invoke-Expression`, say) is not there. The script does not
+     need it.
    - `<nook folder>` is where Nook is installed: the cloned folder, or
      `npm root -g` + `\@ree-auz\nook`.
    - `--agent` is the agent to start: `codex` (the default), `claude` or any
@@ -168,7 +171,10 @@ somewhere you did not mean.
   Model line next to the `models` tiers: `{ "claude": ["opus",
   "claude-sonnet-5-5"] }`. When a new model comes out, add its id here; no
   nook update is needed. The menu offers only the models and efforts that
-  fit the chosen agent.
+  fit the chosen agent: a level of `efforts` that leaves an agent out is
+  not offered for it, and an agent without an `effort` entry in
+  `agentArgs` gets only its default (except in Orca, which passes the
+  effort itself).
 - An `Effort` label works without a `Model` label: the agent keeps its
   default model and gets the effort. Orca takes `--model <id> --effort
   <effort>` for any agent, with the agent's own effort value from `efforts`;
@@ -193,7 +199,7 @@ Notes on the flags, from each tool's command-line reference:
 | -- | -- | -- |
 | `codex` | `-m` | `-c model_reasoning_effort=…` |
 | `claude` | `--model` | `--effort` (low … max) |
-| `grok` | `-m` | `--effort` (values not documented) |
+| `grok` | `-m` | `--effort` (`low` … `xhigh`; its `max` is the same as `xhigh`, so the preset's Max leaves Grok out) |
 | `gemini` | `-m` (`flash-lite`, `flash`, `pro`, `auto` or an id) | none |
 | `qwen` | `-m` | none; set with `/effort` |
 | `copilot` | `--model` | none; `effortLevel` in its settings |
@@ -328,7 +334,12 @@ finds little to do.
 Linear's **Move issue to started status** setting (Settings → Account →
 Code & reviews) does not apply to custom scripts, so the script moves the
 issue itself when it has a Linear API key: to the team's first started status
-(In Progress), unless the issue has already started or ended. Create a
+(In Progress), unless the issue has already started or ended. It does
+this only once the workspace is ready (worktree, env files, hooks) and,
+with Orca, once Orca has started the agent; a setup that fails leaves the
+issue as it was. The status never decides what starts: an issue that is
+already In Progress but has no workspace gets a new one and the full
+prompt. Create a
 personal API key in Linear's **Settings → Account → Security & access**, then
 either put it in the config file as `"linear": { "apiKey": "lin_api_…" }`, or
 set it as the `LINEAR_API_KEY` environment variable and add

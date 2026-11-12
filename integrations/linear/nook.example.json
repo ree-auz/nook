@@ -47,7 +47,7 @@
     "Medium": "medium",
     "High": "high",
     "Extra high": { "codex": "xhigh", "claude": "xhigh", "pi": "xhigh", "droid": "xhigh", "grok": "xhigh", "aider": "high" },
-    "Max": { "codex": "max", "claude": "max", "pi": "max", "droid": "max", "grok": "max", "aider": "high" }
+    "Max": { "codex": "max", "claude": "max", "pi": "max", "droid": "max", "aider": "high" }
   },
   "models": {
     "Light": {

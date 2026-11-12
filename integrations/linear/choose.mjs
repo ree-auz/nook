@@ -305,12 +305,17 @@ export function withPicks(prompt, config = {}, picks = {}) {
  * the `models` entries that name a model for it, then its ids from
  * `agentModels`.
  */
-export function pickOptions(config = {}, agent = null) {
+export function pickOptions(config = {}, agent = null, terminal = null) {
   const models = Object.entries(config.models ?? {})
     .filter(([, entry]) => !agent || typeof entry === "string" || ("id" in entry ? !entry.agent || entry.agent === agent : Boolean(tierModel(entry, agent))))
     .map(([name]) => name);
   const ids = agent ? (lookup(config.agentModels, agent) ?? []) : [];
-  const efforts = config.efforts
+  // An agent with no effort arguments in "agentArgs" cannot take one, so its list has only its default.
+  // Orca passes the effort itself, with --effort.
+  const takesEffort = !agent || terminal === "orca" || Boolean(argsOf(agent, config.agentArgs).effort);
+  const efforts = !takesEffort
+    ? []
+    : config.efforts
     ? Object.entries(config.efforts)
         .filter(([, value]) => !agent || effortFor(value, agent) !== null)
         .map(([name]) => name)
