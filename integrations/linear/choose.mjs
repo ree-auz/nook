@@ -13,7 +13,7 @@ export const CONFIG_PATH = join(homedir(), ".linear", "nook.json");
 
 /**
  * The config file, or {} when there is none. Shape:
- * { agent, terminal, open, closeLinearWindow, orca, wezterm, labels: { agent, model, effort, terminal },
+ * { agent, terminal, open, closeLinearWindow, orca, orcaSurface, wezterm, labels: { agent, model, effort, terminal },
  *   agents: { "<label name>": "<command>" }, terminals: { "<label name>": "<terminal>" },
  *   models: { "<label name>": "<id>" | { id, agent } | { "<agent>": "<id>" | { id, effort } } },
  *   agentModels: { "<agent>": ["<id>", ...] }: more models the list in Linear's window offers,
@@ -273,7 +273,10 @@ export function choose(issuePrompt, flags = {}, issueConfig = {}) {
   if (open !== "tab" && open !== "window") throw new Error(`"open" is "${open}"; use "tab" or "window"`);
   // Linear's window closes once the agent runs elsewhere, unless the config keeps it.
   const closeLinearWindow = config.closeLinearWindow !== false;
-  return { agent, model, args, preset, terminal, orca: flags.orca ?? config.orca ?? "orca", wezterm: flags.wezterm ?? config.wezterm ?? "wezterm", open, closeLinearWindow, notes };
+  // Orca opens an agent as a chat or a terminal by its own Chat | CLI setting, unless this picks one.
+  const orcaSurface = flags.orcaSurface ?? config.orcaSurface ?? null;
+  if (orcaSurface !== null && orcaSurface !== "chat" && orcaSurface !== "terminal") throw new Error(`"orcaSurface" is "${orcaSurface}"; use "chat" or "terminal", or leave it out for Orca's own setting`);
+  return { agent, model, args, preset, terminal, orca: flags.orca ?? config.orca ?? "orca", orcaSurface, wezterm: flags.wezterm ?? config.wezterm ?? "wezterm", open, closeLinearWindow, notes };
 }
 
 
