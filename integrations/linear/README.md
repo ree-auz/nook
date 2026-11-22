@@ -234,9 +234,9 @@ OpenCode, Pi, Aider) take whichever ids your accounts allow.
   "terminals": { "终端窗口": "wt", "韦兹": "wezterm", "本窗口": "here" },
   "models": {
     "轻": { "codex": { "id": "gpt-6-luna", "effort": "high" }, "claude": "claude-haiku-5-5" },
-    "标准": { "codex": { "id": "gpt-6.1-sol", "effort": "low" }, "claude": "claude-sonnet-5-5" },
-    "强": { "codex": { "id": "gpt-6.1-sol", "effort": "high" }, "claude": "claude-opus-5-5" },
-    "最强": { "codex": { "id": "gpt-6-astra", "effort": "medium" }, "claude": "claude-opus-5-5" }
+    "标准": { "codex": { "id": "gpt-6.2-sol", "effort": "low" }, "claude": "claude-sonnet-5-5" },
+    "强": { "codex": { "id": "gpt-6.2-sol", "effort": "high" }, "claude": "claude-opus-5-5" },
+    "最强": { "codex": { "id": "gpt-6.2-astra", "effort": "medium" }, "claude": "claude-opus-5-5" }
   },
   "efforts": { "低": "low", "中": "medium", "高": "high", "极高": { "codex": "xhigh", "claude": "max" } },
   "agentArgs": { "claude": { "model": ["--model", "{model}"], "effort": ["--effort", "{effort}"] } }
@@ -245,7 +245,7 @@ OpenCode, Pi, Aider) take whichever ids your accounts allow.
 
 With these labels in Linear: `执行 › 克劳德`, `模型 › 强`, `档位 › 极高`,
 `终端 › Orca` starts `claude-opus-5-5` with effort `max` in Orca. With
-only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
+only `模型 › 强`, Codex starts `gpt-6.2-sol` with effort `high` in Orca.
 
 ### Every setting
 
