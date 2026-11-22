@@ -63,8 +63,15 @@ Tested on Windows. `--terminal wt` and `--terminal warp` are Windows only;
      starts the agent in Orca. Orca shows worktrees it did not create, and
      `nk rm` / `nk clean` still remove them with their containers and
      volumes. Orca's command-line tool must be installed; if Linear cannot
-     find it on PATH, add `"--orca", "<full path to orca>"`. Linear's window
-     closes when Orca has the agent, and stays open with the error otherwise.
+     find it on PATH, add `"--orca", "<full path to orca>"`. Orca opens the
+     agent as a chat or a terminal by the agent's **Chat | CLI** choice in
+     Orca's Settings → Agents; `"--orca-surface", "chat"` or `"terminal"`
+     (or `"orcaSurface"` in the config file below) picks one instead.
+     Linear's window shows how Orca opened the agent and whether the prompt
+     arrived (`prompt: journaled` in a chat, `prompt: handed-to-terminal` in
+     a terminal). It closes when Orca has the agent and the prompt, and stays
+     open otherwise: with Orca's error, or, when Orca does not say the prompt
+     arrived, with the path of a file holding the prompt to paste in.
    - `env` is an allowlist: Linear only passes the variables listed here.
 
 4. Optional: let labels choose, per issue, the agent, its model and effort,
@@ -252,6 +259,7 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `--agent-label <group>` | the agent label group, over `labels.agent` |
 | `--terminal-label <group>` | the terminal label group, over `labels.terminal` |
 | `--orca <path>` | Orca's command-line tool, when it is not on PATH |
+| `--orca-surface chat\|terminal` | how Orca opens the agent, over `"orcaSurface"`; without it, Orca's own Chat \| CLI choice for the agent |
 | `--wezterm <path>` | WezTerm, when it is not on PATH |
 | `--again <choice>` | what starting an issue that has a workspace does, over `"again"` |
 | `--open tab\|window` | a tab (the default) or a window of its own, over `"open"`; Windows Terminal and WezTerm |
@@ -267,6 +275,7 @@ only `模型 › 强`, Codex starts `gpt-6.1-sol` with effort `high` in Orca.
 | `again` | what starting an issue that has a workspace does: `ask` (the default), `continue`, `prompt`, `new`, `over` or `shell` |
 | `closeLinearWindow` | `false` keeps the window Linear opened after the agent starts in another terminal |
 | `orca` | Orca's command-line tool |
+| `orcaSurface` | `"chat"` or `"terminal"`: how Orca opens the agent; left out, Orca's own Chat \| CLI choice for the agent |
 | `wezterm` | WezTerm's program |
 | `labels` | `{ agent, model, effort, terminal }`: your label group names |
 | `agents` | label name → agent command |

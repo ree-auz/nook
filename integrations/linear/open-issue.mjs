@@ -5,7 +5,7 @@
 //
 //   node open-issue.mjs [--config file] [--agent a] [--agent-label g]
 //                       [--terminal wt|warp|wezterm|orca] [--terminal-label g]
-//                       [--open tab|window]                                    started by Linear
+//                       [--orca-surface chat|terminal] [--open tab|window]     started by Linear
 //   node open-issue.mjs --run <file> ...     inside the new tab
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
@@ -263,13 +263,15 @@ const ANY_PLATFORM = new Set(["wezterm"]);
  * Orca: nk creates the workspace (hooks, ports, database), then Orca starts
  * the agent in it, so Orca keeps its accounts and sessions. Orca shows
  * worktrees it did not create. A new workspace gets Linear's prompt; one
- * that exists only gets a new agent session.
+ * that exists only gets a new agent session. Orca opens the agent as a chat
+ * or a terminal by its Chat | CLI setting, or as `surface` says.
+ * Returns { status, report } (see orcaLaunchReport).
  */
-export function workInOrca({ branch, agent, prompt, model = null, orca = "orca", again = "continue", run = runOrca }) {
+export function workInOrca({ branch, agent, prompt, model = null, orca = "orca", surface = null, again = "continue", run = runOrca }) {
   const existing = findWorkspace(branch);
   if (!existing) {
     const created = runNk(["-b", branch, "-y"]);
-    if (created.status !== 0) return created.status ?? 1;
+    if (created.status !== 0) return { status: created.status ?? 1, report: null };
   }
   const ws = existing ?? findWorkspace(branch);
   if (!ws) throw new Error(`nk created no workspace for ${branch}`);
@@ -277,20 +279,59 @@ export function workInOrca({ branch, agent, prompt, model = null, orca = "orca",
   const args = ["agent", "launch", "--agent", agent, "--worktree", `path:${ws.path}`, "--focus", "--json"];
   // Orca's --effort needs --model.
   if (model?.id) args.push("--model", model.id, ...(model.effort ? ["--effort", model.effort] : []));
-  if ((!existing || again === "prompt") && prompt) args.push("--prompt", prompt);
-  return run(orca, args);
+  if (surface) args.push("--surface", surface);
+  const withPrompt = Boolean((!existing || again === "prompt") && prompt);
+  if (withPrompt) args.push("--prompt", prompt);
+  const { status, stdout } = run(orca, args);
+  if (status !== 0) process.stdout.write(stdout ?? "");
+  return { status, report: status === 0 ? orcaLaunchReport(stdout, { withPrompt }) : null };
 }
 
-/** Runs the Orca CLI, never through cmd.exe, which would cut the prompt. */
+/** Prompt outcomes that mean Orca delivered the prompt: written to a chat, or handed to the agent's terminal. */
+const PROMPT_ARRIVED = new Set(["journaled", "handed-to-terminal"]);
+
+/**
+ * What `orca agent launch --json` answered: { line, problem }. `line` says
+ * how the agent opened (chat or terminal) and why; `problem` is set when a
+ * prompt was sent and Orca does not say it arrived, so the launcher keeps
+ * Linear's window open instead of closing it on a silent agent.
+ */
+export function orcaLaunchReport(stdout, { withPrompt }) {
+  let answer = null;
+  const text = String(stdout ?? "");
+  const start = text.indexOf("{");
+  if (start >= 0) {
+    try {
+      answer = JSON.parse(text.slice(start));
+    } catch {
+      answer = null;
+    }
+  }
+  const result = answer?.result ?? answer;
+  const kind = result?.outcome?.kind;
+  const shown = kind === "structured" ? "a chat" : kind === "terminal" ? "a terminal" : null;
+  const why = result?.receipt?.detail;
+  const outcome = result?.prompt?.outcome;
+  const line = `${shown ? `Orca opened ${shown}` : "Orca started the agent"}${why ? ` (${why})` : ""}${withPrompt ? `; prompt: ${outcome ?? "not reported"}` : ""}`;
+  let problem = null;
+  if (withPrompt && !PROMPT_ARRIVED.has(outcome))
+    problem = outcome
+      ? `Orca says the prompt was not delivered (${outcome})`
+      : result
+        ? "Orca's answer does not say the prompt arrived; this Orca may be older than its chat launch"
+        : "Orca gave no answer to read, so the prompt may not have arrived";
+  if (result?.warning) problem = [problem, `Orca: ${result.warning}`].filter(Boolean).join(". ");
+  return { line, problem };
+}
+
+/** Runs the Orca CLI, never through cmd.exe, which would cut the prompt. Returns { status, stdout }. */
 function runOrca(orca, args) {
   const env = withNodeOnPath();
   const spec = windowsDirect({ command: agentCommand({}, orca, {}, env).command, args });
   // cross-spawn: a .cmd shim still runs when the arguments have no line breaks.
   const result = crossSpawn.sync(spec.command, spec.args, { stdio: ["ignore", "pipe", "inherit"], encoding: "utf8", env });
   if (result.error) throw new Error(`could not run ${orca}: ${result.error.message}. Is Orca's command-line tool installed? Pass its path with --orca`);
-  // Orca answers in JSON; show it only when something went wrong.
-  if (result.status !== 0) process.stdout.write(result.stdout ?? "");
-  return result.status ?? 1;
+  return { status: result.status ?? 1, stdout: result.stdout ?? "" };
 }
 
 /**
@@ -312,7 +353,7 @@ function option(argv, name) {
 async function fromLinear(argv) {
   const configPath = option(argv, "--config");
   const config = loadConfig(configPath ?? CONFIG_PATH, { required: Boolean(configPath) });
-  const flags = { again: option(argv, "--again"), agent: option(argv, "--agent"), agentLabel: option(argv, "--agent-label"), terminal: option(argv, "--terminal"), terminalLabel: option(argv, "--terminal-label"), orca: option(argv, "--orca"), wezterm: option(argv, "--wezterm"), open: option(argv, "--open") };
+  const flags = { again: option(argv, "--again"), agent: option(argv, "--agent"), agentLabel: option(argv, "--agent-label"), terminal: option(argv, "--terminal"), terminalLabel: option(argv, "--terminal-label"), orca: option(argv, "--orca"), orcaSurface: option(argv, "--orca-surface"), wezterm: option(argv, "--wezterm"), open: option(argv, "--open") };
   const { LINEAR_ISSUE_BRANCH_NAME: linearBranch, LINEAR_WORK_DIR: dir, LINEAR_ISSUE_IDENTIFIER: id = "issue", LINEAR_PROMPT: prompt = "" } = process.env;
   if (!linearBranch || !dir) throw new Error("LINEAR_ISSUE_BRANCH_NAME and LINEAR_WORK_DIR are missing; list them under env in coding-tools.json");
   process.chdir(dir);
@@ -327,7 +368,7 @@ async function fromLinear(argv) {
     if (!reviewed) return console.log("Nothing started.");
     ({ again, picks } = reviewed);
   } else if (again === "ask") again = "continue";
-  const { agent, model, args, preset, terminal, orca, wezterm, open: openIn, closeLinearWindow: close, notes } = choose(prompt, { ...flags, picks }, config);
+  const { agent, model, args, preset, terminal, orca, orcaSurface, wezterm, open: openIn, closeLinearWindow: close, notes } = choose(prompt, { ...flags, picks }, config);
   // Say what starts and why, so a label that was not picked up is easy to see.
   const where = { wt: "Windows Terminal", warp: "Warp", wezterm: "WezTerm", orca: "Orca" }[terminal] ?? "this window";
   console.log(`Agent: ${agent} in ${where}${model?.id ? `, model ${model.id}` : ", its default model"}${model?.effort ? `, effort ${model.effort}` : ""}${preset ? `, options ${preset.name}` : ""}`);
@@ -366,10 +407,18 @@ async function fromLinear(argv) {
     return startWork({ branch, agent, prompt: sent, args, template, again: mode });
   }
   if (terminal === "orca") {
-    process.exitCode = workInOrca({ branch, agent, prompt: sent, model, orca, again: mode });
+    const { status, report } = workInOrca({ branch, agent, prompt: sent, model, orca, surface: orcaSurface, again: mode });
+    process.exitCode = status;
     // Keep Linear's window open when something failed, so its output can be read.
-    if (process.exitCode !== 0) return hold(`Orca did not start ${agent} (exit code ${process.exitCode}); its answer is above. The workspace is ready: start again from Linear to retry`);
+    if (status !== 0) return hold(`Orca did not start ${agent} (exit code ${status}); its answer is above. The workspace is ready: start again from Linear to retry`);
+    console.log(`  ${report.line}`);
     await markStarted();
+    if (report.problem) {
+      // The agent runs, but may be waiting without its task: keep the prompt where it can be pasted from.
+      const file = join(tmpdir(), `nk-linear-${id}-prompt.md`);
+      writeFileSync(file, sent);
+      return hold(`${report.problem}. The prompt is in ${file}; paste it into ${agent}, or set "orcaSurface": "terminal" in the config to start agents in Orca's terminal`);
+    }
     if (close && process.platform === "win32") closeLinearWindow();
     return;
   }

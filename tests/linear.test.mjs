@@ -147,7 +147,7 @@ test("a model label picks the model, its effort and, alone, its agent", async ()
   };
   const pick = (labels, flags = {}) => choose(labels.map((l) => `<label>${l}</label>`).join("\n"), flags, config);
 
-  assert.deepEqual(pick(["Model › Luna · 高", "Agent › Codex"]), { agent: "codex", model: { id: "gpt-6-luna", effort: "high" }, args: ["-m", "gpt-6-luna", "-c", "model_reasoning_effort=high"], preset: null, terminal: null, orca: "orca", wezterm: "wezterm", open: "tab", closeLinearWindow: true, notes: [] });
+  assert.deepEqual(pick(["Model › Luna · 高", "Agent › Codex"]), { agent: "codex", model: { id: "gpt-6-luna", effort: "high" }, args: ["-m", "gpt-6-luna", "-c", "model_reasoning_effort=high"], preset: null, terminal: null, orca: "orca", orcaSurface: null, wezterm: "wezterm", open: "tab", closeLinearWindow: true, notes: [] });
   assert.equal(pick(["Model › Opus · high"]).agent, "claude", "the model's agent when no agent label");
   assert.deepEqual(pick(["Model › gpt-6.1-sol · low"]).model, { id: "gpt-6.1-sol", effort: "low" }, "a label that is a model id needs no config");
   assert.deepEqual(pick(["Model › Fast", "Agent › Grok"]).model, { id: "grok-5-fast", effort: null });
@@ -181,7 +181,9 @@ test("for Orca, nk creates the workspace and Orca starts the agent in it", (t) =
   assert.equal(nk(["init", "--yes", "--allow-hooks"], { cwd: repo, home }).status, 0);
   // A stand-in Orca CLI that records each call.
   const log = join(root, "orca.log");
-  const program = `#!/usr/bin/env node\nrequire("fs").appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");\n`;
+  // It answers a launch like Orca does: a chat, with the prompt written to it when one came.
+  const answer = 'const a = process.argv.slice(2); if (a[0] === "agent") console.log(JSON.stringify({ ok: true, result: { outcome: { kind: "structured", sessionId: "s1", handle: "h1" }, worktreeId: "w1", receipt: { mode: "structured", reason: "user_default", detail: "Chat is your choice for this agent" }, ...(a.includes("--prompt") ? { prompt: { delivery: "submit", outcome: "journaled", messageId: "m1" } } : {}) } }));';
+  const program = `#!/usr/bin/env node\nrequire("fs").appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");\n${answer}\n`;
   writeFileSync(join(root, "orca.cjs"), program);
   // On Windows an npm-style .cmd shim; with a multi-line prompt the launcher skips cmd.exe.
   const orca = join(root, process.platform === "win32" ? "orca.cmd" : "orca");
@@ -205,9 +207,11 @@ test("for Orca, nk creates the workspace and Orca starts the agent in it", (t) =
   const run = () => {
     const r = spawnSync(process.execPath, [script, "--config", config, "--terminal", "orca", "--orca", orca, "--agent", "codex"], { cwd: root, encoding: "utf8", env });
     assert.equal(r.status, 0, r.stdout + r.stderr);
+    return r;
   };
 
-  run();
+  const first = run();
+  assert.match(first.stdout, /Orca opened a chat \(Chat is your choice for this agent\); prompt: journaled/);
   const ws = join(home, "workspace", "demo", "ree-auz-ree-280-orca");
   assert.ok(existsSync(ws), "nk created the workspace");
   run();
@@ -215,6 +219,27 @@ test("for Orca, nk creates the workspace and Orca starts the agent in it", (t) =
   const launch = ["agent", "launch", "--agent", "codex", "--worktree", `path:${ws}`, "--focus", "--json", "--model", "gpt-6.1-sol", "--effort", "medium"];
   const sent = `${env.LINEAR_PROMPT}\nOn ree-auz/ree-280-orca: put REE-280 in the PR title.`;
   assert.deepEqual(calls, [["open", "--json"], [...launch, "--prompt", sent], ["open", "--json"], launch]);
+});
+
+test("Orca's launch answer: how the agent opened, and whether the prompt arrived", async () => {
+  const { orcaLaunchReport } = await import("../integrations/linear/open-issue.mjs");
+  const answer = (result) => JSON.stringify({ id: "1", ok: true, result, _meta: { runtimeId: "r" } }, null, 2);
+  const chat = { outcome: { kind: "structured", sessionId: "s", handle: "h" }, worktreeId: "w", receipt: { mode: "structured", reason: "user_default", detail: "Chat is on" } };
+  assert.deepEqual(orcaLaunchReport(answer({ ...chat, prompt: { delivery: "submit", outcome: "journaled", messageId: "m" } }), { withPrompt: true }), { line: "Orca opened a chat (Chat is on); prompt: journaled", problem: null });
+  const terminal = { ...chat, outcome: { kind: "terminal", handle: "t" }, receipt: { detail: "CLI is on" }, prompt: { delivery: "submit", outcome: "handed-to-terminal" } };
+  assert.equal(orcaLaunchReport(answer(terminal), { withPrompt: true }).problem, null);
+  assert.match(orcaLaunchReport(answer({ ...chat, prompt: { delivery: "submit", outcome: "not-delivered" } }), { withPrompt: true }).problem, /not delivered \(not-delivered\)/);
+  assert.match(orcaLaunchReport(answer(chat), { withPrompt: true }).problem, /does not say the prompt arrived/);
+  assert.match(orcaLaunchReport("", { withPrompt: true }).problem, /no answer/);
+  assert.deepEqual(orcaLaunchReport("", { withPrompt: false }), { line: "Orca started the agent", problem: null }, "no prompt, nothing to check");
+  assert.match(orcaLaunchReport(answer({ ...chat, warning: "setup failed" }), { withPrompt: false }).problem, /Orca: setup failed/);
+});
+
+test("orcaSurface picks a chat or a terminal in Orca", async () => {
+  const { choose } = await import("../integrations/linear/choose.mjs");
+  assert.equal(choose("", { terminal: "orca" }, { orcaSurface: "terminal" }).orcaSurface, "terminal");
+  assert.equal(choose("", { terminal: "orca", orcaSurface: "chat" }, { orcaSurface: "terminal" }).orcaSurface, "chat", "the argument wins");
+  assert.throws(() => choose("", {}, { orcaSurface: "cli" }), /use "chat" or "terminal"/);
 });
 
 test("the launcher runs when started through a linked folder, like fnm's aliases\\default", (t) => {
